@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "aw-datastore",
+    "aw-models",
+    "aw-transform",
+    "aw-server",
+    "aw-query",
+]
+resolver = "2"

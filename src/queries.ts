@@ -1,0 +1,381 @@
+import _ from 'lodash';
+
+// TODO: Sanitize string input of buckets
+
+export function querystr_to_array(querystr: string): string[] {
+  // Split on ';' but only when not inside a double-quoted string literal.
+  // A naive .split(';') breaks category rules whose regex contains semicolons,
+  // e.g. `"regex": "foo;bar"` would be shredded before reaching the server.
+  const statements: string[] = [];
+  let current = '';
+  let inString = false;
+  let inEscape = false;
+
+  for (const char of querystr) {
+    if (inEscape) {
+      current += char;
+      inEscape = false;
+    } else if (char === '\\' && inString) {
+      current += char;
+      inEscape = true;
+    } else if (char === '"') {
+      inString = !inString;
+      current += char;
+    } else if (char === ';' && !inString) {
+      const trimmed = current.trim();
+      if (trimmed) statements.push(trimmed + ';');
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  const trimmed = current.trim();
+  if (trimmed) statements.push(trimmed + ';');
+
+  return statements;
+}
+
+function escape_doublequote(s: string) {
+  return s.replace(/"/g, '\\"');
+}
+
+interface BaseQueryParams {
+  include_audible?: boolean;
+  bid_browsers?: string[];
+  bid_stopwatch?: string;
+  return_variable_suffix?: string;
+}
+
+interface DesktopQueryParams extends BaseQueryParams {
+  bid_window: string;
+  bid_afk: string;
+  filter_afk: boolean;
+  always_active_apps?: string[];
+}
+
+interface AndroidQueryParams extends BaseQueryParams {
+  bid_android: string;
+}
+
+function isDesktopParams(object: any): object is DesktopQueryParams {
+  return 'bid_window' in object;
+}
+
+function isAndroidParams(object: any): object is AndroidQueryParams {
+  return 'bid_android' in object;
+}
+
+// Use query_bucket directly when we have a full bucket ID (contains hostname after the prefix).
+// Fall back to find_bucket only when the ID is partial (ends with '_', meaning hostname is unknown).
+// This avoids find_bucket matching wrong buckets when similar names exist (e.g. host vs host.local).
+// See: https://github.com/ActivityWatch/aw-webui/issues/590
+function queryBucket(bid: string): string {
+  if (bid.endsWith('_')) {
+    return `query_bucket(find_bucket("${bid}"))`;
+  }
+  return `query_bucket("${bid}")`;
+}
+
+// Constructs a query that returns a fully-detailed list of events from the merging of several sources (window, afk, web).
+// Performs:
+//  - AFK filtering (if filter_afk is true)
+// Puts it's results in `events` and `not_afk` (if not_afk available for platform).
+export function canonicalEvents(params: DesktopQueryParams | AndroidQueryParams): string {
+  const always_active_apps = isDesktopParams(params) ? params.always_active_apps : undefined;
+  const always_active_apps_str =
+    always_active_apps && always_active_apps.length > 0
+      ? JSON.stringify(always_active_apps)
+      : undefined;
+  const cat_filter_str = JSON.stringify(params.filter_categories);
+
+  // For simplicity, we assume that bid_window and bid_android are exchangeable (note however it needs special treatment)
+  const bid_window = isDesktopParams(params) ? params.bid_window : params.bid_android;
+
+  return [
+    // Fetch window/app events
+    `events = flood(${queryBucket(bid_window)});`,
+    // On Android, merge events to avoid overload of events
+    isAndroidParams(params) ? 'events = merge_events_by_keys(events, ["app", "title"]);' : '',
+    // Fetch not-afk events
+    isDesktopParams(params)
+      ? `not_afk = flood(${queryBucket(params.bid_afk)});
+         not_afk = filter_keyvals(not_afk, "status", ["not-afk"]);` +
+        (always_active_apps_str
+          ? `not_treat_as_afk = filter_keyvals(events, "app", ${always_active_apps_str});
+             not_afk = period_union(not_afk, not_treat_as_afk);`
+          : '')
+      : '',
+    // Fetch browser events
+    isDesktopParams(params) && params.bid_browsers
+      ? browserEvents(params) +
+        // Include focused and audible browser events as indications of not-afk
+        (params.include_audible
+          ? `audible_events = filter_keyvals(browser_events, "audible", [true]);
+             not_afk = period_union(not_afk, audible_events);`
+          : '')
+      : '',
+    // Filter out window events when the user was afk
+    isDesktopParams(params) && params.filter_afk
+      ? 'events = filter_period_intersect(events, not_afk);'
+      : '',
+    params.bid_stopwatch
+      ? `stopwatch_events = query_bucket("${params.bid_stopwatch}");
+         events = union_no_overlap(stopwatch_events, events);`
+      : 'stopwatch_events = [];',
+    // "Return" events by setting variable named with return_variable if set
+    params.return_variable_suffix
+      ? `events_${params.return_variable_suffix} = events;
+         not_afk_${params.return_variable_suffix} = not_afk;`
+      : '',
+  ].join('\n');
+}
+
+const default_limit = 100; // Hardcoded limit per group
+
+export function appQuery(appbucket: string): string[] {
+  appbucket = escape_doublequote(appbucket);
+  const params: AndroidQueryParams = {
+    bid_android: appbucket,
+  };
+
+  const code = `
+    ${canonicalEvents(params)}
+
+    title_events = sort_by_duration(merge_events_by_keys(events, ["app", "classname", "title"]));
+    app_events   = sort_by_duration(merge_events_by_keys(title_events, ["app"]));
+
+    events = sort_by_timestamp(events);
+    app_events  = limit_events(app_events, ${default_limit});
+    title_events  = limit_events(title_events, ${default_limit});
+    duration = sum_durations(events);
+    RETURN  = {"app_events": app_events, "title_events": title_events, "duration": duration, "active_events": app_events};
+  `;
+  return querystr_to_array(code);
+}
+
+// Exact app names (Flatpak app IDs and similar reverse-domain identifiers) used for bucket discovery and as a
+// fallback for names that don't match the regex patterns below. Process name
+// variants (upper/lowercase, spacing, .exe suffix) are handled by
+// browser_appname_regex using (?i) flag. See test/unit/queries.test.node.ts for
+// the complete list of known app names these patterns cover.
+const browser_appnames: Record<string, string[]> = {
+  chrome: ['com.google.Chrome', 'com.google.ChromeDev', 'org.chromium.Chromium'],
+  firefox: ['org.mozilla.firefox', 'io.gitlab.librewolf-community', 'net.waterfox.waterfox'],
+  opera: ['com.opera.Opera'],
+  brave: ['com.brave.Browser'],
+  edge: ['com.microsoft.Edge', 'com.microsoft.EdgeDev'],
+  arc: [],
+  vivaldi: ['com.vivaldi.Vivaldi'],
+  orion: ['Orion'],
+  yandex: ['ru.yandex.Browser'],
+  zen: ['app.zen_browser.zen'],
+  floorp: ['one.ablaze.floorp'],
+  helium: ['net.imput.helium'],
+};
+
+// Returns a list of (browserName, bucketId) pairs for found browser buckets
+function browsersWithBuckets(browserbuckets: string[]): [string, string][] {
+  const browsername_to_bucketid: [string, string | undefined][] = _.map(
+    Object.keys(browser_appnames),
+    browserName => {
+      const bucketId = _.find(browserbuckets, bucket_id => _.includes(bucket_id, browserName));
+      return [browserName, bucketId];
+    }
+  );
+  // Skip browsers for which a bucket couldn't be found
+  return _.filter(browsername_to_bucketid, ([, bucketId]) => bucketId !== undefined);
+}
+
+// Case-insensitive regex patterns covering all OS/platform process name variants
+// (Windows .exe, Linux lowercase, macOS capitalized, versioned names like firefox-esr-esr140).
+// Used with filter_keyvals_regex in addition to the exact names in browser_appnames.
+// The full set of historical app names these patterns replace is documented in the unit tests.
+// See: test/unit/queries.test.node.ts, https://github.com/ActivityWatch/aw-webui/issues/749
+export const browser_appname_regex: Record<string, string> = {
+  chrome: '(?i)^(google[-_ ]?chrome|chrome|chromium)',
+  firefox: '(?i)(firefox|librewolf|waterfox|nightly)',
+  opera: '(?i)(opera)',
+  brave: '(?i)(brave)',
+  edge: '(?i)^(microsoft[-_ ]?edge|msedge)',
+  arc: '(?i)^arc(\\.exe)?$',
+  vivaldi: '(?i)(vivaldi)',
+  orion: '(?i)(orion)',
+  yandex: '(?i)(yandex)',
+  zen: '(?i)(zen)',
+  floorp: '(?i)(floorp)',
+  helium: '(?i)(helium)',
+};
+
+// Returns a list of active browser events (where the browser was the active window) from all browser buckets
+function browserEvents(params: DesktopQueryParams): string {
+  let code = `
+    browser_events = [];
+  `;
+
+  _.each(browsersWithBuckets(params.bid_browsers), ([browserName, bucketId]) => {
+    const browser_appnames_str = JSON.stringify(browser_appnames[browserName]);
+    code += `events_${browserName} = flood(query_bucket("${bucketId}"));
+       window_${browserName} = filter_keyvals(events, "app", ${browser_appnames_str});`;
+
+    // Add regex-based matching to cover case/spacing/versioning variants (e.g., Firefox.exe, firefox-esr-esr140)
+    const pattern = browser_appname_regex[browserName];
+    if (pattern) {
+      code += `
+       window_${browserName}_re = filter_keyvals_regex(events, "app", ${JSON.stringify(pattern)});
+       window_${browserName} = sort_by_timestamp(concat(window_${browserName}, window_${browserName}_re));`;
+    }
+
+    code += `
+       events_${browserName} = filter_period_intersect(events_${browserName}, window_${browserName});
+       events_${browserName} = split_url_events(events_${browserName});
+       browser_events = concat(browser_events, events_${browserName});
+       browser_events = sort_by_timestamp(browser_events);`;
+  });
+  return code;
+}
+
+export function fullDesktopQuery(params: DesktopQueryParams): string[] {
+  return querystr_to_array(
+    `
+    ${canonicalEvents({
+      ...params,
+      // Escape `"`
+      bid_window: escape_doublequote(params.bid_window),
+      bid_afk: escape_doublequote(params.bid_afk),
+      bid_browsers: _.map(params.bid_browsers, escape_doublequote),
+    })}
+    title_events = sort_by_duration(merge_events_by_keys(events, ["app", "title"]));
+    app_events   = sort_by_duration(merge_events_by_keys(title_events, ["app"]));
+
+    app_events  = limit_events(app_events, ${default_limit});
+    title_events  = limit_events(title_events, ${default_limit});
+    duration = sum_durations(events);
+    ` + // Browser events are retrieved in canonicalQuery
+      `
+    browser_events = split_url_events(browser_events);
+    browser_urls = merge_events_by_keys(browser_events, ["url"]);
+    browser_urls = sort_by_duration(browser_urls);
+    browser_urls = limit_events(browser_urls, ${default_limit});
+    browser_domains = merge_events_by_keys(browser_events, ["$domain"]);
+    browser_domains = sort_by_duration(browser_domains);
+    browser_domains = limit_events(browser_domains, ${default_limit});
+    browser_titles = merge_events_by_keys(browser_events, ["title"]);
+    browser_titles = sort_by_duration(browser_titles);
+    browser_titles = limit_events(browser_titles, ${default_limit});
+    browser_duration = sum_durations(browser_events);
+    stopwatch_events = merge_events_by_keys(stopwatch_events, ["label"]);
+    stopwatch_events = sort_by_duration(stopwatch_events);
+    stopwatch_events = limit_events(stopwatch_events, ${default_limit});
+
+    RETURN = {
+        "window": {
+            "app_events": app_events,
+            "title_events": title_events,
+            "active_events": not_afk,
+            "duration": duration
+        },
+        "browser": {
+            "domains": browser_domains,
+            "urls": browser_urls,
+            "titles": browser_titles,
+            "duration": browser_duration
+        },
+        "stopwatch": {
+            "stopwatch_events": stopwatch_events
+        }
+    };`
+  );
+}
+
+export function editorActivityQuery(editorbuckets: string[]): string[] {
+  let q = ['events = [];'];
+  for (const editorbucket of editorbuckets) {
+    q.push(`events = concat(events, flood(query_bucket("${escape_doublequote(editorbucket)}")));`);
+  }
+  q = q.concat([
+    // "project" is also a merge key (not just "file"/"language") so the
+    // resulting events keep their owning project — Top Editor Files'
+    // click-to-highlight needs it to find the matching VSCode Timeline
+    // lane block (see SelectableVisualization.vue's
+    // top_editor_files_projectfunc).
+    'files = sort_by_duration(merge_events_by_keys(events, ["file", "language", "project"]));',
+    `files = limit_events(files, ${default_limit});`,
+    'languages = sort_by_duration(merge_events_by_keys(events, ["language"]));',
+    `languages = limit_events(languages, ${default_limit});`,
+    'projects = sort_by_duration(merge_events_by_keys(events, ["project"]));',
+    `projects = limit_events(projects, ${default_limit});`,
+    'duration = sum_durations(events);',
+    'RETURN = {"files": files, "languages": languages, "projects": projects, "duration": duration};',
+  ]);
+  return q;
+}
+
+// Returns a query that yields a single event with the duration set to
+// the sum of all non-afk time in the queried period
+// TODO: Would ideally account for `filter_afk` and `always_active_pattern`
+// TODO: rename to something like `activeDurationQuery`
+// FIXME: Doesn't respect audible-as-active and always-active-pattern
+export function activityQuery(afkbuckets: string[]): string[] {
+  let q = ['not_afk = [];'];
+  for (const afkbucket of afkbuckets) {
+    q = q.concat([
+      `not_afk_curr = query_bucket("${escape_doublequote(afkbucket)}");`,
+      `not_afk_curr = filter_keyvals(not_afk_curr, "status", ["not-afk"]);`,
+      `not_afk = union_no_overlap(not_afk, not_afk_curr);`,
+    ]);
+  }
+  q = q.concat(['not_afk = merge_events_by_keys(not_afk, ["status"]);', 'RETURN = not_afk;']);
+  return q;
+}
+
+// Equivalent function to activityQuery, but for Android (which doesn't have an afk bucket)
+export function activityQueryAndroid(androidbucket: string): string[] {
+  androidbucket = escape_doublequote(androidbucket);
+  return [`events = query_bucket("${androidbucket}");`, 'RETURN = sum_durations(events);'];
+}
+
+// Stessa forma di editorActivityQuery, ma solo per file (nessun
+// linguaggio/progetto — il watcher Excel emette solo "file", vedi
+// aw-watcher-excel-rust).
+export function excelActivityQuery(excelbuckets: string[]): string[] {
+  let q = ['events = [];'];
+  for (const excelbucket of excelbuckets) {
+    q.push(`events = concat(events, flood(query_bucket("${escape_doublequote(excelbucket)}")));`);
+  }
+  q = q.concat([
+    'files = sort_by_duration(merge_events_by_keys(events, ["file"]));',
+    `files = limit_events(files, ${default_limit});`,
+    'duration = sum_durations(events);',
+    'RETURN = {"files": files, "duration": duration};',
+  ]);
+  return q;
+}
+
+// Stessa forma di excelActivityQuery, ma raggruppata per "cliente"
+// (nome contatto o numero se sconosciuto — vedi aw-watcher-tray-rust...
+// no, vedi il watcher VoiSpeed, BLUEPRINT.md sezione 6) invece che per
+// "file": qui non c'è un file, c'è una chiamata.
+export function voispeedActivityQuery(voispeedbuckets: string[]): string[] {
+  let q = ['events = [];'];
+  for (const voispeedbucket of voispeedbuckets) {
+    q.push(`events = concat(events, flood(query_bucket("${escape_doublequote(voispeedbucket)}")));`);
+  }
+  q = q.concat([
+    'contacts = sort_by_duration(merge_events_by_keys(events, ["cliente"]));',
+    `contacts = limit_events(contacts, ${default_limit});`,
+    'duration = sum_durations(events);',
+    'RETURN = {"contacts": contacts, "duration": duration};',
+  ]);
+  return q;
+}
+
+export default {
+  fullDesktopQuery,
+  appQuery,
+  activityQuery,
+  activityQueryAndroid,
+  editorActivityQuery,
+  excelActivityQuery,
+  voispeedActivityQuery,
+};

@@ -1,0 +1,25 @@
+[package]
+name = "aw-watcher-vscode"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aw-watcher-vscode"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["clock"] }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1.0"
+gethostname = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+] }
+
+[profile.release]
+opt-level = 2

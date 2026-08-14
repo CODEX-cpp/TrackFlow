@@ -1,0 +1,185 @@
+/* ============================================================ */
+/* modals.css */
+/* ============================================================ */
+/* Shared shell + button styles for the small centered popups used */
+/* across the Projects page: the edit form, the detail view, and the */
+/* confirm dialogs (overage warning, permanent delete). Pulled out of */
+/* Progetti.vue so every popup component can share one definition */
+/* instead of duplicating it — a plain .css file (like theme.css) so */
+/* the literal `@import` also works from scoped SFC styles. */
+/* ============================================================ */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 49;
+}
+
+/* Standard small popup shell (edit form, confirm dialogs). Explicit
+   color here (not just left to inherit) — a slot's plain text with no
+   class of its own (e.g. a confirm dialog's body text) otherwise falls
+   through to an unstyled Bootstrap default (rgb(60,66,87), reads as
+   dark blue-gray) instead of the theme's own text color. Same root
+   cause already found once for AiAgentSettings.vue's labels — fixed
+   there locally, fixed here at the shared shell so every future modal
+   gets a sane default without each caller having to remember to set
+   its own color (real bug found in CategorizationSettings.vue's delete
+   confirmation, 2026-08-12). More specific children (.edit-modal-title,
+   .pill-btn*) already set their own color and are unaffected. */
+.edit-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 340px;
+  background-color: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-elevated);
+  padding: 24px;
+  z-index: 50;
+  color: var(--color-text);
+}
+
+.edit-modal-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin-bottom: 18px;
+}
+
+.edit-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.edit-field-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  margin: 12px 0 4px;
+}
+
+.edit-field {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  box-sizing: border-box;
+  color-scheme: dark;
+  accent-color: var(--color-accent1);
+}
+
+.edit-field:focus {
+  outline: none;
+  border-color: var(--color-accent1);
+}
+
+/* Red border when the typed value fails min/max — an immediate
+   signal while typing, even though invalid values are still
+   discarded on save regardless. */
+.edit-field:invalid {
+  border-color: #d9534f;
+}
+
+/* Same fix as settingsPanel.css's .settings-field — .edit-field is
+   also shared with <select> (e.g. the category picker in
+   CategorizationSettings.vue), and a native <select> ignores the
+   color/radius above without appearance:none, rendering the
+   OS-native combobox instead. */
+/* See settingsPanel.css's identical override for why the !important
+   guard is here (legacy dark.css used to force navy-blue selects). */
+select.edit-field {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 28px;
+  color-scheme: normal;
+  background-color: var(--color-surface2) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7c6d' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.theme-light select.edit-field {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23948572' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.pill-btn,
+.pill-btn-ghost,
+.pill-btn-danger {
+  text-align: center;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.pill-btn {
+  background-color: var(--color-accent1);
+  color: #241a12;
+}
+
+.pill-btn:hover {
+  filter: brightness(1.1);
+}
+
+.pill-btn-ghost {
+  background-color: var(--color-surface2);
+  color: var(--color-text-dim);
+}
+
+.pill-btn-ghost:hover {
+  filter: brightness(1.15);
+}
+
+.pill-btn-danger {
+  background-color: #d9534f;
+  color: #fff;
+}
+
+.pill-btn-danger:hover {
+  filter: brightness(1.1);
+}
+
+.pill-btn-disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Themed scrollbar for any scrollable popup content (block detail
+   modal, "show everything" list, ...) — replaces the browser's default
+   scrollbar with one that matches the app's own colors. Firefox via
+   scrollbar-width/color, Chrome/Edge/Zen via the ::-webkit-* pseudo
+   elements (both needed, neither covers the other). */
+.themed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.themed-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.themed-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.themed-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: var(--radius-pill);
+}
+
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-faint);
+}

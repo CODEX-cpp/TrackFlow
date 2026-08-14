@@ -1,0 +1,20 @@
+{
+  "app.exe": "TrackFlow",
+  "claude.exe": "Claude",
+  "code.exe": "Visual Studio Code",
+  "discord.exe": "Discord",
+  "medal.exe": "Medal",
+  "msedge.exe": "Microsoft Edge",
+  "overwolf.exe": "Overwolf",
+  "playnite.desktopapp.exe": "Playnite Desktop Application",
+  "rainbowsix.exe": "Rainbow Six",
+  "rainbowsix_be.exe": "BattlEye Launcher",
+  "setup.exe": "Visual Studio Installer",
+  "spotify.exe": "Spotify",
+  "steamwebhelper.exe": "Steam Client WebHelper",
+  "upc.exe": "Ubisoft Connect",
+  "vs_buildtools.exe": "Visual Studio Installer",
+  "vs_setup_bootstrapper.exe": "Visual Studio Installer",
+  "windowsterminal.exe": "Windows Terminal Host",
+  "zen.exe": "Zen"
+}

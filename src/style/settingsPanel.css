@@ -1,0 +1,405 @@
+/* ============================================================ */
+/* settingsPanel.css */
+/* ============================================================ */
+/* Shared building blocks for the restyled Settings page — the same
+   "title + control on the right, help text below" row shape repeats
+   across nearly every settings sub-component (Language, Start of day,
+   Theme, ...), so it's defined once here instead of duplicated per
+   component, same reasoning as modals.css/projectCards.css. */
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-row + .settings-row {
+  margin-top: 18px;
+}
+
+.settings-row-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.settings-row-help {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  margin-top: 4px;
+  max-width: 640px;
+}
+
+/* Themed toggle switch — same visual as the dark/light switch already
+   built in Sidebar.vue, pulled out here so every settings checkbox
+   uses the identical control instead of Bootstrap's default one. */
+.settings-toggle {
+  width: 34px;
+  height: 19px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+
+.settings-toggle-on {
+  background-color: var(--color-accent1);
+  border-color: var(--color-accent1);
+}
+
+.settings-toggle-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background-color: var(--color-bg-elev);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left 0.15s ease;
+}
+
+.settings-toggle-on .settings-toggle-thumb {
+  left: 17px;
+  background-color: #241a12;
+}
+
+/* Text/number inputs and selects — same look as modals.css's
+   .edit-field, just under this file's own name so settings components
+   don't need to reach into an unrelated stylesheet conceptually. */
+.settings-field {
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  box-sizing: border-box;
+  color-scheme: dark;
+  accent-color: var(--color-accent1);
+}
+
+.settings-field:focus {
+  outline: none;
+  border-color: var(--color-accent1);
+}
+
+.settings-field:invalid {
+  border-color: #d9534f;
+}
+
+/* .settings-field is shared with <select> (Language, Start of week,
+   Landing page, Categorization's active set, ...) but a native <select>
+   ignores border-radius/background-color/border without appearance:none
+   — the browser draws its own OS-native combobox chrome instead, which
+   is exactly the "squared off, navy blue" look reported. Custom arrow
+   (a plain chevron, one per theme since a data-URI SVG can't reference
+   CSS variables) replaces the native one appearance:none removes. */
+/* color-scheme:light overrides the color-scheme:dark inherited from
+   .settings-field above — the CLOSED box is fully custom-styled either
+   way (colors/border/background below, all !important), but the OPEN
+   dropdown POPUP list is native OS/browser chrome that CSS can't
+   otherwise restyle, and its light/dark rendering follows this
+   property. Left as a fixed "light" default (bug reported before: it
+   used to render OS-dark chrome even in light theme, "navy blue" look)
+   — .theme-dark below switches it to dark specifically when the APP's
+   own theme (not the Windows system theme, which color-scheme:normal
+   would have followed instead — a mismatch reported separately: the
+   popup matched Windows' setting, not TrackFlow's own theme toggle) is
+   dark, so the popup chrome tracks the in-app toggle either way. The
+   !important below matches the convention used by
+   .settings-bootstrap-theme .bg-light further down. */
+select.settings-field {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 28px;
+  color-scheme: light;
+  background-color: var(--color-surface2) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7c6d' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.theme-dark select.settings-field {
+  color-scheme: dark;
+}
+
+.theme-light select.settings-field {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23948572' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Compact pill-tab group — same visual language as Topbar.vue's
+   Giorno/4h/1h zoom tabs, reused here for small multi-choice pickers
+   (Theme: System/Light/Dark). */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  background-color: var(--color-surface2);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  color: var(--color-text);
+}
+
+.settings-tab-active {
+  background-color: var(--color-accent1);
+  color: #241a12;
+  font-weight: var(--font-weight-semibold);
+}
+
+.settings-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+}
+
+.settings-card + .settings-card {
+  margin-top: 14px;
+}
+
+/* Alert banner (save error/success) + labelled field row — originally
+   defined only inside AwNotifySettings.vue's own scoped style (Vue
+   scoping means that never actually applied to other components reusing
+   the same class names, e.g. AiAgentSettings.vue fell through to
+   Bootstrap's unthemed default <label> color) — moved here once a
+   second component needed the identical thing, same "shared building
+   block" reasoning as the rest of this file. */
+.settings-alert {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  position: relative;
+}
+
+.settings-alert-danger {
+  background-color: rgba(217, 83, 79, 0.15);
+  color: var(--color-text);
+}
+
+.settings-alert-success {
+  background-color: rgba(124, 154, 92, 0.15);
+  color: var(--color-text);
+}
+
+.settings-alert-close {
+  position: absolute;
+  right: 12px;
+  top: 8px;
+  cursor: pointer;
+  color: var(--color-text-faint);
+}
+
+.settings-field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-field-row > .settings-field {
+  flex: 1;
+}
+
+.settings-field-row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-field-label {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  padding-top: 8px;
+}
+
+.settings-field-invalid {
+  border-color: #d9534f;
+}
+
+.settings-pattern-status-bad {
+  font-size: var(--font-size-xs);
+  color: #ff8a80;
+}
+
+/* ------------------------------------------------------------ */
+/* Bootstrap-vue primitive overrides — for the more complex settings
+   panels (Categorization, its category tree/builder, Privacy Filters,
+   AwNotify) that keep their existing Bootstrap-vue markup/logic
+   (rewriting a drag-and-drop category tree editor from scratch would
+   risk breaking working behavior for a purely visual pass). Reskins
+   the same handful of Bootstrap classes those panels actually use to
+   the theme's tokens instead, same spirit as
+   SelectableVisualization.vue's .vis-style-dropdown-btn override
+   block. Imported only by the components that need it, not global. */
+.settings-bootstrap-theme .btn {
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  border: 1px solid var(--color-border);
+}
+
+.settings-bootstrap-theme .btn-success,
+.settings-bootstrap-theme .btn-primary {
+  background-color: var(--color-accent1);
+  border-color: var(--color-accent1);
+  color: #241a12;
+}
+
+.settings-bootstrap-theme .btn-success:hover,
+.settings-bootstrap-theme .btn-primary:hover {
+  filter: brightness(1.1);
+  background-color: var(--color-accent1);
+  border-color: var(--color-accent1);
+}
+
+.settings-bootstrap-theme .btn-outline-primary,
+.settings-bootstrap-theme .btn-outline-secondary,
+.settings-bootstrap-theme .btn-outline-warning,
+.settings-bootstrap-theme .btn-outline-danger {
+  background-color: var(--color-surface2);
+  color: var(--color-text-dim);
+  border-color: var(--color-border);
+}
+
+.settings-bootstrap-theme .btn-outline-primary:hover,
+.settings-bootstrap-theme .btn-outline-secondary:hover,
+.settings-bootstrap-theme .btn-outline-warning:hover,
+.settings-bootstrap-theme .btn-outline-danger:hover {
+  background-color: var(--color-surface2);
+  color: var(--color-text);
+  filter: brightness(1.15);
+}
+
+.settings-bootstrap-theme .btn-outline-danger:hover {
+  color: #ff8a80;
+}
+
+.settings-bootstrap-theme .form-control,
+.settings-bootstrap-theme .custom-select,
+.settings-bootstrap-theme select.form-control {
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  color-scheme: dark;
+}
+
+.settings-bootstrap-theme .form-control:focus,
+.settings-bootstrap-theme .custom-select:focus {
+  background-color: var(--color-surface2);
+  border-color: var(--color-accent1);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.settings-bootstrap-theme .form-control::placeholder {
+  color: var(--color-text-faint);
+}
+
+.settings-bootstrap-theme .card {
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.settings-bootstrap-theme .bg-light {
+  background-color: var(--color-surface2) !important;
+}
+
+.settings-bootstrap-theme .alert {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+
+.settings-bootstrap-theme .alert-warning {
+  background-color: rgba(211, 163, 85, 0.15);
+  color: var(--color-text);
+}
+
+.settings-bootstrap-theme .alert-danger {
+  background-color: rgba(217, 83, 79, 0.15);
+  color: var(--color-text);
+}
+
+.settings-bootstrap-theme .alert-success {
+  background-color: rgba(124, 154, 92, 0.15);
+  color: var(--color-text);
+}
+
+.settings-bootstrap-theme .text-muted {
+  color: var(--color-text-faint) !important;
+}
+
+.settings-bootstrap-theme a {
+  color: var(--color-accent1);
+}
+
+/* ------------------------------------------------------------ */
+/* CHECKBOX personalizzata — richiesta esplicita: la checkbox nativa */
+/* del browser (quadratino grigio/blu di sistema) stonava con il resto */
+/* del tema. `appearance: none` rimuove il disegno nativo mantenendo */
+/* comportamento/accessibilità dell'<input> originale — nessun markup */
+/* aggiuntivo (wrapper/span) necessario, funziona sull'input stesso. */
+/* Condivisa (non scoped a un solo componente) così ogni checkbox */
+/* dentro le Impostazioni ha lo stesso aspetto — vedi ActivePattern */
+/* Settings.vue e CategorizationSettings.vue per i primi due usi. */
+/* ------------------------------------------------------------ */
+.custom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.custom-checkbox:hover {
+  border-color: var(--color-accent1);
+}
+
+.custom-checkbox:checked {
+  background-color: var(--color-accent1);
+  border-color: var(--color-accent1);
+}
+
+.custom-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #241a12;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}

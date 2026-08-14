@@ -1,0 +1,5 @@
+[env]
+# aw-server-rust-src/aw-server/build.rs default resolves "../aw-webui/dist" relative to its
+# own crate dir, which doesn't exist in TrackFlow's layout (webui lives at TrackFlow/dist).
+# Point it at the real built webui so aw-server embeds it instead of compiling empty.
+AW_WEBUI_DIR = { value = "../dist", relative = true }

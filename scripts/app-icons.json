@@ -1,0 +1,55 @@
+{
+  "code.exe": [
+    "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"
+  ],
+  "zen.exe": [
+    "%ProgramFiles%\\Zen Browser\\zen.exe"
+  ],
+  "claude.exe": [
+    "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\Claude.exe",
+    "%ProgramFiles%\\WindowsApps\\Claude_1.26832.0.0_x64__pzs8sxrjxfjjc\\app\\Claude.exe"
+  ],
+  "windowsterminal.exe": [
+    "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe",
+    "%ProgramFiles%\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11321.0_x64__8wekyb3d8bbwe\\WindowsTerminal.exe"
+  ],
+  "vncviewer.exe": [
+    "%ProgramFiles%\\RealVNC\\VNC Viewer\\vncviewer.exe",
+    "%ProgramFiles(x86)%\\RealVNC\\VNC Viewer\\vncviewer.exe"
+  ],
+  "powershell.exe": [
+    "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  ],
+  "pwsh.exe": [
+    "%ProgramFiles%\\PowerShell\\7-preview\\pwsh.exe",
+    "%ProgramFiles%\\PowerShell\\7\\pwsh.exe"
+  ],
+  "cmd.exe": [
+    "%SystemRoot%\\System32\\cmd.exe"
+  ],
+  "explorer.exe": [
+    "%SystemRoot%\\explorer.exe"
+  ],
+  "notepad.exe": [
+    "%SystemRoot%\\System32\\notepad.exe"
+  ],
+  "chrome.exe": [
+    "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"
+  ],
+  "msedge.exe": [
+    "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
+    "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe"
+  ],
+  "discord.exe": [
+    "%LOCALAPPDATA%\\Discord\\app-1.0.9251\\Discord.exe"
+  ],
+  "spotify.exe": [
+    "%APPDATA%\\Spotify\\Spotify.exe"
+  ],
+  "snippingtool.exe": [
+    "%ProgramFiles%\\WindowsApps\\Microsoft.ScreenSketch_11.2602.49.0_x64__8wekyb3d8bbwe\\SnippingTool\\SnippingTool.exe"
+  ],
+  "taskmgr.exe": [
+    "%SystemRoot%\\System32\\Taskmgr.exe"
+  ]
+}

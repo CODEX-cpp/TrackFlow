@@ -1,0 +1,49 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "TrackFlow",
+  "version": "0.1.0",
+  "identifier": "it.trackflow.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:27180"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "tooltip": "TrackFlow"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../dist": "dist",
+      "icons/128x128.png": "icons/notification-icon.png"
+    },
+    "externalBin": [
+      "binaries/aw-watcher-vpn",
+      "binaries/aw-watcher-claude-code",
+      "binaries/aw-watcher-screenshot",
+      "binaries/aw-watcher-app-icons",
+      "binaries/aw-watcher-afk",
+      "binaries/aw-watcher-window",
+      "binaries/aw-watcher-tray",
+      "binaries/aw-watcher-vscode",
+      "binaries/aw-watcher-excel"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

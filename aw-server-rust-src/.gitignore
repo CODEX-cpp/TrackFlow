@@ -1,0 +1,12 @@
+target
+dist
+.cargo/config
+NDK
+
+**/*.rs.bk
+*.zip
+*.profraw
+
+*.sqlite*
+*.db
+*.db-journal

@@ -1,0 +1,114 @@
+/* ============================================================ */
+/* projectCards.css */
+/* ============================================================ */
+/* Shared styles for the "active project" hero card and the project */
+/* grid — used both on the Projects page and the "Progetti Attivi" */
+/* section on Home, so this is a plain .css partial (like modals.css) */
+/* instead of duplicating the rules in both places. */
+/* ============================================================ */
+
+.hero-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.hero-card {
+  flex: 1 1 380px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 22px 26px;
+}
+
+.hero-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.live-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--color-accent1);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 4px rgba(211, 163, 85, 0.2);
+}
+
+.hero-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.hero-name {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin-top: 2px;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.hero-name:hover {
+  color: var(--color-accent1);
+}
+
+.hero-time {
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-extrabold);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+}
+
+.hero-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.grid-head {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-dim);
+  margin-bottom: 12px;
+}
+
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.new-project-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 220px;
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-xl);
+  color: var(--color-text-faint);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.new-project-card:hover {
+  border-color: var(--color-accent1);
+  color: var(--color-text);
+}
+
+.new-plus {
+  font-size: 28px;
+  line-height: 1;
+}

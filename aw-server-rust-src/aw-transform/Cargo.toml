@@ -1,0 +1,24 @@
+[package]
+name = "aw-transform"
+version = "0.1.0"
+authors = ["Johan Bjäreholt <johan@bjareho.lt>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "1.0"
+url = ">=2.2"
+serde_json = "1.0"
+fancy-regex = "0.17.0"
+lru = "0.18.1"
+log = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+aw-models = { path = "../aw-models" }
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "bench"
+harness = false

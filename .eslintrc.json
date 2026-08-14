@@ -1,0 +1,87 @@
+{
+  "plugins": ["prettier", "vue", "jest", "@typescript-eslint"],
+  "extends": [
+    "plugin:vue/essential",
+    "eslint:recommended",
+    "plugin:vue/recommended",
+    "@vue/typescript",
+    "plugin:jest/recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "prettier",
+    "prettier/vue"
+  ],
+  "rules": {
+    "prettier/prettier": "warn",
+    "vue/require-default-prop": "off",
+    "vue/prop-name-casing": "off",
+    "vue/name-property-casing": "off",
+    "vue/component-definition-name-casing": "off",
+    "vue/component-tags-order": "off",
+    "vue/multi-word-component-names": "off",
+    "@typescript-eslint/camelcase": ["off"],
+    "@typescript-eslint/explicit-function-return-type": ["off"],
+    "@typescript-eslint/no-var-requires": ["off"],
+    "@typescript-eslint/no-explicit-any": ["off"],
+    "@typescript-eslint/no-use-before-define": ["error", {"functions": false, "classes": false}],
+    "@typescript-eslint/no-unused-vars": ["warn", {"argsIgnorePattern": "^_"}],
+    "@typescript-eslint/no-this-alias": [
+      "warn",
+      {
+        "allowDestructuring": true,
+        "allowedNames": ["that"]
+      }
+    ],
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "prefer-rest-params": "warn",
+    "no-shadow": [
+      "warn",
+      {
+        "builtinGlobals": true,
+        "allow": ["name", "Promise", "event", "parent", "state", "getters", "stop"]
+      }
+    ],
+    "no-console": ["off"],
+    "prefer-const": "warn",
+    "no-var": "warn"
+  },
+  "parser": "vue-eslint-parser",
+  "parserOptions": {
+    "ecmaVersion": 2017,
+    "sourceType": "module"
+  },
+  "env": {
+    "node": true
+  },
+  "globals": {
+    "PRODUCTION": false,
+    "AW_SERVER_URL": false,
+    "COMMIT_HASH": false
+  },
+  "overrides": [
+    {
+      "files": [".*\\.vue$"],
+      "parserOptions": {
+          "parser": "vue-eslint-parser"
+      }
+    },
+    {
+      "files": [".*\\.js$"],
+      "parserOptions": {
+          "parser": "babel-eslint"
+      }
+    },
+    {
+      "files": [".*\\.ts$"],
+      "parserOptions": {
+          "parser": "@typescript-eslint/parser"
+      }
+    },
+    {
+      "files": ["*.ts", "*.tsx"],
+      "rules": {
+        "@typescript-eslint/explicit-module-boundary-types": ["off"]
+      }
+    }
+  ]
+}

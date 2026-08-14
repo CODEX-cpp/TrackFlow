@@ -1,0 +1,59 @@
+node_modules/
+dist*/
+/modules
+
+# logs
+npm-debug.log
+selenium-debug.log
+
+# copied from media
+static/logo*
+
+# outputs
+coverage
+coverage-ts
+screenshots
+test/unit/coverage
+test/e2e/reports
+*.map
+
+# platform-specific trash
+.DS_Store
+
+# editor-specific
+*.swp
+.vscode
+
+# python
+__pycache__
+
+# local dev env overrides
+.env.local
+
+# Claude Code local tooling config (mai stato tracciato, aggiunto qui
+# solo per evitare che un `git add -A` distratto lo includa per sbaglio
+# in futuro — vedi la scansione della cartella progetto, 2026-08-14)
+.claude/
+
+# Build artifact Rust — ogni crate del workspace (src-tauri, i 9
+# watcher, il codice vendored di aw-server-rust) ha la propria cartella
+# target/, gigabyte di file compilati che non hanno senso nel repo
+# (2026-08-15, in vista della prima pubblicazione su GitHub).
+target/
+**/target/
+
+# Chiave privata di firma per gli aggiornamenti (tauri-plugin-updater /
+# minisign) — deve restare SOLO sulla macchina che pubblica le release,
+# mai nel repository. La chiave pubblica invece va bene committarla
+# (serve dentro tauri.conf.json).
+*.key
+!src-tauri/icons/**/*.key
+
+# Variabili d'ambiente locali
+.env
+
+# Diario di sviluppo interno — conversazioni reali che nel tempo hanno
+# finito per contenere dati di clienti veri (nomi, IP), vedi la
+# scansione fatta prima della prima pubblicazione pubblica (2026-08-15).
+# Resta solo locale, mai nel repository.
+BLUEPRINT.md

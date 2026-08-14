@@ -1,0 +1,156 @@
+/* ============================================================ */
+/* theme.css */
+/* ============================================================ */
+/* File CENTRALE con tutte le variabili di design (colori, font, */
+/* dimensioni) prese dal mockup TrackFlow. Un solo posto da */
+/* modificare per cambiare l'aspetto di tutta l'app. */
+/* */
+/* IMPORTANTE — perché sono variabili CSS (--nome) e non SCSS ($nome) */
+/* come in _globals.scss: le variabili SCSS vengono "risolte" una */
+/* volta sola quando il progetto viene compilato e restano fisse. */
+/* Le variabili CSS invece possono cambiare valore IN TEMPO REALE nel */
+/* browser — è quello che serve per l'interruttore tema chiaro/scuro */
+/* del mockup, che deve funzionare al click senza dover ricompilare */
+/* l'app. */
+/* */
+/* Come funziona: ogni variabile ha un valore per il tema scuro */
+/* (dentro ":root" e ".theme-dark") e uno per il tema chiaro (dentro */
+/* ".theme-light"). Basta aggiungere/togliere la classe "theme-light" */
+/* sul tag <body> per cambiare tutti i colori dell'app in un colpo */
+/* solo — lo faremo quando colleghiamo l'interruttore tema, non in */
+/* questo file. */
+/* */
+/* Questo file per ora NON è ancora importato/usato da nessuna */
+/* pagina esistente: è "pronto ma non collegato", come da accordo, */
+/* per poterlo scrivere senza rischiare di rompere nulla del resto */
+/* dell'app. Lo colleghiamo pagina per pagina, uno alla volta. */
+/* ============================================================ */
+
+/* ------------------------------------------------------------ */
+/* COLORI — interfaccia (cambiano tra tema chiaro e scuro) */
+/* ------------------------------------------------------------ */
+:root,
+.theme-dark {
+  --color-bg: #0e0f11; /* sfondo principale della pagina */
+  --color-bg-elev: #111316; /* sfondo leggermente sollevato (es. sidebar) */
+  --color-surface: #16181b; /* sfondo delle card/pannelli */
+  --color-surface2: #2b3037; /* sfondo di elementi dentro le card (es. barre di sfondo) */
+  --color-border: rgba(255, 244, 230, 0.09);
+  --color-text: #f2e9dd; /* testo principale */
+  --color-text-dim: #b8a999; /* testo secondario, meno importante */
+  --color-text-faint: #8a7c6d; /* testo terziario, didascalie */
+  --color-accent1: #d3a355; /* colore di accento principale (bottoni, evidenziazioni) */
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.theme-light {
+  --color-bg: #f7f1e8;
+  --color-bg-elev: #fbf7f0;
+  --color-surface: #ffffff;
+  --color-surface2: #efe6d8;
+  --color-border: rgba(40, 30, 20, 0.1);
+  --color-text: #2b2016;
+  --color-text-dim: #6b5c4a;
+  --color-text-faint: #948572;
+  --color-accent1: #a14e3a;
+  --shadow-elevated: 0 8px 24px rgba(60, 40, 20, 0.12);
+}
+
+/* ------------------------------------------------------------ */
+/* COLORI — clienti (fissi, UGUALI in entrambi i temi) */
+/* Usati per assegnare un colore coerente a ogni cliente in base al */
+/* nome (stesso meccanismo dell'hash usato nel pannello VPN: stesso */
+/* cliente = sempre stesso colore, ovunque compaia nell'app). */
+/* ------------------------------------------------------------ */
+:root {
+  --client-color-1: #d3a355;
+  --client-color-2: #b8663f;
+  --client-color-3: #8c3a2e;
+  --client-color-4: #8b9a5c;
+  --client-color-5: #d99a45;
+  --client-color-6: #a14e3a;
+  --client-color-7: #c9ae5a;
+  --client-color-8: #7d6a56;
+}
+
+/* ------------------------------------------------------------ */
+/* COLORI — stato (fissi, UGUALI in entrambi i temi) */
+/* Verde/rosso "attivo vs AFK" per la barra di stato sopra il */
+/* righello della Timeline — intonati alla palette calda invece di */
+/* un verde/rosso puri, che stonerebbero col resto. */
+/* ------------------------------------------------------------ */
+:root {
+  --color-success: #7c9a5c;
+  --color-danger: #b3452f;
+}
+
+/* ------------------------------------------------------------ */
+/* SELEZIONE TESTO — richiesta esplicita: l'evidenziazione blu di */
+/* default del browser stonava con tutto il resto del tema, ora */
+/* usa l'accento dell'app (si adatta da solo a chiaro/scuro perché */
+/* --color-accent1 è già una variabile per tema, non un valore */
+/* fisso). #241a12 è lo stesso marrone scuro già usato altrove come */
+/* colore del testo sopra uno sfondo --color-accent1 (es. i chip */
+/* categoria selezionati in CategorizationSettings.vue). */
+/* ------------------------------------------------------------ */
+::selection {
+  background-color: var(--color-accent1);
+  color: #241a12;
+}
+
+/* ------------------------------------------------------------ */
+/* TIPOGRAFIA — famiglia dei caratteri */
+/* ------------------------------------------------------------ */
+:root {
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue',
+    'Ubuntu', sans-serif;
+
+  /* NOTA: il progetto attuale usa "Varela Round" per i titoli */
+  /* (h1-h6), ma il mockup non specifica un font diverso per i */
+  /* titoli — usa lo stesso font del corpo del testo, solo più */
+  /* pesante (font-weight). Da decidere insieme se tenere Varela */
+  /* Round per i titoli o allinearsi al mockup: per ora lascio */
+  /* entrambe le opzioni disponibili, non ho ancora tolto quella */
+  /* esistente. */
+  --font-family-heading: 'Varela Round', sans-serif;
+}
+
+/* ------------------------------------------------------------ */
+/* TIPOGRAFIA — scala delle dimensioni */
+/* Nel mockup i font-size usati vanno da 8px a 36px, sparsi senza */
+/* una scala coerente (normale per un prototipo disegnato a mano */
+/* libera). Li ho raggruppati in questa scala pulita invece di */
+/* riportare ogni valore isolato uno a uno. */
+/* ------------------------------------------------------------ */
+:root {
+  --font-size-xs: 11px; /* didascalie piccolissime, badge */
+  --font-size-sm: 12px; /* testo secondario, etichette */
+  --font-size-base: 14px; /* testo normale, corpo del contenuto */
+  --font-size-md: 15px; /* titoli di sezione piccoli */
+  --font-size-lg: 17px; /* titoli di card */
+  --font-size-xl: 20px; /* titoli di pagina */
+  --font-size-2xl: 22px; /* titoli grandi */
+  --font-size-display: 36px; /* numeri grandi in evidenza (es. cronometro progetti) */
+}
+
+:root {
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  --letter-spacing-tight: -0.2px; /* titoli/brand */
+  --letter-spacing-wide: 0.04em; /* etichette in maiuscolo */
+}
+
+/* ------------------------------------------------------------ */
+/* FORME — raggio degli angoli */
+/* Stesso discorso dei font-size: nel mockup ci sono tantissimi */
+/* valori diversi (da 2px a 16px), consolidati qui in una scala. */
+/* ------------------------------------------------------------ */
+:root {
+  --radius-sm: 4px; /* piccoli elementi (badge, puntini) */
+  --radius-md: 8px; /* pulsanti, chip, blocchi della timeline */
+  --radius-lg: 12px; /* card, pannelli */
+  --radius-xl: 16px; /* contenitori grandi */
+  --radius-pill: 999px; /* elementi completamente arrotondati (badge "presto") */
+}
