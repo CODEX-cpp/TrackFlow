@@ -851,6 +851,23 @@ pub fn run() {
     setup_kill_on_exit_job();
 
     tauri::Builder::default()
+        // DEVE essere il primo plugin registrato (richiesto da Tauri per
+        // funzionare correttamente su Windows). Senza questo, ogni click
+        // sul collegamento/lancio di app.exe mentre un'istanza è già in
+        // esecuzione avviava un SECONDO processo indipendente — bug
+        // reale trovato durante i test dell'installer: server Rocket in
+        // conflitto sulla porta 5600 (schermata bianca nella nuova
+        // istanza, che non riesce a partire), icone tray duplicate,
+        // watcher duplicati. Ora un secondo lancio si limita a
+        // richiamare in primo piano la finestra dell'istanza già aperta,
+        // stesso comportamento già usato per il doppio click sulla tray
+        // qui sotto.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .manage(SidecarProcesses(std::sync::Mutex::new(HashMap::new())))
