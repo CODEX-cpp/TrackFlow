@@ -115,6 +115,23 @@ RequestExecutionLevel user
   Sleep 500
 !macroend
 
+; Windows tiene traccia di OGNI eseguibile mai lanciato sul PC in un
+; pugno di chiavi di registro CONDIVISE con tutte le altre app
+; (MuiCache: nome "amichevole" cache per Explorer; FeatureUsage\
+; AppSwitched: cronologia Alt-Tab; AppCompatFlags\Compatibility
+; Assistant: diagnostica compatibilità) — una voce per percorso
+; completo di ogni .exe. Non si può cancellare la chiave (conterrebbe
+; anche le voci di altre app), solo il singolo VALORE che corrisponde
+; al NOSTRO percorso esatto. Usata sia in Uninstall che per ogni
+; versione mai installata (vedi il ciclo su versions\* più sotto) —
+; segnalato dall'utente dopo un controllo con Revo Uninstaller.
+!macro CleanExeTraces exe
+  DeleteRegValue HKCU "SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache" "${exe}.ApplicationCompany"
+  DeleteRegValue HKCU "SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache" "${exe}.FriendlyAppName"
+  DeleteRegValue HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FeatureUsage\AppSwitched" "${exe}"
+  DeleteRegValue HKCU "SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store" "${exe}"
+!macroend
+
 Section "Install"
   !insertmacro KillTrackFlowProcesses
 
@@ -176,7 +193,37 @@ SectionEnd
 Section "Uninstall"
   !insertmacro KillTrackFlowProcesses
 
+  ; Traccia ogni versione mai installata PRIMA di cancellare
+  ; versions\ — dopo non sapremmo più quali cartelle/percorsi siano
+  ; esistiti nel tempo (un aggiornamento automatico può aver
+  ; accumulato più versioni oltre a quella corrente).
+  FindFirst $0 $1 "$INSTDIR\versions\*"
+  loop_versions:
+    StrCmp $1 "" done_versions
+    StrCmp $1 "." next_version
+    StrCmp $1 ".." next_version
+    IfFileExists "$INSTDIR\versions\$1\app.exe" 0 next_version
+      !insertmacro CleanExeTraces "$INSTDIR\versions\$1\app.exe"
+    next_version:
+    FindNext $0 $1
+    Goto loop_versions
+  done_versions:
+  FindClose $0
+
+  !insertmacro CleanExeTraces "$INSTDIR\launcher.exe"
+  !insertmacro CleanExeTraces "$INSTDIR\uninstall.exe"
+
   RMDir /r "$INSTDIR\versions"
+
+  ; Dati utente veri (screenshot, cache icone app, stato watcher,
+  ; moduli configurati) — a differenza dei file del programma sopra,
+  ; qui chiediamo prima: potrebbero essere mesi di cronologia che
+  ; l'utente vuole ancora consultare reinstallando in futuro, non va
+  ; cancellata in silenzio solo perché "fa parte della pulizia".
+  MessageBox MB_YESNO|MB_ICONQUESTION "Vuoi eliminare anche i dati raccolti finora (screenshot, cronologia app, progetti, categorie)?$\n$\nSe scegli No, resteranno sul disco e verranno ritrovati automaticamente in una futura reinstallazione." IDNO skip_app_data
+    RMDir /r "$INSTDIR\app-data"
+  skip_app_data:
+
   Delete "$INSTDIR\current.txt"
   Delete "$INSTDIR\launcher.exe"
   Delete "$INSTDIR\launcher-error.log"
@@ -189,4 +236,9 @@ Section "Uninstall"
 
   DeleteRegKey HKCU "${UNINSTKEY}"
   DeleteRegKey HKCU "${MANUKEY}"
+  ; MANUKEY cancella solo la sotto-chiave "TrackFlow" — senza questa
+  ; riga il genitore "trackflow" restava vuoto ma presente (bug reale
+  ; trovato con Revo Uninstaller). /ifempty: la cancella solo se non
+  ; contiene altro, non tocca nulla se per qualche motivo non è vuota.
+  DeleteRegKey /ifempty HKCU "SOFTWARE\${MANUFACTURER}"
 SectionEnd
