@@ -1,28 +1,27 @@
 name: Cache warmup (watchers)
 
-# Tiene calda la cache Rust dei 9 watcher sul branch principale. Le
-# release vere partono da un tag (v*), e GitHub isola la cache per ref:
-# un tag è sempre un riferimento MAI visto prima, quindi la cache
-# salvata da una release precedente è invisibile alla successiva —
-# verificato dal vivo (release.yml, run di v0.1.10: "No cache found."
-# nonostante v0.1.9 avesse salvato una cache poco prima, vedi
-# BLUEPRINT.md). La cache del branch PRINCIPALE però è raggiungibile
-# da qualsiasi altro ref come riserva — questo workflow gira sui push
-# normali a master e ricompila solo i 9 watcher (quasi mai toccati da
-# una release all'altra, a differenza di app.exe che cambia quasi
-# sempre insieme al resto del codice), così quando si tagga una vera
-# release trova quella cache già pronta. Nessuna firma/pacchetto/
-# pubblicazione qui — solo compilazione, per tenere la cache
-# aggiornata. app.exe/launcher.exe restano fuori da questo warmup
-# (dipendono dai binari dei watcher già copiati in src-tauri/binaries/,
-# passaggio che qui non serve replicare) — restano quindi sempre a
-# freddo anche dopo questo fix, limite noto.
+# Tiene calda la cache Rust di watcher + app.exe + launcher.exe sul
+# branch principale. Le release vere partono da un tag (v*), e GitHub
+# isola la cache per ref: un tag è sempre un riferimento MAI visto
+# prima, quindi la cache salvata da una release precedente è invisibile
+# alla successiva (verificato dal vivo, vedi BLUEPRINT.md). La cache del
+# branch PRINCIPALE però è raggiungibile da qualsiasi altro ref come
+# riserva — questo workflow gira sui push normali a master e ricompila
+# tutto, così quando si tagga una vera release trova quella cache già
+# pronta. Nessuna firma/installer/pubblicazione qui — solo compilazione,
+# per tenere la cache aggiornata. app.exe richiede gli stessi binari dei
+# watcher già copiati in src-tauri/binaries/ e il frontend compilato
+# (build.rs se li aspetta pronti, stessa convenzione di release.yml) —
+# per questo qui sotto si replicano quei passaggi anche se qui non
+# servono di per sé, solo per far compilare src-tauri con successo.
 on:
   push:
     branches:
       - master
     paths:
       - "aw-watcher-*-rust/**"
+      - "src-tauri/**"
+      - "launcher/**"
       - ".github/workflows/cache-warmup.yml"
       - ".github/workflows/release.yml"
 
@@ -38,19 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - uses: dtolnay/rust-toolchain@stable
 
       # Elenco `workspaces` IDENTICO a release.yml (tutti e 11 i
-      # percorsi, non solo i 9 watcher) — bug reale trovato testando
-      # v0.1.12: la parte finale della chiave di cache include un hash
-      # dei Cargo.lock/Cargo.toml di ciascun percorso in `workspaces`,
-      # quindi due elenchi diversi producono hash diversi anche a
-      # parità di tutto il resto (già corretto: prefisso combaciante,
-      # nessun nome di job nella chiave) — la cache salvata qui non
-      # veniva trovata dalla release comunque. src-tauri/launcher
-      # restano SOLO nell'elenco (per far combaciare l'hash), NON
-      # compilati qui sotto — non serve, basta che i loro
-      # Cargo.lock/Cargo.toml contribuiscano allo stesso hash.
+      # percorsi) — bug reale trovato testando v0.1.12: la parte finale
+      # della chiave di cache include un hash dei Cargo.lock/Cargo.toml
+      # di ciascun percorso in `workspaces`, quindi due elenchi diversi
+      # producono hash diversi anche a parità di tutto il resto (già
+      # corretto: prefisso combaciante, nessun nome di job nella
+      # chiave) — la cache salvata qui non veniva trovata dalla release
+      # comunque.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -78,6 +78,18 @@ jobs:
       - name: Compila i watcher
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Path "src-tauri/binaries" -Force | Out-Null
           foreach ($w in $env:WATCHERS -split " ") {
             cargo build --release --manifest-path "aw-watcher-$w-rust/Cargo.toml"
+            Copy-Item "aw-watcher-$w-rust/target/release/aw-watcher-$w.exe" `
+              "src-tauri/binaries/aw-watcher-$w-x86_64-pc-windows-msvc.exe" -Force
           }
+
+      - run: npm install
+      - run: npm run build
+
+      - name: Compila app.exe e launcher.exe
+        shell: pwsh
+        run: |
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          cargo build --release --manifest-path launcher/Cargo.toml
