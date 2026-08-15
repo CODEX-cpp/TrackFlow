@@ -81,7 +81,7 @@ const router = new VueRouter({
     // :group lets the active settings panel survive reloads / be linkable.
     // New groups added in Settings.vue should also be added here.
     {
-      path: '/settings/:group(general|home|appearance|categorization|integrations|privacy|developer|notifications)',
+      path: '/settings/:group(general|home|appearance|categorization|integrations|privacy|developer|notifications|about)',
       component: Settings,
       props: true,
       meta: { bareLayout: true },

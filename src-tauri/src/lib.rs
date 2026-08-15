@@ -10,6 +10,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex as AsyncMutex;
 
+mod about;
 mod agent;
 mod autostart;
 mod categorization;
@@ -993,7 +994,8 @@ pub fn run() {
             updater::scarica_e_prepara_aggiornamento,
             updater::installa_aggiornamento_e_riavvia,
             autostart::imposta_avvio_automatico,
-            autostart::avvio_automatico_abilitato
+            autostart::avvio_automatico_abilitato,
+            about::leggi_changelog
         ])
         .register_asynchronous_uri_scheme_protocol("trackflow", |ctx, request, responder| {
             let app_handle = ctx.app_handle().clone();

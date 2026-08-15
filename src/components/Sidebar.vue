@@ -321,7 +321,8 @@ export default {
       groups.push(
         { id: 'integrations', label: this.$t('settings.groups.integrations') as string },
         { id: 'privacy', label: this.$t('settings.groups.privacy') as string },
-        { id: 'developer', label: this.$t('settings.groups.developer') as string }
+        { id: 'developer', label: this.$t('settings.groups.developer') as string },
+        { id: 'about', label: this.$t('settings.groups.about') as string }
       );
       return groups;
     },

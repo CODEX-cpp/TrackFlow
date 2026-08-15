@@ -99,6 +99,7 @@ export default {
       integrationsHelp: 'Servizi esterni collegati a TrackFlow.',
       notifications: 'Notifiche',
       notificationsHelp: 'Avvisi personalizzati basati su categorie, app, progetti o eventi.',
+      about: 'Info',
     },
     updates: {
       autoUpdate: 'Aggiornamenti automatici',
@@ -108,6 +109,11 @@ export default {
     autostart: {
       title: 'Avvia con Windows',
       help: 'Apre TrackFlow automaticamente all\'accesso a Windows, senza doverlo avviare a mano.',
+    },
+    about: {
+      versionPrefix: 'Versione',
+      changelogTitle: 'Novità recenti',
+      changelogError: 'Impossibile caricare il changelog.',
     },
     aiAgent: {
       title: 'Claude',

@@ -32,6 +32,7 @@ import VpnMappingSettings from '~/views/settings/VpnMappingSettings.vue';
 import NotificationRulesSettings from '~/views/settings/NotificationRulesSettings.vue';
 import AutoUpdateSettings from '~/views/settings/AutoUpdateSettings.vue';
 import AutostartSettings from '~/views/settings/AutostartSettings.vue';
+import AboutSettings from '~/views/settings/AboutSettings.vue';
 
 interface Group {
   id: string;
@@ -59,6 +60,7 @@ export default {
     NotificationRulesSettings,
     AutoUpdateSettings,
     AutostartSettings,
+    AboutSettings,
   },
   props: {
     group: { type: String, default: '' },
@@ -152,6 +154,11 @@ export default {
         help: this.$t('settings.groups.developerHelp'),
         components: [{ name: 'DeveloperSettings' }],
       };
+      const about: Group = {
+        id: 'about',
+        label: this.$t('settings.groups.about'),
+        components: [{ name: 'AboutSettings' }],
+      };
 
       const notifications: Group = {
         id: 'notifications',
@@ -182,7 +189,8 @@ export default {
           components: integrationsComponents,
         },
         privacy,
-        developer
+        developer,
+        about
       );
       return groups;
     },
