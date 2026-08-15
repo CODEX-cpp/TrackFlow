@@ -62,3 +62,7 @@ installer/*.exe
 # scansione fatta prima della prima pubblicazione pubblica (2026-08-15).
 # Resta solo locale, mai nel repository.
 BLUEPRINT.md
+
+# Guida locale per l'AI su come pubblicare una release — riferimento
+# pratico, stesso motivo di BLUEPRINT.md sopra (mai nel repository).
+RELEASE.md
