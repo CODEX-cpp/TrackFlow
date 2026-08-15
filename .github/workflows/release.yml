@@ -110,7 +110,16 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          makensis "/DVERSION=$version" installer\trackflow-installer.nsi
+          # choco install nsis mette makensis.exe qui, ma non lo aggiunge
+          # al PATH nello stesso step in cui viene poi chiamato (bug
+          # reale trovato nel primo run di test, v0.1.9) — percorso
+          # esplicito invece di affidarsi al PATH, con fallback su
+          # "makensis" nudo nel caso l'installazione choco cambi percorso
+          # in futuro.
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { $makensis = "makensis" }
+          & $makensis "/DVERSION=$version" installer\trackflow-installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Pubblica la release
         env:
