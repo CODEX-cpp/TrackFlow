@@ -1,0 +1,46 @@
+name: Cache test (diagnostic, temporaneo)
+
+# Workflow usa-e-getta per verificare in fretta se un ref (branch o tag)
+# trova la cache Rust del branch principale, senza dover aspettare una
+# release intera (15-20 minuti) solo per vedere lo step della cache.
+# Lanciato a mano: `gh workflow run cache-test.yml --ref <tag-o-branch>`.
+# Nessuna compilazione — solo il tentativo di ripristino, visibile nel
+# log dello step Swatinem/rust-cache in pochi secondi. Da rimuovere
+# quando l'indagine sulla cache sarà chiusa.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Stesso identico elenco/configurazione di release.yml e
+      # cache-warmup.yml — deve combaciare per testare davvero lo
+      # stesso scenario.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            aw-watcher-afk-rust -> target
+            aw-watcher-app-icons-rust -> target
+            aw-watcher-claude-code-rust -> target
+            aw-watcher-excel-rust -> target
+            aw-watcher-screenshot-rust -> target
+            aw-watcher-tray-rust -> target
+            aw-watcher-vpn-rust -> target
+            aw-watcher-vscode-rust -> target
+            aw-watcher-window-rust -> target
+            src-tauri -> target
+            launcher -> target
+          add-job-id-key: false
+
+      - name: Esito
+        shell: pwsh
+        run: |
+          Write-Host "Controlla il log dello step 'Run Swatinem/rust-cache@v2' sopra: 'No cache found.' = miss, altrimenti = hit."

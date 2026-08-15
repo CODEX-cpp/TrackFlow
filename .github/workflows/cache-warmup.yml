@@ -40,9 +40,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # Stesso identico elenco `workspaces` (solo i 9 watcher, senza
-      # src-tauri/launcher) usato in release.yml — deve combaciare
-      # perché la cache sia davvero condivisa tra i due workflow.
+      # Elenco `workspaces` IDENTICO a release.yml (tutti e 11 i
+      # percorsi, non solo i 9 watcher) — bug reale trovato testando
+      # v0.1.12: la parte finale della chiave di cache include un hash
+      # dei Cargo.lock/Cargo.toml di ciascun percorso in `workspaces`,
+      # quindi due elenchi diversi producono hash diversi anche a
+      # parità di tutto il resto (già corretto: prefisso combaciante,
+      # nessun nome di job nella chiave) — la cache salvata qui non
+      # veniva trovata dalla release comunque. src-tauri/launcher
+      # restano SOLO nell'elenco (per far combaciare l'hash), NON
+      # compilati qui sotto — non serve, basta che i loro
+      # Cargo.lock/Cargo.toml contribuiscano allo stesso hash.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -55,6 +63,8 @@ jobs:
             aw-watcher-vpn-rust -> target
             aw-watcher-vscode-rust -> target
             aw-watcher-window-rust -> target
+            src-tauri -> target
+            launcher -> target
           # Bug reale trovato testando v0.1.11: il nome del job entra
           # di default nella chiave di cache (add-job-id-key) — questo
           # job si chiama "warmup", quello di release.yml
