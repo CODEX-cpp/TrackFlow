@@ -1,0 +1,11 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+// Nasconde il pulsante "View On GitHub" in cima alla pagina — il tema
+// jekyll-theme-midnight lo mostra sempre nell'header, il link al
+// repository c'è già nell'elenco puntato più sotto nella pagina.
+#header nav {
+  display: none;
+}
