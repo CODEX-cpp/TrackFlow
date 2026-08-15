@@ -104,6 +104,10 @@ export default {
       autoUpdateHelp:
         'Downloads updates in the background and shows "Restart to update" once ready. When off, TrackFlow only flags that an update is available and downloads it once you click.',
     },
+    autostart: {
+      title: 'Start with Windows',
+      help: 'Opens TrackFlow automatically when you sign in to Windows, without having to launch it by hand.',
+    },
     aiAgent: {
       title: 'Claude',
       help: 'API key and model used by the assistant chat — never sent anywhere but the chosen provider.',

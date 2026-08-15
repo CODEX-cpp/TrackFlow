@@ -105,6 +105,10 @@ export default {
       autoUpdateHelp:
         'Scarica gli aggiornamenti in background e mostra "Riavvia per aggiornare" quando sono pronti. Se disattivato, TrackFlow segnala solo che un aggiornamento è disponibile e lo scarica solo quando lo clicchi.',
     },
+    autostart: {
+      title: 'Avvia con Windows',
+      help: 'Apre TrackFlow automaticamente all\'accesso a Windows, senza doverlo avviare a mano.',
+    },
     aiAgent: {
       title: 'Claude',
       help:

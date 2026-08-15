@@ -66,7 +66,7 @@ pub struct InfoAggiornamento {
 /// `trackflow-installer.nsi`) — tre `parent()` per risalire dalla sua
 /// posizione alla radice dell'installazione, la stessa cartella dove
 /// `launcher.exe` legge `current.txt`.
-fn cartella_installazione() -> Result<PathBuf, String> {
+pub(crate) fn cartella_installazione() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     exe.parent()
         .and_then(Path::parent)

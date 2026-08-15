@@ -94,6 +94,22 @@ export default {
         // CategorizationSettings.vue).
       }
     }
+
+    // Avvio automatico con Windows: ACCESO di default, ma solo la
+    // primissima volta — richiesta esplicita dell'utente. Il vero stato
+    // vive nel registro (vedi autostart.rs), autostartDefaultApplied
+    // qui serve solo a non riaccenderlo ad ogni avvio se l'utente lo
+    // spegne da Impostazioni in seguito.
+    if (!settingsStore.autostartDefaultApplied) {
+      try {
+        await invoke('imposta_avvio_automatico', { abilita: true });
+      } catch (e) {
+        // Fuori da Tauri, o scrittura registro fallita — non blocca
+        // l'avvio dell'app, l'utente può comunque accenderlo a mano
+        // dalle Impostazioni.
+      }
+      await settingsStore.update({ autostartDefaultApplied: true });
+    }
   },
 
   mounted: async function (this: any) {

@@ -102,6 +102,15 @@ interface State {
   // disattivabile. Default true (comportamento stile Claude Desktop).
   autoUpdateEnabled: boolean;
 
+  // Vero il valore reale è nel registro di Windows (vedi autostart.rs,
+  // HKCU\...\Run), non qui — questo campo serve solo a ricordare "il
+  // default (acceso) è già stato applicato una volta", così un utente
+  // che lo spegne da Impostazioni non se lo ritrova riacceso al
+  // prossimo avvio (vedi App.vue). Richiesta esplicita: acceso di
+  // default, ma resta una scelta dell'utente da lì in poi, non forzata
+  // ad ogni avvio.
+  autostartDefaultApplied: boolean;
+
   // Set to true if settings loaded
   _loaded: boolean;
 }
@@ -141,6 +150,7 @@ export const useSettingsStore = defineStore('settings', {
     hideEmptyModules: true,
     hideEmptyTimelineLanes: true,
     autoUpdateEnabled: true,
+    autostartDefaultApplied: false,
 
     _loaded: false,
   }),
