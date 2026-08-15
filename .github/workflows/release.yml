@@ -1,0 +1,138 @@
+name: Release
+
+# Basta pushare un tag "v<versione>" (es. v0.1.9) — questo workflow
+# aggiorna da solo il numero di versione in Cargo.toml/tauri.conf.json,
+# compila app.exe + i 9 watcher + il launcher, impacchetta e firma il
+# pacchetto di aggiornamento, compila l'installer NSIS, e pubblica tutto
+# come release GitHub. Vedi BLUEPRINT.md sezione 25 per l'intero
+# sistema di auto-aggiornamento a cui questo si collega.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  WATCHERS: afk app-icons claude-code excel screenshot tray vpn vscode window
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ricava la versione dal tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # Così un tag è l'UNICA cosa da preparare per una release — non
+      # serve ricordarsi di bumpare a mano questi due file prima di
+      # taggare, cosa fatta manualmente (ed error-prone) per tutte le
+      # release di questa sessione.
+      - name: Imposta la versione in Cargo.toml e tauri.conf.json
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          (Get-Content src-tauri/Cargo.toml) -replace '(?m)^version = ".*"', "version = `"$version`"" |
+            Set-Content src-tauri/Cargo.toml
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $conf.version = $version
+          $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Installa NSIS
+        run: choco install nsis -y
+
+      - run: npm install
+      - run: npm run build
+
+      # Ogni watcher è un crate indipendente (nessun workspace Cargo
+      # condiviso) — build.rs di src-tauri si aspetta di trovarli già
+      # pronti in src-tauri/binaries/<nome>-x86_64-pc-windows-msvc.exe
+      # (convenzione "sidecar" di Tauri) prima di compilare l'app.
+      - name: Compila i watcher
+        shell: pwsh
+        run: |
+          foreach ($w in $env:WATCHERS -split " ") {
+            cargo build --release --manifest-path "aw-watcher-$w-rust/Cargo.toml"
+            Copy-Item "aw-watcher-$w-rust/target/release/aw-watcher-$w.exe" `
+              "src-tauri/binaries/aw-watcher-$w-x86_64-pc-windows-msvc.exe" -Force
+          }
+
+      - name: Compila app.exe
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Compila launcher.exe
+        run: cargo build --release --manifest-path launcher/Cargo.toml
+
+      # Stesso identico contenuto che l'installer mette in
+      # versions/<versione>/ — vedi src-tauri/src/updater.rs per il
+      # formato atteso (nome file, root dello zip senza sottocartella).
+      - name: Impacchetta il pacchetto di aggiornamento
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Path "stage/icons" -Force | Out-Null
+          Copy-Item "src-tauri/target/release/app.exe" "stage/"
+          foreach ($w in $env:WATCHERS -split " ") {
+            Copy-Item "src-tauri/target/release/aw-watcher-$w.exe" "stage/"
+          }
+          Copy-Item -Recurse "dist" "stage/dist"
+          Copy-Item "src-tauri/icons/128x128.png" "stage/icons/notification-icon.png"
+          Compress-Archive -Path "stage/*" `
+            -DestinationPath "trackflow-$version-update-package.zip" -CompressionLevel Optimal
+
+      # La chiave privata (TRACKFLOW_SIGNING_KEY) è un secret del
+      # repository, mai nel codice — vedi ~/.trackflow-updater.key sulla
+      # macchina che l'ha generata, MAI committata. Password vuota per
+      # scelta (generata con `tauri signer generate --ci`), non è un
+      # secret in sé quindi può stare in chiaro qui.
+      - name: Firma il pacchetto di aggiornamento
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TRACKFLOW_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          npx tauri signer sign "trackflow-$version-update-package.zip"
+
+      - name: Compila l'installer
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          makensis "/DVERSION=$version" installer\trackflow-installer.nsi
+
+      - name: Pubblica la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          gh release create "v$version" `
+            "trackflow-$version-update-package.zip" `
+            "trackflow-$version-update-package.zip.sig" `
+            "installer\trackflow-setup-$version.exe" `
+            --title "v$version" `
+            --generate-notes
+
+          $assets = gh api "repos/${{ github.repository }}/releases/tags/v$version" --jq '.assets[] | "\(.id) \(.name)"'
+          foreach ($riga in $assets) {
+            $id, $nome = $riga -split " ", 2
+            $etichetta = switch -Wildcard ($nome) {
+              "*update-package.zip"     { "Update package (used internally by the app — not for manual download)" }
+              "*update-package.zip.sig" { "Update package signature" }
+              "*setup*.exe"             { "Windows installer" }
+              default                   { $nome }
+            }
+            gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" -f "label=$etichetta" | Out-Null
+          }
