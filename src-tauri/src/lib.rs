@@ -1301,7 +1301,24 @@ pub fn run() {
                 // com'era rimasta l'ultima volta, non forziamo il
                 // fullscreen.
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::DoubleClick { .. } = event {
+                    // Sia il singolo click sinistro (gesto più naturale/
+                    // atteso su Windows) sia il doppio click aprono la
+                    // finestra — prima gestivamo solo il doppio click,
+                    // lasciando il click singolo senza effetto.
+                    // `button_state == Up` sul singolo click evita di
+                    // scattare due volte (down+up) per lo stesso click.
+                    let apri = matches!(
+                        event,
+                        TrayIconEvent::DoubleClick { button: tauri::tray::MouseButton::Left, .. }
+                    ) || matches!(
+                        event,
+                        TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        }
+                    );
+                    if apri {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();

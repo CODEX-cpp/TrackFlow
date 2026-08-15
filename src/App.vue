@@ -136,14 +136,16 @@ export default {
     // processo, stesso mounted() già passato), quindi senza questo un
     // controllo fatto una volta sola al lancio non scattava mai più per
     // tutta la durata di una sessione, anche lasciando l'app aperta per
-    // giorni in tray. Un minimo di 15 minuti tra un controllo e l'altro
-    // evita di interrogare GitHub ad ogni singolo click sulla finestra;
-    // niente ricontrollo se un download/installazione è già in corso
-    // (status non-idle) — non avrebbe senso ripartire da capo.
+    // giorni in tray. Un minimo di 60 secondi tra un controllo e l'altro
+    // evita solo di interrogare GitHub più volte per un singolo rapido
+    // andirivieni dalla finestra (es. doppio click accidentale), non di
+    // ricontrollare quando l'utente torna sull'app dopo un po'; niente
+    // ricontrollo se un download/installazione è già in corso (status
+    // non-idle) — non avrebbe senso ripartire da capo.
     const settingsStore = useSettingsStore();
     const updaterStore = useUpdaterStore();
     let ultimoControllo = 0;
-    const MIN_INTERVALLO_MS = 15 * 60 * 1000;
+    const MIN_INTERVALLO_MS = 60 * 1000;
     const controllaSeOpportuno = () => {
       if (updaterStore.status !== 'idle') return;
       const adesso = Date.now();

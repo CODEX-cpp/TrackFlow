@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "TrackFlow",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "identifier": "it.trackflow.desktop",
   "build": {
     "frontendDist": "../dist",
