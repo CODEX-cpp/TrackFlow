@@ -382,4 +382,16 @@ export default {
   margin-bottom: 18px;
   max-width: 640px;
 }
+
+// Bug reale segnalato dall'utente: il titolo di sezione ha solo 4px di
+// margine (pensato per stare vicino al testo di aiuto subito sotto, che
+// poi fornisce il vero distacco con i suoi 18px) — un gruppo senza
+// `group.help` (es. "Informazioni") salta quel paragrafo del tutto,
+// lasciando il riquadro attaccato al titolo. Il selettore `+` scatta
+// SOLO quando .settings-card segue il titolo direttamente (nessun
+// paragrafo di aiuto in mezzo), quindi non tocca i gruppi che ce l'hanno
+// già — stesso distacco già usato tra card multiple nello stesso gruppo.
+.settings-section-title + .settings-card {
+  margin-top: 14px;
+}
 </style>

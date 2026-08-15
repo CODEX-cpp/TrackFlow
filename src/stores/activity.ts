@@ -361,6 +361,17 @@ export const useActivityStore = defineStore('activity', {
       this.query_editor_completed({});
       this.query_excel_completed({});
       this.query_voispeed_completed({});
+      // Bug reale: senza questo, `this.loaded` restava true (nessuno dei
+      // query_*_completed sopra lo tocca) — tornando su una pagina che
+      // richiama ensure_loaded() con lo stesso host/giorno,
+      // sameQueryContext() risultava vero e il ricaricamento veniva
+      // saltato del tutto, lasciando i moduli con gli array appena
+      // svuotati qui sopra invece dei dati reali (es. Home →
+      // Progetti → Home: "Applicazioni principali"/"Titoli finestra
+      // principali" mostravano "Nessun dato" anche con dati reali
+      // disponibili). `reset()` deve invalidare anche il flag, non solo
+      // i dati.
+      this.loaded = false;
     },
 
     async query_desktop_full({
