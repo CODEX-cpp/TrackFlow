@@ -55,6 +55,15 @@ jobs:
             aw-watcher-vpn-rust -> target
             aw-watcher-vscode-rust -> target
             aw-watcher-window-rust -> target
+          # Bug reale trovato testando v0.1.11: il nome del job entra
+          # di default nella chiave di cache (add-job-id-key) — questo
+          # job si chiama "warmup", quello di release.yml
+          # "build-and-release", quindi le chiavi non combaciavano MAI
+          # anche con la cache salvata correttamente sul branch
+          # principale. Disattivato qui E in release.yml (deve
+          # combaciare in entrambi) perché l'intento è proprio
+          # condividerla tra i due job.
+          add-job-id-key: false
 
       - name: Compila i watcher
         shell: pwsh

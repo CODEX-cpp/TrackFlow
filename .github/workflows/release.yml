@@ -73,6 +73,16 @@ jobs:
             aw-watcher-window-rust -> target
             src-tauri -> target
             launcher -> target
+          # Bug reale trovato testando v0.1.11: di default il NOME del
+          # job entra nella chiave di cache (add-job-id-key, true di
+          # default) — il job qui si chiama "build-and-release", quello
+          # di cache-warmup.yml "warmup", quindi le due chiavi
+          # differivano già a monte e la cache dell'uno non veniva mai
+          # trovata dall'altro, indipendentemente dal fallback tra
+          # branch. Disattivato qui E nell'altro workflow (deve
+          # combaciare in entrambi) perché l'intento è proprio
+          # condividerla tra i due job.
+          add-job-id-key: false
 
       - name: Installa NSIS
         run: choco install nsis -y
