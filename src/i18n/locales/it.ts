@@ -14,6 +14,12 @@ export default {
     themeDark: 'scuro',
     themeLight: 'chiaro',
   },
+  updatePopup: {
+    downloading: 'Download aggiornamento in corso',
+    restartToUpdate: 'Riavvia per aggiornare',
+    available: 'Update disponibile, clicca per aggiornare',
+    versionPrefix: 'Vers.',
+  },
   topbar: {
     zoomDay: 'Giorno',
     filters: 'Filtri',
@@ -93,6 +99,11 @@ export default {
       integrationsHelp: 'Servizi esterni collegati a TrackFlow.',
       notifications: 'Notifiche',
       notificationsHelp: 'Avvisi personalizzati basati su categorie, app, progetti o eventi.',
+    },
+    updates: {
+      autoUpdate: 'Aggiornamenti automatici',
+      autoUpdateHelp:
+        'Scarica gli aggiornamenti in background e mostra "Riavvia per aggiornare" quando sono pronti. Se disattivato, TrackFlow segnala solo che un aggiornamento è disponibile e lo scarica solo quando lo clicchi.',
     },
     aiAgent: {
       title: 'Claude',

@@ -14,6 +14,12 @@ export default {
     themeDark: 'dark',
     themeLight: 'light',
   },
+  updatePopup: {
+    downloading: 'Downloading update',
+    restartToUpdate: 'Restart to update',
+    available: 'Update available, click to update',
+    versionPrefix: 'Ver.',
+  },
   topbar: {
     zoomDay: 'Day',
     filters: 'Filters',
@@ -92,6 +98,11 @@ export default {
       integrationsHelp: 'External services connected to TrackFlow.',
       notifications: 'Notifications',
       notificationsHelp: 'Custom alerts based on categories, apps, projects, or events.',
+    },
+    updates: {
+      autoUpdate: 'Automatic updates',
+      autoUpdateHelp:
+        'Downloads updates in the background and shows "Restart to update" once ready. When off, TrackFlow only flags that an update is available and downloads it once you click.',
     },
     aiAgent: {
       title: 'Claude',

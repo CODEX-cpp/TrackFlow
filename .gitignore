@@ -52,6 +52,11 @@ target/
 # Variabili d'ambiente locali
 .env
 
+# Installer NSIS compilati — build artifact locali (~10MB l'uno),
+# pubblicati come release asset su GitHub invece che tenuti nel
+# repository (2026-08-15). Lo script sorgente (.nsi) resta tracciato.
+installer/*.exe
+
 # Diario di sviluppo interno — conversazioni reali che nel tempo hanno
 # finito per contenere dati di clienti veri (nomi, IP), vedi la
 # scansione fatta prima della prima pubblicazione pubblica (2026-08-15).

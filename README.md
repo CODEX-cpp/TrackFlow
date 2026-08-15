@@ -1,71 +1,80 @@
 # TrackFlow
 
-Un'app desktop per Windows che traccia automaticamente come passi il tempo al lavoro — app usate, finestre attive, sessioni VPN, chiamate VoiSpeed, sessioni Claude Code, screenshot periodici — e le organizza in una Timeline giornaliera, moduli riassuntivi in Home, e progetti con cronometro dedicato.
+A Windows desktop app that automatically tracks how you spend your time at work — apps used, active windows, VPN sessions, VoiSpeed calls, Claude Code sessions, periodic screenshots — and organizes it all into a daily timeline, summary modules on the home screen, and projects with a dedicated stopwatch.
 
-È un fork di [ActivityWatch](https://activitywatch.net/), riscritto quasi per intero: il backend Python originale (server, watcher, `aw-notify`) è stato sostituito con un unico processo Rust incorporato in [Tauri](https://tauri.app/) — nessun server esterno, nessuna porta di rete aperta, tutto gira in-process nella stessa app — e la webui è stata pesantemente ridisegnata sopra la base Vue 2 originale.
+It's a fork of [ActivityWatch](https://activitywatch.net/), rewritten almost entirely: the original Python backend (server, watchers, `aw-notify`) has been replaced with a single Rust process embedded in [Tauri](https://tauri.app/) — no external server, no open network port, everything runs in-process inside the app — and the web UI has been heavily redesigned on top of the original Vue 2 base.
 
-**TrackFlow non è affiliato al progetto ActivityWatch principale.** Segue i requisiti ufficiali per i fork ([docs.activitywatch.net/en/latest/forking.html](https://docs.activitywatch.net/en/latest/forking.html)): nome e logo propri, nessuna associazione con il progetto originale, stessa licenza (MPL-2.0), codice sorgente pubblico.
+**TrackFlow is not affiliated with the main ActivityWatch project.** It follows the official forking requirements ([docs.activitywatch.net/en/latest/forking.html](https://docs.activitywatch.net/en/latest/forking.html)): its own name and logo, no association with the original project, same license (MPL-2.0), public source code.
 
-## Funzionalità principali
+## Key features
 
-- **Timeline giornaliera** con corsie per app, VPN, Claude Code, VS Code, Excel, VoiSpeed, browser
-- **Moduli Home** riordinabili — Top App, Top Titoli Finestra, Uso Claude, e altro
-- **Categorizzazione app→categoria**, assegnabile a mano o in automatico da un agente AI (Claude)
-- **Progetti** con cronometro avvia/pausa, budget ore, scadenze e avvisi di sforamento
-- **Notifiche personalizzate** — regole configurabili per categoria/app/progetto/inattività/VPN, consegnate come notifiche native di Windows
-- **Watcher dedicati**: finestra attiva, inattività (AFK), sessioni VPN (OpenVPN Connect + ZyWALL SecuExtender), VoiSpeed, Claude Code, VS Code, Excel, screenshot periodici, icone app
-- **Filtri privacy** configurabili — scartano o oscurano dati sensibili prima ancora che vengano salvati su disco
-- **Chat con un agente AI** (Claude) che risponde a domande sui propri dati di attività
+- **Daily timeline** with lanes for apps, VPN, Claude Code, VS Code, Excel, VoiSpeed, browser
+- **Reorderable home modules** — top apps, top window titles, Claude usage, and more
+- **App→category tagging**, assignable by hand or automatically by an AI agent (Claude)
+- **Projects** with start/pause stopwatch, hour budgets, deadlines and overrun alerts
+- **Custom notifications** — configurable rules by category/app/project/idle time/VPN, delivered as native Windows notifications
+- **Dedicated watchers**: active window, idle (AFK), VPN sessions (OpenVPN Connect + ZyWALL SecuExtender), VoiSpeed, Claude Code, VS Code, Excel, periodic screenshots, app icons
+- **Configurable privacy filters** — drop or redact sensitive data before it's ever written to disk
+- **Chat with an AI agent** (Claude) that answers questions about your own activity data
+- **Self-updating** — checks for new releases on startup, downloads and verifies them (digital signature) in the background, and prompts to restart when ready; can be switched to a manual "click to update" mode from Settings
 
-## Stack tecnico
+## Tech stack
 
 - **Frontend**: Vue 2 + TypeScript + Pinia + Vite
-- **Backend/shell**: Rust + [Tauri 2](https://tauri.app/) — un unico processo, server ActivityWatch (`aw-server-rust`, vendored con patch locali) incorporato in-process, nessuna rete
-- **Watcher**: ognuno un piccolo binario Rust indipendente, lanciato come sidecar da Tauri e comunicante via stdout/JSON
-- **Solo Windows** per ora (i watcher usano API Win32 dirette per gran parte delle funzionalità)
+- **Backend/shell**: Rust + [Tauri 2](https://tauri.app/) — a single process, with the ActivityWatch server (`aw-server-rust`, vendored with local patches) embedded in-process, no networking
+- **Watchers**: each a small, independent Rust binary, launched as a Tauri sidecar and communicating over stdout/JSON
+- **Windows only** for now (watchers rely directly on Win32 APIs for most of their functionality)
 
-## Compilazione
+## Building from source
 
-### Prerequisiti
+### Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ e npm
-- [Rust](https://rustup.rs/) (toolchain stabile) + target MSVC su Windows
-- [Tauri CLI](https://v2.tauri.app/start/prerequisites/) (installata automaticamente come dipendenza npm, vedi `package.json`)
+- [Node.js](https://nodejs.org/) 18+ and npm
+- [Rust](https://rustup.rs/) (stable toolchain) + the MSVC target on Windows
+- [Tauri CLI](https://v2.tauri.app/start/prerequisites/) (installed automatically as an npm dependency, see `package.json`)
 
-### Sviluppo
+### Development
 
 ```bash
 npm install
 npx tauri dev
 ```
 
-Avvia il frontend (Vite, hot reload) e l'app Tauri insieme, puntata al server di sviluppo.
+Starts the frontend (Vite, hot reload) and the Tauri app together, pointed at the dev server.
 
-### Build di produzione
-
-```bash
-npm run build      # compila il frontend in dist/
-npx tauri build     # compila l'intera app + genera gli installer (MSI e NSIS) in src-tauri/target/release/bundle/
-```
-
-L'installer NSIS (`*-setup.exe`) è quello pensato per la distribuzione normale; l'MSI è disponibile come alternativa.
-
-### Altri comandi utili
+### Production build
 
 ```bash
-npm run serve   # solo il frontend, nel browser (senza la shell Tauri/i dati reali)
-npm run lint    # ESLint su src/ e test/
+npm run build            # builds the frontend into dist/
+cargo build --release --manifest-path src-tauri/Cargo.toml   # builds app.exe + the watcher sidecars
 ```
 
-## Struttura del progetto
+Packaging into an installable `.exe` is **not** done with Tauri's own bundler — TrackFlow ships a self-update system (see below) that needs a specific on-disk layout, so it uses a hand-written NSIS script instead:
 
-```
-src/                        webui (Vue 2 + TypeScript + Pinia)
-src-tauri/                  shell Tauri (Rust) — comandi, tray, notifiche, server in-process
-aw-server-rust-src/         server ActivityWatch vendored, con patch locali (vedi commenti nel codice)
-aw-watcher-*-rust/          watcher indipendenti (VPN, AFK, finestra, VoiSpeed-adiacenti, screenshot, ecc.)
+```bash
+makensis /DVERSION=<version> installer/trackflow-installer.nsi
 ```
 
-## Licenza
+This produces `trackflow-setup-<version>.exe`, which installs `app.exe` and the watchers into a versioned folder (`versions/<version>/`) alongside a small stable `launcher.exe` — the piece every shortcut actually points to, so an update can be downloaded into its own new folder without ever touching a running instance.
 
-[Mozilla Public License 2.0](LICENSE.txt) — stessa licenza del progetto originale [ActivityWatch](https://github.com/ActivityWatch/activitywatch).
+### Other useful commands
+
+```bash
+npm run serve   # frontend only, in the browser (no Tauri shell/real data)
+npm run lint    # ESLint over src/ and test/
+```
+
+## Project structure
+
+```
+src/                        web UI (Vue 2 + TypeScript + Pinia)
+src-tauri/                  Tauri shell (Rust) — commands, tray, notifications, in-process server, updater
+launcher/                   tiny stable entry point (see "Production build" above)
+installer/                  hand-written NSIS installer script
+aw-server-rust-src/         vendored ActivityWatch server, with local patches (see comments in the code)
+aw-watcher-*-rust/          independent watchers (VPN, AFK, window, VoiSpeed, screenshots, etc.)
+```
+
+## License
+
+[Mozilla Public License 2.0](LICENSE.txt) — same license as the original [ActivityWatch](https://github.com/ActivityWatch/activitywatch) project.

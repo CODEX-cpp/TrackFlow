@@ -93,6 +93,15 @@ interface State {
   // Default true, stessa ragione.
   hideEmptyTimelineLanes: boolean;
 
+  // Se un aggiornamento trovato va scaricato subito in background
+  // (popup "Download in corso" → "Riavvia per aggiornare") oppure solo
+  // segnalato ("Update disponibile, clicca per aggiornare") lasciando
+  // all'utente la scelta di quando scaricarlo — vedi UpdatePopup.vue,
+  // stores/updater.ts. Richiesta esplicita: l'aggiornamento silenzioso
+  // è "un po' borderline" per un progetto open source, quindi resta
+  // disattivabile. Default true (comportamento stile Claude Desktop).
+  autoUpdateEnabled: boolean;
+
   // Set to true if settings loaded
   _loaded: boolean;
 }
@@ -131,6 +140,7 @@ export const useSettingsStore = defineStore('settings', {
     hideUnsupportedVisualizations: false,
     hideEmptyModules: true,
     hideEmptyTimelineLanes: true,
+    autoUpdateEnabled: true,
 
     _loaded: false,
   }),

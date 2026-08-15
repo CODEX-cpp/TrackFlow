@@ -41,6 +41,8 @@ nav.aw-sidebar
             ) {{ group.label }}
 
   div.sidebar-bottom
+    update-popup
+    div.sidebar-divider
     div.theme-switch(@click="toggleTheme")
       span.theme-label {{ $t('sidebar.themePrefix') }} {{ themeLabel }}
       div.switch-track(:class="{ 'switch-track-on': isDark }")
@@ -217,8 +219,12 @@ nav.aw-sidebar
 }
 
 .sidebar-bottom {
-  border-top: 1px solid var(--color-border);
   padding-top: 12px;
+}
+
+.sidebar-divider {
+  border-top: 1px solid var(--color-border);
+  margin-bottom: 12px;
 }
 
 .theme-switch {
@@ -280,6 +286,9 @@ import logoUrl from '~/assets/logo.png';
 
 export default {
   name: 'Sidebar',
+  components: {
+    'update-popup': () => import('~/components/UpdatePopup.vue'),
+  },
   data() {
     return {
       settingsStore: useSettingsStore(),

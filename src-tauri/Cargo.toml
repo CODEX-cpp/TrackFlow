@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -37,6 +37,15 @@ aw-models = { path = "../aw-server-rust-src/aw-models" }
 gethostname = "0.4"
 
 base64 = "0.22"
+
+# Auto-aggiornamento (updater.rs) — semver per confrontare le versioni,
+# minisign-verify per controllare la firma del pacchetto scaricato prima
+# di installarlo (stessa chiave generata con `tauri signer generate`, la
+# privata resta SOLO su ~/.trackflow-updater.key, mai nel repository),
+# zip per estrarlo dentro versions/<versione>/.
+semver = "1"
+minisign-verify = "0.2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_System_JobObjects", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading"] }

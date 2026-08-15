@@ -475,7 +475,6 @@ export default {
 .dev-expanded {
   margin-top: 16px;
   padding: 18px 20px;
-  border: 1px solid var(--color-accent1);
   border-radius: var(--radius-lg);
   background-color: var(--color-surface2);
 }

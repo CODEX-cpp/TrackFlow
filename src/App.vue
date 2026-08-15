@@ -37,6 +37,7 @@ div#wrapper(v-if="loaded")
 import { useSettingsStore } from '~/stores/settings';
 import { useServerStore } from '~/stores/server';
 import { useFirstRunStore } from '~/stores/firstRun';
+import { useUpdaterStore } from '~/stores/updater';
 import { detectPreferredTheme } from '~/util/theme';
 import { valutaRegoleNotifica } from '~/util/notifyRulesEngine';
 import { invoke } from '@tauri-apps/api/core';
@@ -127,6 +128,13 @@ export default {
     // cambiano lentamente (minuti di utilizzo, non secondi).
     valutaRegoleNotifica();
     setInterval(() => valutaRegoleNotifica(), 60000);
+
+    // Un solo controllo aggiornamenti per avvio (non un interval) —
+    // richiesta esplicita dell'utente. settingsStore è già caricato a
+    // questo punto (beforeCreate ha fatto ensureLoaded()), quindi
+    // autoUpdateEnabled riflette già il valore salvato.
+    const settingsStore = useSettingsStore();
+    useUpdaterStore().controllaAggiornamenti(settingsStore.autoUpdateEnabled);
   },
 };
 </script>

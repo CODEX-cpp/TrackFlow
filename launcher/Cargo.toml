@@ -1,0 +1,25 @@
+[package]
+name = "trackflow-launcher"
+version = "0.1.0"
+edition = "2021"
+description = "Punto d'ingresso stabile di TrackFlow — legge current.txt e avvia la versione installata corrente. Non cambia quasi mai, così un aggiornamento non deve mai toccarlo (vedi src-tauri/BLUEPRINT.md, sistema di auto-aggiornamento in stile Squirrel)."
+
+[[bin]]
+name = "launcher"
+path = "src/main.rs"
+
+# tauri-winres solo come build-dependency (per incorporare l'icona
+# nell'eseguibile — vedi build.rs): non finisce nel binario finale, quindi
+# non intacca l'obiettivo di restare senza dipendenze runtime.
+[build-dependencies]
+tauri-winres = "0.3"
+
+# Nessuna dipendenza a parte std apposta: deve compilare in un attimo,
+# avviarsi istantaneamente (nessun runtime da inizializzare) e non avere
+# quasi nulla che possa rompersi — è l'UNICA cosa a cui punta il
+# collegamento nel Menu Start/Desktop, deve restare la più semplice e
+# affidabile possibile di tutto il progetto.
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

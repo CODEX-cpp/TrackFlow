@@ -30,6 +30,7 @@ import VoiSpeedSettings from '~/views/settings/VoiSpeedSettings.vue';
 import AiAgentSettings from '~/views/settings/AiAgentSettings.vue';
 import VpnMappingSettings from '~/views/settings/VpnMappingSettings.vue';
 import NotificationRulesSettings from '~/views/settings/NotificationRulesSettings.vue';
+import AutoUpdateSettings from '~/views/settings/AutoUpdateSettings.vue';
 
 interface Group {
   id: string;
@@ -55,6 +56,7 @@ export default {
     AiAgentSettings,
     VpnMappingSettings,
     NotificationRulesSettings,
+    AutoUpdateSettings,
   },
   props: {
     group: { type: String, default: '' },
@@ -106,6 +108,7 @@ export default {
         components: [
           { name: 'LanguageSettings' },
           { name: 'DaystartSettings' },
+          { name: 'AutoUpdateSettings' },
         ],
       };
       // Impostazioni della Home aggiunte durante il lavoro sulla
