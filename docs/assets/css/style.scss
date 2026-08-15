@@ -3,9 +3,12 @@
 
 @import "{{ site.theme }}";
 
-// Nasconde il pulsante "View On GitHub" in cima alla pagina — il tema
-// jekyll-theme-midnight lo mostra sempre nell'header, il link al
-// repository c'è già nell'elenco puntato più sotto nella pagina.
-#header nav {
+// Nasconde l'intera barra fissa in cima alla pagina (col pulsante
+// "View On GitHub") — il tema jekyll-theme-midnight la mostra sempre,
+// il link al repository c'è già nell'elenco puntato più sotto nella
+// pagina. È in position:fixed (fuori dal flusso normale), quindi
+// nasconderla non lascia nessun vuoto da compensare nel resto della
+// pagina.
+#header {
   display: none;
 }
