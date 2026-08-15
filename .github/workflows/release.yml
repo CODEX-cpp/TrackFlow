@@ -50,6 +50,30 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Ogni runner GitHub parte da una macchina vuota — senza questo,
+      # OGNI push di un tag ricompila tutti gli 11 crate (9 watcher +
+      # app.exe + launcher.exe) completamente da zero, anche se cambia
+      # una sola riga in uno solo di essi (~15-20 minuti). Con la cache,
+      # solo i crate il cui codice/dipendenze sono davvero cambiati
+      # vengono ricompilati — gli altri riusano il target/ della run
+      # precedente. Un percorso per crate (nessun workspace Cargo unico
+      # li collega): se si aggiunge/rinomina un watcher, va aggiornato
+      # anche qui oltre che in WATCHERS più sopra.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            aw-watcher-afk-rust -> target
+            aw-watcher-app-icons-rust -> target
+            aw-watcher-claude-code-rust -> target
+            aw-watcher-excel-rust -> target
+            aw-watcher-screenshot-rust -> target
+            aw-watcher-tray-rust -> target
+            aw-watcher-vpn-rust -> target
+            aw-watcher-vscode-rust -> target
+            aw-watcher-window-rust -> target
+            src-tauri -> target
+            launcher -> target
+
       - name: Installa NSIS
         run: choco install nsis -y
 
