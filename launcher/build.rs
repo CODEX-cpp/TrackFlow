@@ -10,7 +10,13 @@ fn main() {
         // passo gratuito e corretto in quella direzione.
         res.set("CompanyName", "TrackFlow");
         res.set("ProductName", "TrackFlow");
-        res.set("FileDescription", "TrackFlow launcher");
+        // "TrackFlow" e basta, non "TrackFlow launcher" — Gestione
+        // attività (scheda "Avvio") mostra il nome dell'app in Avvio
+        // automatico leggendo proprio questo campo, non il nome del
+        // file né il nome della voce di registro (che è già "TrackFlow",
+        // vedi autostart.rs) — con "TrackFlow launcher" compariva lì
+        // scritto per intero, segnalato dall'utente come poco pulito.
+        res.set("FileDescription", "TrackFlow");
         res.set("LegalCopyright", "Copyright © 2026 CODEX-cpp");
         res.set("OriginalFilename", "launcher.exe");
         res.set("InternalName", "launcher");
