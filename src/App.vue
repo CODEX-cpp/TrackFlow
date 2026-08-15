@@ -42,7 +42,6 @@ import { detectPreferredTheme } from '~/util/theme';
 import { valutaRegoleNotifica } from '~/util/notifyRulesEngine';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export default {
   components: {
@@ -154,9 +153,14 @@ export default {
     };
     controllaSeOpportuno();
     try {
-      await getCurrentWindow().onFocusChanged(({ payload: haFocus }) => {
-        if (haFocus) controllaSeOpportuno();
-      });
+      // Emesso da lib.rs (tray, doppio click, seconda istanza rilanciata)
+      // ogni volta che la finestra torna in primo piano da nascosta —
+      // preferito a onFocusChanged: nascondere la finestra con hide()
+      // non genera sempre un vero evento di perdita del focus lato
+      // Tauri, quindi mostrarla di nuovo non generava sempre un evento
+      // di "cambio" (bug reale segnalato dall'utente: lasciando l'app in
+      // tray, il controllo aggiornamenti non ripartiva mai).
+      await listen('trackflow://finestra-mostrata', () => controllaSeOpportuno());
     } catch (e) {
       // Fuori da Tauri (dev server puro nel browser) — stesso pattern
       // già usato altrove (vedi CategorizationSettings.vue).

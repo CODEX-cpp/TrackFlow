@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, Submenu};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{http, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{http, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex as AsyncMutex;
@@ -736,6 +736,22 @@ fn spawn_stdout_drain(
 /// condiviso (sostituendo quello che c'era, se ce n'era già uno morto) —
 /// usato sia all'avvio dell'app (se il modulo è acceso in config) sia da
 /// un click sul menu Moduli che lo riaccende.
+/// Emesso ogni volta che la finestra torna in primo piano da nascosta
+/// (tray, doppio click, o una seconda istanza rilanciata — vedi i tre
+/// punti di chiamata). Il frontend (App.vue) lo ascolta per ricontrollare
+/// gli aggiornamenti — l'evento nativo `onFocusChanged` di Tauri si è
+/// rivelato inaffidabile per questo caso specifico (nascondere una
+/// finestra con `hide()` non genera sempre un vero evento di perdita
+/// del focus lato Tauri, quindi mostrarla di nuovo non genera sempre un
+/// evento di "cambio" — bug reale segnalato dall'utente: lasciando
+/// l'app in tray per un po' e poi riportandola in primo piano, il
+/// controllo aggiornamenti non ripartiva mai). Un evento esplicito,
+/// emesso esattamente nei punti in cui NOI decidiamo di mostrare la
+/// finestra, non dipende da quella semantica ambigua.
+fn emit_finestra_mostrata(window: &tauri::WebviewWindow) {
+    let _ = window.emit("trackflow://finestra-mostrata", ());
+}
+
 fn spawn_app_icons(app_handle: &AppHandle, app_data_dir: &Path, icons_stdin: &IconsHandle) {
     match app_handle.shell().sidecar("aw-watcher-app-icons") {
         Ok(cmd) => match cmd.args(["--app-data-dir", &app_data_dir.to_string_lossy()]).spawn() {
@@ -743,12 +759,73 @@ fn spawn_app_icons(app_handle: &AppHandle, app_data_dir: &Path, icons_stdin: &Ic
                 if let Ok(mut guard) = icons_stdin.lock() {
                     *guard = Some(child);
                 }
+                // Scansione proattiva delle app GIÀ aperte in questo
+                // momento — senza questa, il watcher (puramente reattivo:
+                // estrae un'icona solo quando un'app diventa la finestra
+                // ATTIVA, vedi aw-watcher-app-icons-rust/src/main.rs)
+                // lascia icone generiche per ogni app già in Home da dati
+                // storici finché l'utente non la riapre e ci clicca
+                // sopra almeno una volta. Segnalato dall'utente su
+                // un'installazione pulita. Copre solo le app già in
+                // esecuzione ORA, non quelle usate in passato e non più
+                // aperte — per quelle resta il comportamento reattivo di
+                // sempre.
+                invia_processi_in_esecuzione_a_icone(icons_stdin);
             }
             Err(e) => log::error!("Impossibile avviare aw-watcher-app-icons: {e}"),
         },
         Err(e) => log::error!("Sidecar aw-watcher-app-icons non trovato nel bundle: {e}"),
     }
 }
+
+/// Elenca i processi attualmente in esecuzione (ToolHelp32 snapshot,
+/// stessa API usata da Task Manager) e li spinge sulla pipe stdin di
+/// aw-watcher-app-icons esattamente come farebbe il watcher finestra per
+/// l'app attiva — riusa tutta la logica di filtro/estrazione già esistente
+/// lì (app di sistema nascoste, icone già note saltate, ecc.) senza
+/// doverla duplicare qui.
+#[cfg(windows)]
+fn invia_processi_in_esecuzione_a_icone(icons_stdin: &IconsHandle) {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+
+    let mut nomi: HashSet<String> = HashSet::new();
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            log::warn!("Impossibile enumerare i processi in esecuzione per la scansione icone iniziale");
+            return;
+        };
+        let mut voce: PROCESSENTRY32W = std::mem::zeroed();
+        voce.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        if Process32FirstW(snapshot, &mut voce).is_ok() {
+            loop {
+                let fine = voce.szExeFile.iter().position(|&c| c == 0).unwrap_or(voce.szExeFile.len());
+                let nome = String::from_utf16_lossy(&voce.szExeFile[..fine]).to_lowercase();
+                if !nome.is_empty() {
+                    nomi.insert(nome);
+                }
+                if Process32NextW(snapshot, &mut voce).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snapshot);
+    }
+
+    if let Ok(mut guard) = icons_stdin.lock() {
+        if let Some(child) = guard.as_mut() {
+            for nome in nomi {
+                let riga = format!("{nome}\n");
+                let _ = child.write(riga.as_bytes());
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn invia_processi_in_esecuzione_a_icone(_icons_stdin: &IconsHandle) {}
 
 /// Avvia uno dei 5 watcher "generici" (non app-icons, vedi
 /// `spawn_app_icons`), lo registra in `SidecarProcesses` e ne collega lo
@@ -879,6 +956,7 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
+                emit_finestra_mostrata(&window);
             }
         }))
         .plugin(tauri_plugin_notification::init())
@@ -1189,6 +1267,7 @@ pub fn run() {
                                 } else {
                                     let _ = window.show();
                                     let _ = window.set_focus();
+                                    emit_finestra_mostrata(&window);
                                 }
                             }
                         }
@@ -1227,6 +1306,7 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                            emit_finestra_mostrata(&window);
                         }
                     }
                 })
