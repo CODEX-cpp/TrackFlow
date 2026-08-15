@@ -42,6 +42,7 @@ import { detectPreferredTheme } from '~/util/theme';
 import { valutaRegoleNotifica } from '~/util/notifyRulesEngine';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export default {
   components: {
@@ -129,12 +130,37 @@ export default {
     valutaRegoleNotifica();
     setInterval(() => valutaRegoleNotifica(), 60000);
 
-    // Un solo controllo aggiornamenti per avvio (non un interval) —
-    // richiesta esplicita dell'utente. settingsStore è già caricato a
-    // questo punto (beforeCreate ha fatto ensureLoaded()), quindi
-    // autoUpdateEnabled riflette già il valore salvato.
+    // Un controllo aggiornamenti all'avvio, poi di nuovo ogni volta che
+    // la finestra torna in primo piano dopo essere stata nascosta (tray,
+    // Alt+Tab) — richiesta esplicita dell'utente: la finestra non viene
+    // mai smontata/ricreata quando si nasconde/mostra (resta lo stesso
+    // processo, stesso mounted() già passato), quindi senza questo un
+    // controllo fatto una volta sola al lancio non scattava mai più per
+    // tutta la durata di una sessione, anche lasciando l'app aperta per
+    // giorni in tray. Un minimo di 15 minuti tra un controllo e l'altro
+    // evita di interrogare GitHub ad ogni singolo click sulla finestra;
+    // niente ricontrollo se un download/installazione è già in corso
+    // (status non-idle) — non avrebbe senso ripartire da capo.
     const settingsStore = useSettingsStore();
-    useUpdaterStore().controllaAggiornamenti(settingsStore.autoUpdateEnabled);
+    const updaterStore = useUpdaterStore();
+    let ultimoControllo = 0;
+    const MIN_INTERVALLO_MS = 15 * 60 * 1000;
+    const controllaSeOpportuno = () => {
+      if (updaterStore.status !== 'idle') return;
+      const adesso = Date.now();
+      if (adesso - ultimoControllo < MIN_INTERVALLO_MS) return;
+      ultimoControllo = adesso;
+      updaterStore.controllaAggiornamenti(settingsStore.autoUpdateEnabled);
+    };
+    controllaSeOpportuno();
+    try {
+      await getCurrentWindow().onFocusChanged(({ payload: haFocus }) => {
+        if (haFocus) controllaSeOpportuno();
+      });
+    } catch (e) {
+      // Fuori da Tauri (dev server puro nel browser) — stesso pattern
+      // già usato altrove (vedi CategorizationSettings.vue).
+    }
   },
 };
 </script>

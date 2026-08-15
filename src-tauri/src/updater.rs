@@ -227,6 +227,26 @@ pub fn installa_aggiornamento_e_riavvia(app_handle: AppHandle, versione: String)
     std::fs::write(installazione.join("current.txt"), &versione).map_err(|e| e.to_string())?;
 
     let percorso_launcher = installazione.join("launcher.exe");
+    #[cfg(windows)]
+    {
+        // CREATE_BREAKAWAY_FROM_JOB — senza, launcher.exe entrerebbe nel
+        // Job Object KILL_ON_JOB_CLOSE di questo stesso processo (vedi
+        // setup_kill_on_exit_job() in lib.rs, pensato per uccidere i
+        // sidecar watcher orfani) e verrebbe ucciso insieme a noi
+        // nell'istante di app_handle.exit() qui sotto — un attimo prima
+        // di riuscire ad avviare la versione nuova. Bug reale: il
+        // riavvio automatico non appariva mai, l'utente doveva riaprire
+        // l'app a mano (funzionava già correttamente una volta riaperta,
+        // current.txt era già aggiornato — solo il rilancio automatico
+        // falliva silenziosamente).
+        use std::os::windows::process::CommandExt;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        std::process::Command::new(&percorso_launcher)
+            .creation_flags(CREATE_BREAKAWAY_FROM_JOB)
+            .spawn()
+            .map_err(|e| format!("avvio del launcher fallito: {e}"))?;
+    }
+    #[cfg(not(windows))]
     std::process::Command::new(&percorso_launcher)
         .spawn()
         .map_err(|e| format!("avvio del launcher fallito: {e}"))?;

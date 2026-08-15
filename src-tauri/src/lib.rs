@@ -49,7 +49,7 @@ fn setup_kill_on_exit_job() {
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
         JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows::Win32::System::Threading::GetCurrentProcess;
 
@@ -60,7 +60,20 @@ fn setup_kill_on_exit_job() {
         };
 
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // BREAKAWAY_OK oltre a KILL_ON_JOB_CLOSE — senza, QUALUNQUE
+        // processo figlio (compresi i sidecar watcher, comportamento
+        // voluto) entra nel job e viene ucciso col padre. Serve
+        // un'eccezione esplicita per launcher.exe quando lo lanciamo per
+        // il riavvio dopo un aggiornamento (vedi updater.rs,
+        // CREATE_BREAKAWAY_FROM_JOB): senza questo flag sul job, quello
+        // spawn fallirebbe, e CON questo flag ma senza chiederlo
+        // esplicitamente al momento dello spawn i sidecar continuerebbero
+        // comunque a restare nel job come prima — bug reale trovato
+        // dall'utente: il riavvio automatico non appariva mai, perché
+        // launcher.exe veniva ucciso insieme al processo che lo aveva
+        // appena lanciato, un istante prima di poter avviare la versione
+        // nuova.
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
 
         let set_ok = SetInformationJobObject(
             job,
