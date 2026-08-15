@@ -13,6 +13,10 @@ static/logo*
 coverage
 coverage-ts
 screenshots
+# Eccezione alla regola "screenshots" sopra (pensata per gli output dei
+# test e2e): quelli usati davvero dal sito docs/ vanno invece committati.
+!docs/assets/img/screenshots/
+!docs/assets/img/screenshots/*
 test/unit/coverage
 test/e2e/reports
 *.map
@@ -66,3 +70,8 @@ BLUEPRINT.md
 # Guida locale per l'AI su come pubblicare una release — riferimento
 # pratico, stesso motivo di BLUEPRINT.md sopra (mai nel repository).
 RELEASE.md
+
+# Screenshot grezzi catturati a mano per il sito docs/ (redesign,
+# BLUEPRINT.md sezione 30) — solo materiale sorgente locale, le copie
+# usate davvero vivono gia' in docs/assets/img/screenshots/.
+/images/

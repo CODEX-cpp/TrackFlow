@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Changelog — TrackFlow</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="assets/img/favicon-32.png">
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="index.html">
+      <img src="assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="index.html#features">Features</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="changelog-page container">
+  <h1>Changelog</h1>
+  <p class="lede">Also available as plain text in <a href="CHANGELOG.md" style="color:var(--color-accent1)">CHANGELOG.md</a> — the same file the app itself reads in Settings → About.</p>
+
+  <!--
+    Contenuto statico, copiato a mano da CHANGELOG.md (fonte di
+    verita': solo le sezioni "### en") -- funziona SEMPRE, anche
+    aperto come file locale (file://), a differenza di un fetch()
+    puro che i browser bloccano in quel contesto. Va aggiornato qui
+    ogni volta che CHANGELOG.md guadagna una nuova versione (vedi
+    RELEASE.md, checklist di pubblicazione). Lo script piu' sotto
+    prova comunque a rinfrescarlo dal vivo quando la pagina gira su
+    un vero server (es. GitHub Pages) -- se il fetch fallisce (file://
+    o rete assente) questo contenuto resta cosi' com'e', nessun
+    errore mostrato.
+  -->
+  <div id="changelog-root">
+    <section class="changelog-entry">
+      <h2>0.1.10</h2>
+      <ul>
+        <li>Fixed a bug where the "Top Applications" and "Top Window Titles" Home modules could show "No data" after navigating back from another page, even with real data available.</li>
+        <li>Fixed a minor visual glitch in Settings → About (section title sitting too close to the box below it).</li>
+      </ul>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Aggiornamento silenzioso, best-effort: se la pagina gira su un vero
+// server (GitHub Pages, o un server locale) prova a rinfrescare il
+// contenuto sopra dal CHANGELOG.md vero. Se fallisce per qualunque
+// motivo (file://, rete assente, ecc.) non fa nulla -- il contenuto
+// statico incorporato sopra resta visibile, mai un errore per
+// l'utente.
+(async function () {
+  try {
+    const res = await fetch('CHANGELOG.md');
+    if (!res.ok) return;
+    const text = await res.text();
+
+    const versionBlocks = text.split(/\n## /).slice(1);
+    if (versionBlocks.length === 0) return;
+
+    const html = versionBlocks.map(block => {
+      const version = block.split('\n', 1)[0].trim();
+      const enMatch = block.match(/### en\s*\n([\s\S]*?)(?:\n### |$)/);
+      if (!enMatch) return '';
+      const bullets = enMatch[1]
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l.startsWith('- '))
+        .map(l => `<li>${l.slice(2)}</li>`)
+        .join('');
+      if (!bullets) return '';
+      return `<section class="changelog-entry"><h2>${version}</h2><ul>${bullets}</ul></section>`;
+    }).join('');
+
+    if (html) document.getElementById('changelog-root').innerHTML = html;
+  } catch (err) {
+    // Silenzioso di proposito -- vedi commento sopra.
+  }
+})();
+</script>
+
+</body>
+</html>
