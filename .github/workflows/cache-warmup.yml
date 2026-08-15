@@ -24,6 +24,9 @@ on:
       - "launcher/**"
       - ".github/workflows/cache-warmup.yml"
       - ".github/workflows/release.yml"
+  # Utile per forzare un riscaldamento a mano (es. dopo aver eliminato
+  # una cache incompleta/rovinata senza dover toccare il codice).
+  workflow_dispatch:
 
 permissions:
   contents: read
