@@ -4,6 +4,8 @@ Un'app desktop per Windows che traccia automaticamente come passi il tempo al la
 
 È un fork di [ActivityWatch](https://activitywatch.net/), riscritto quasi per intero: il backend Python originale (server, watcher, `aw-notify`) è stato sostituito con un unico processo Rust incorporato in [Tauri](https://tauri.app/) — nessun server esterno, nessuna porta di rete aperta, tutto gira in-process nella stessa app — e la webui è stata pesantemente ridisegnata sopra la base Vue 2 originale.
 
+**TrackFlow non è affiliato al progetto ActivityWatch principale.** Segue i requisiti ufficiali per i fork ([docs.activitywatch.net/en/latest/forking.html](https://docs.activitywatch.net/en/latest/forking.html)): nome e logo propri, nessuna associazione con il progetto originale, stessa licenza (MPL-2.0), codice sorgente pubblico.
+
 ## Funzionalità principali
 
 - **Timeline giornaliera** con corsie per app, VPN, Claude Code, VS Code, Excel, VoiSpeed, browser
