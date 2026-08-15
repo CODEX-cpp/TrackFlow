@@ -1,0 +1,64 @@
+name: Cache warmup (watchers)
+
+# Tiene calda la cache Rust dei 9 watcher sul branch principale. Le
+# release vere partono da un tag (v*), e GitHub isola la cache per ref:
+# un tag è sempre un riferimento MAI visto prima, quindi la cache
+# salvata da una release precedente è invisibile alla successiva —
+# verificato dal vivo (release.yml, run di v0.1.10: "No cache found."
+# nonostante v0.1.9 avesse salvato una cache poco prima, vedi
+# BLUEPRINT.md). La cache del branch PRINCIPALE però è raggiungibile
+# da qualsiasi altro ref come riserva — questo workflow gira sui push
+# normali a master e ricompila solo i 9 watcher (quasi mai toccati da
+# una release all'altra, a differenza di app.exe che cambia quasi
+# sempre insieme al resto del codice), così quando si tagga una vera
+# release trova quella cache già pronta. Nessuna firma/pacchetto/
+# pubblicazione qui — solo compilazione, per tenere la cache
+# aggiornata. app.exe/launcher.exe restano fuori da questo warmup
+# (dipendono dai binari dei watcher già copiati in src-tauri/binaries/,
+# passaggio che qui non serve replicare) — restano quindi sempre a
+# freddo anche dopo questo fix, limite noto.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "aw-watcher-*-rust/**"
+      - ".github/workflows/cache-warmup.yml"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: read
+
+env:
+  WATCHERS: afk app-icons claude-code excel screenshot tray vpn vscode window
+
+jobs:
+  warmup:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Stesso identico elenco `workspaces` (solo i 9 watcher, senza
+      # src-tauri/launcher) usato in release.yml — deve combaciare
+      # perché la cache sia davvero condivisa tra i due workflow.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            aw-watcher-afk-rust -> target
+            aw-watcher-app-icons-rust -> target
+            aw-watcher-claude-code-rust -> target
+            aw-watcher-excel-rust -> target
+            aw-watcher-screenshot-rust -> target
+            aw-watcher-tray-rust -> target
+            aw-watcher-vpn-rust -> target
+            aw-watcher-vscode-rust -> target
+            aw-watcher-window-rust -> target
+
+      - name: Compila i watcher
+        shell: pwsh
+        run: |
+          foreach ($w in $env:WATCHERS -split " ") {
+            cargo build --release --manifest-path "aw-watcher-$w-rust/Cargo.toml"
+          }
