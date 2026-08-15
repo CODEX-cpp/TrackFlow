@@ -136,8 +136,27 @@ pub fn ai_agent_get_config(app_handle: AppHandle) -> Option<AiAgentConfig> {
 
 #[tauri::command]
 pub fn ai_agent_save_config(app_handle: AppHandle, provider: String, api_key: String, model: String) {
-    if let Some(dir) = app_handle.try_state::<crate::AppDataDirState>() {
-        save_config(&dir.0, &AiAgentConfig { provider, api_key, model });
+    let Some(dir) = app_handle.try_state::<crate::AppDataDirState>() else { return };
+    let config = AiAgentConfig { provider, api_key, model };
+    save_config(&dir.0, &config);
+
+    // Bug reale segnalato dall'utente: senza forzare una scansione qui,
+    // chi collega la chiave AI dopo aver già usato l'app per un po' resta
+    // con le app già tracciate mai categorizzate, finché non ricapita per
+    // caso di passarci sopra di nuovo (vedi il commento su
+    // `forza_scansione_iniziale` in categorization.rs per i dettagli).
+    if let (Some(server), Some(stato)) = (
+        app_handle.try_state::<Arc<crate::AppServer>>(),
+        app_handle.try_state::<Arc<categorization::CategorizationState>>(),
+    ) {
+        let hostname = gethostname::gethostname().to_string_lossy().to_string();
+        categorization::forza_scansione_iniziale(
+            server.inner().clone(),
+            dir.0.clone(),
+            stato.inner().clone(),
+            hostname,
+            config,
+        );
     }
 }
 
@@ -967,8 +986,8 @@ async fn esegui_interroga_fascia_oraria_periodo(
 /// sottostringa letterale non può mai collegare "r6" a "rainbowsix.exe"
 /// (nessuna sottostringa in comune), da cui il bug reale osservato in
 /// chat con `cerca_app` prima di questa riscrittura.
-fn esegui_lista_app(app_data_dir: &Path) -> Value {
-    let tutte = categorization::tutte_le_app_conosciute(app_data_dir);
+async fn esegui_lista_app(server: &crate::AppServer, app_data_dir: &Path, hostname: &str) -> Value {
+    let tutte = categorization::carica_app_conosciute(server, app_data_dir, hostname).await;
     let nomi = categorization::carica_nomi_leggibili(app_data_dir);
     let etichetta = |app: &String| match nomi.get(app) {
         Some(leggibile) if leggibile != app => format!("{app} ({leggibile})"),
@@ -1243,9 +1262,9 @@ fn app_non_categorizzate(categorie: &[AppCategory], tutte: &[String]) -> Vec<Str
         .collect()
 }
 
-async fn esegui_elenca_categorie(server: &crate::AppServer, app_data_dir: &Path) -> Value {
+async fn esegui_elenca_categorie(server: &crate::AppServer, app_data_dir: &Path, hostname: &str) -> Value {
     let categorie = categorization::carica_categorie(server).await;
-    let tutte = categorization::tutte_le_app_conosciute(app_data_dir);
+    let tutte = categorization::carica_app_conosciute(server, app_data_dir, hostname).await;
     let nomi = categorization::carica_nomi_leggibili(app_data_dir);
     let etichetta = |app: &String| match nomi.get(app) {
         Some(leggibile) if leggibile != app => format!("{app} ({leggibile})"),
@@ -1309,6 +1328,7 @@ async fn esegui_elimina_categoria(server: &crate::AppServer, nome: &str) -> Valu
 async fn esegui_assegna_categoria_app(
     server: &crate::AppServer,
     app_data_dir: &Path,
+    hostname: &str,
     app_grezzo: &str,
     categoria_grezza: Option<&str>,
 ) -> Value {
@@ -1316,7 +1336,7 @@ async fn esegui_assegna_categoria_app(
     if app_grezzo.is_empty() {
         return json!({ "errore": "app mancante o vuota" });
     }
-    let tutte = categorization::tutte_le_app_conosciute(app_data_dir);
+    let tutte = categorization::carica_app_conosciute(server, app_data_dir, hostname).await;
     let Some(app) = tutte.iter().find(|a| a.eq_ignore_ascii_case(app_grezzo)) else {
         return json!({
             "errore": format!("'{app_grezzo}' non è un'app conosciuta — usa elenca_categorie per vedere gli identificativi validi.")
@@ -1431,7 +1451,7 @@ async fn esegui_strumento(
             let soglia_ore = input["soglia_ore"].as_f64();
             esegui_copertura_giorni(server, hostname, data_inizio, data_fine, soglia_ore).await
         }
-        "lista_app" => return esegui_lista_app(app_data_dir),
+        "lista_app" => return esegui_lista_app(server, app_data_dir, hostname).await,
         "interroga_app_specifica" => {
             let app = input["app"].as_str().unwrap_or("");
             let data_inizio = input["data_inizio"].as_str().unwrap_or("");
@@ -1441,7 +1461,7 @@ async fn esegui_strumento(
         // Tool di scrittura sulle categorie — vedi il commento sopra
         // definisci_strumenti() sul perché questi non hanno lo stesso
         // vincolo "sola lettura" degli altri.
-        "elenca_categorie" => return esegui_elenca_categorie(server, app_data_dir).await,
+        "elenca_categorie" => return esegui_elenca_categorie(server, app_data_dir, hostname).await,
         "crea_categoria" => {
             let nome = input["nome"].as_str().unwrap_or("");
             return esegui_crea_categoria(server, nome).await;
@@ -1453,7 +1473,7 @@ async fn esegui_strumento(
         "assegna_categoria_app" => {
             let app = input["app"].as_str().unwrap_or("");
             let categoria = input["categoria"].as_str();
-            return esegui_assegna_categoria_app(server, app_data_dir, app, categoria).await;
+            return esegui_assegna_categoria_app(server, app_data_dir, hostname, app, categoria).await;
         }
         altro => Err(format!("strumento sconosciuto: {altro}")),
     };

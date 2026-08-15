@@ -94,7 +94,13 @@ import {
   TYPES_WITH_EVENT_OR_MINUTES,
   defaultRule,
 } from '~/util/notifyRules';
-import { knownAppKeys, displayNameForApp, refreshDynamicAppData } from '~/util/appNames';
+import { invoke } from '@tauri-apps/api/core';
+import { displayNameForApp, refreshDynamicAppData } from '~/util/appNames';
+
+interface AppConosciuta {
+  app: string;
+  nome_leggibile: string | null;
+}
 
 export default {
   name: 'NotificationRulesSettings',
@@ -105,7 +111,7 @@ export default {
       projectsStore: useProjectsStore(),
       draft: defaultRule() as NotifyRule,
       error: '',
-      appKeys: knownAppKeys(),
+      appKeys: [] as string[],
     };
   },
   async mounted(this: any) {
@@ -113,10 +119,27 @@ export default {
     // se si arriva direttamente su Impostazioni senza prima passare da
     // Home/Progetti in questa sessione — projectsStore.load() è
     // idempotente (vedi projectTimerMixin.ts), refreshDynamicAppData()
-    // aggiorna l'elenco app con quanto scoperto dal watcher da quando è
-    // stata compilata questa build in poi.
+    // aggiorna nomi/colori (solo presentazione, vedi appDisplayName) con
+    // quanto scoperto dal watcher da quando è stata compilata questa
+    // build in poi.
     await Promise.all([this.projectsStore.load(), refreshDynamicAppData()]);
-    this.appKeys = knownAppKeys();
+    // Elenco app selezionabili: le app DAVVERO apparse in Timeline
+    // (stesso comando Tauri usato da CategorizationSettings.vue) — non
+    // più knownAppKeys() (icone/nomi scoperti dal watcher icone, fonte
+    // sbagliata: include anche processi di sistema mai mostrati come
+    // finestra attiva, es. svchost.exe, conhost.exe — bug reale
+    // segnalato dall'utente). knownAppKeys() resta usata sotto solo per
+    // le funzioni di presentazione (nome/icona), non per decidere quali
+    // app offrire nel menu.
+    try {
+      const appConosciute = await invoke<AppConosciuta[]>('elenca_app_conosciute');
+      this.appKeys = appConosciute.map((a: AppConosciuta) => a.app).sort();
+    } catch (e) {
+      // L'app potrebbe girare fuori da Tauri durante lo sviluppo web puro
+      // (npx vite senza il guscio nativo) — invoke() non esiste in quel
+      // caso, non è un errore da mostrare all'utente. Stesso pattern già
+      // usato in AiAgentSettings.vue/CategorizationSettings.vue.
+    }
   },
   computed: {
     rules(this: any): NotifyRule[] {

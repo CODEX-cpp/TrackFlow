@@ -196,27 +196,91 @@ pub(crate) async fn salva_categorie(server: &AppServer, categorie: &[AppCategory
     server.set_setting(SETTINGS_KEY, &json!(categorie)).await
 }
 
-/// Tutte le app mai scoperte dal watcher icone (scansiona la cartella
-/// icone condivisa — stesso elenco che alimenta i moduli "Top
-/// Applications" ecc., vedi aw-watcher-app-icons-rust/src/main.rs) — usato
-/// solo per il caso "nessuna categoria esiste ancora", per categorizzarle
-/// tutte in un colpo solo invece che una alla volta ad ogni riavvio.
-pub(crate) fn tutte_le_app_conosciute(app_data_dir: &Path) -> Vec<String> {
-    let icons_dir = app_data_dir.join("app-icons");
-    let Ok(entries) = std::fs::read_dir(&icons_dir) else {
+const APP_CONOSCIUTE_FILE: &str = "known-apps.json";
+
+fn known_apps_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(APP_CONOSCIUTE_FILE)
+}
+
+fn carica_known_apps_da_file(app_data_dir: &Path) -> Option<Vec<String>> {
+    let contenuto = std::fs::read_to_string(known_apps_path(app_data_dir)).ok()?;
+    serde_json::from_str(&contenuto).ok()
+}
+
+fn salva_known_apps_su_file(app_data_dir: &Path, app: &[String]) {
+    if let Ok(json) = serde_json::to_string_pretty(app) {
+        let _ = std::fs::write(known_apps_path(app_data_dir), json);
+    }
+}
+
+/// Chiamata per OGNI evento del watcher finestra (`spawn_stdout_drain` in
+/// lib.rs), NON solo quando la categorizzazione AI è configurata —
+/// l'elenco delle app conosciute deve restare aggiornato dall'installazione
+/// in poi, a prescindere da quando/se viene mai collegata una chiave AI
+/// (richiesta esplicita dell'utente). Economica nel caso comune (l'app è
+/// già nell'elenco, nessuna scrittura); scrive il file solo quando compare
+/// davvero un'app mai vista prima.
+pub fn registra_app_se_nuova(app_data_dir: &Path, app: &str) {
+    let mut app_conosciute = carica_known_apps_da_file(app_data_dir).unwrap_or_default();
+    if app_conosciute.iter().any(|a| a == app) {
+        return;
+    }
+    app_conosciute.push(app.to_string());
+    salva_known_apps_su_file(app_data_dir, &app_conosciute);
+}
+
+/// Ricostruzione una tantum dell'elenco interrogando la Timeline reale
+/// (bucket finestra, raggruppato per nome app; stesso motore AQL usato
+/// ovunque nell'app, nessun limite temporale stretto) — usata SOLO da
+/// `carica_app_conosciute` sotto, quando `known-apps.json` non esiste
+/// ancora (aggiornamento da una versione precedente a questa
+/// funzionalità, con mesi di Timeline già raccolti ma mai registrati
+/// incrementalmente). Bug reale che questo intero meccanismo sostituisce:
+/// la versione precedente leggeva la cartella delle icone (`app-icons/`),
+/// fonte sbagliata perché contiene anche processi di sistema mai apparsi
+/// come finestra attiva (audiodg.exe, conhost.exe, svchost.exe, ecc. — la
+/// scansione di avvio in lib.rs, `invia_processi_in_esecuzione_a_icone`,
+/// manda all'estrattore icone OGNI processo in esecuzione sul sistema, non
+/// solo quelli mostrati a schermo) — le due cose erano collegate solo per
+/// riuso di comodo, non per un legame logico vero.
+async fn ricostruisci_app_conosciute_da_timeline(server: &AppServer, hostname: &str) -> Vec<String> {
+    let bucket = format!("aw-watcher-window_{hostname}");
+    let query_lines = vec![
+        format!("events = flood(query_bucket(\"{bucket}\"));"),
+        "apps = merge_events_by_keys(events, [\"app\"]);".to_string(),
+        "RETURN = apps;".to_string(),
+    ];
+    let timeperiod = "2000-01-01T00:00:00+00:00/2100-01-01T00:00:00+00:00".to_string();
+
+    let Ok(risposta) = server.query(vec![timeperiod], query_lines).await else {
         return Vec::new();
     };
-    entries
-        .filter_map(Result::ok)
-        .filter_map(|e| {
-            let path = e.path();
-            if path.extension().and_then(|x| x.to_str()) == Some("png") {
-                path.file_stem().and_then(|s| s.to_str()).map(str::to_string)
-            } else {
-                None
-            }
+    risposta
+        .as_array()
+        .and_then(|periodi| periodi.first())
+        .and_then(|eventi| eventi.as_array())
+        .map(|eventi| {
+            eventi.iter().filter_map(|e| e["data"]["app"].as_str().map(str::to_string)).collect()
         })
-        .collect()
+        .unwrap_or_default()
+}
+
+/// Punto d'ingresso unico per leggere l'elenco delle app conosciute:
+/// legge `known-apps.json` (veloce, il caso comune), oppure — solo la
+/// primissima volta che il file non esiste ancora — lo ricostruisce
+/// interrogando la Timeline reale e lo salva per tutte le letture
+/// successive.
+pub(crate) async fn carica_app_conosciute(
+    server: &AppServer,
+    app_data_dir: &Path,
+    hostname: &str,
+) -> Vec<String> {
+    if let Some(app) = carica_known_apps_da_file(app_data_dir) {
+        return app;
+    }
+    let app = ricostruisci_app_conosciute_da_timeline(server, hostname).await;
+    salva_known_apps_su_file(app_data_dir, &app);
+    app
 }
 
 /// Nomi leggibili noti (`appAutoNames.json`, scritto dal watcher icone) —
@@ -326,6 +390,7 @@ pub fn su_nuova_app(
     server: Arc<AppServer>,
     app_data_dir: PathBuf,
     stato: Arc<CategorizationState>,
+    hostname: String,
     app: String,
 ) {
     let Some(config) = agent::load_config(&app_data_dir) else {
@@ -355,7 +420,7 @@ pub fn su_nuova_app(
         }
 
         let (da_categorizzare, bulk) = if categorie.is_empty() {
-            (tutte_le_app_conosciute(&app_data_dir), true)
+            (carica_app_conosciute(&server, &app_data_dir, &hostname).await, true)
         } else {
             (vec![app.clone()], false)
         };
@@ -383,10 +448,67 @@ pub fn su_nuova_app(
     });
 }
 
+/// Forza una scansione di TUTTE le app già conosciute ma non ancora
+/// categorizzate — chiamata da `agent::ai_agent_save_config` subito dopo
+/// che l'utente salva una chiave AI valida.
+///
+/// Bug reale segnalato dall'utente (2026-08-15): senza questo, la
+/// categorizzazione automatica scatta solo al prossimo cambio di finestra
+/// attiva (`su_nuova_app` sopra) — chi installa l'app, la usa per ore e
+/// SOLO DOPO collega la chiave AI si ritrova con ore di app già tracciate
+/// ma mai riviste finché non ricapita per caso di passarci sopra di nuovo,
+/// anche a distanza di giorni. `su_nuova_app` fa già una scansione "bulk"
+/// simile, ma SOLO se non esiste ancora nessuna categoria (`categorie.is_empty()`,
+/// pensato per il primissimo avvio) — qui invece si considera sempre e
+/// comunque ogni app conosciuta non ancora assegnata, a prescindere da
+/// quante categorie esistano già.
+pub fn forza_scansione_iniziale(
+    server: Arc<AppServer>,
+    app_data_dir: PathBuf,
+    stato: Arc<CategorizationState>,
+    hostname: String,
+    config: AiAgentConfig,
+) {
+    if config.api_key.trim().is_empty() {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let _guard = stato.lock.lock().await;
+
+        let mut categorie = carica_categorie(&server).await;
+        let da_categorizzare: Vec<String> = carica_app_conosciute(&server, &app_data_dir, &hostname)
+            .await
+            .into_iter()
+            .filter(|app| !app_gia_categorizzata(&categorie, app))
+            .collect();
+        if da_categorizzare.is_empty() {
+            return;
+        }
+
+        let nomi_leggibili = carica_nomi_leggibili(&app_data_dir);
+        log::info!(
+            "Categorizzazione AI: scansione forzata dopo il collegamento della chiave, {} app da categorizzare",
+            da_categorizzare.len()
+        );
+
+        if let Err(e) =
+            esegui_categorizzazione(&config, &mut categorie, &da_categorizzare, &nomi_leggibili).await
+        {
+            log::error!("Categorizzazione AI (scansione forzata) fallita: {e}");
+            return;
+        }
+
+        if let Err(e) = salva_categorie(&server, &categorie).await {
+            log::error!("Salvataggio categorie fallito (scansione forzata): {e}");
+        }
+    });
+}
+
 /// App conosciuta, con nome leggibile quando disponibile — usata
 /// dall'interfaccia Impostazioni (sezione categorie, gestione manuale)
 /// per mostrare l'elenco completo delle app da categorizzare/vedere già
-/// categorizzate. Stessa identica fonte dati (`tutte_le_app_conosciute`)
+/// categorizzate. Stessa identica fonte dati (`carica_app_conosciute`)
 /// già usata dalla categorizzazione automatica AI, per restare coerenti
 /// fra le due — un'app che l'AI considera "conosciuta" è la stessa che
 /// vede l'utente qui.
@@ -397,12 +519,16 @@ pub struct AppConosciuta {
 }
 
 #[tauri::command]
-pub fn elenca_app_conosciute(app_handle: tauri::AppHandle) -> Vec<AppConosciuta> {
+pub async fn elenca_app_conosciute(app_handle: tauri::AppHandle) -> Vec<AppConosciuta> {
     use tauri::Manager;
     let Some(dir) = app_handle.try_state::<crate::AppDataDirState>() else {
         return Vec::new();
     };
-    let mut app = tutte_le_app_conosciute(&dir.0);
+    let Some(server) = app_handle.try_state::<Arc<AppServer>>() else {
+        return Vec::new();
+    };
+    let hostname = gethostname::gethostname().to_string_lossy().to_string();
+    let mut app = carica_app_conosciute(&server, &dir.0, &hostname).await;
     app.sort();
     let nomi = carica_nomi_leggibili(&dir.0);
     app.into_iter()

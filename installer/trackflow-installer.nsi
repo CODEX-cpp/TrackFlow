@@ -32,6 +32,7 @@ ManifestDPIAware true
 SetCompressor /SOLID lzma
 
 !include "MUI2.nsh"
+!include "LogicLib.nsh"
 !include "Win\COM.nsh"
 !include "Win\Propkey.nsh"
 
@@ -112,7 +113,58 @@ RequestExecutionLevel user
 !macro KillTrackFlowProcesses
   nsExec::ExecToLog 'taskkill /F /T /IM app.exe /IM launcher.exe /IM aw-watcher-afk.exe /IM aw-watcher-app-icons.exe /IM aw-watcher-claude-code.exe /IM aw-watcher-excel.exe /IM aw-watcher-screenshot.exe /IM aw-watcher-tray.exe /IM aw-watcher-vpn.exe /IM aw-watcher-vscode.exe /IM aw-watcher-window.exe'
   Pop $0
-  Sleep 500
+  ; 500ms non bastava sempre — bug reale trovato in questa sessione:
+  ; anche con "taskkill" andato a buon fine, Windows non aveva ancora
+  ; rilasciato l'handle di uno dei file un istante dopo, e le
+  ; cancellazioni subito successive (current.txt, app-data\...)
+  ; fallivano in silenzio (vedi le macro Robust* più sotto, che
+  ; aggiungono comunque un secondo livello di sicurezza per questo
+  ; stesso motivo).
+  Sleep 1200
+!macroend
+
+; RMDir/Delete possono fallire in silenzio se anche un solo file al
+; loro interno è ancora bloccato da un processo non del tutto
+; terminato — successo esattamente questo in questa sessione: il log
+; dell'uninstaller mostrava "Remove folder" come se fosse riuscito, ma
+; la cartella (con tutto il contenuto, intatto) restava sul disco.
+; Queste macro ritentano alcune volte con una breve pausa, e come
+; ultima rete di sicurezza usano /REBOOTOK (MoveFileEx di Windows,
+; MOVEFILE_DELAY_UNTIL_REBOOT) per garantire DAVVERO che il file
+; sparisca, anche nel caso limite in cui resti bloccato in un modo che
+; nemmeno taskkill risolve — al più tardi, al prossimo riavvio.
+!macro RobustRMDirR path label
+  Push $R0
+  StrCpy $R0 0
+  rmdir_retry_${label}:
+    RMDir /r "${path}"
+    IfFileExists "${path}\*.*" 0 rmdir_ok_${label}
+      IntOp $R0 $R0 + 1
+      IntCmp $R0 6 rmdir_giveup_${label}
+      Sleep 500
+      Goto rmdir_retry_${label}
+  rmdir_giveup_${label}:
+    RMDir /r /REBOOTOK "${path}"
+    IfFileExists "${path}\*.*" 0 rmdir_ok_${label}
+      MessageBox MB_ICONINFORMATION "Alcuni file in$\n${path}$\nerano ancora in uso e verranno rimossi automaticamente al prossimo riavvio del computer."
+  rmdir_ok_${label}:
+  Pop $R0
+!macroend
+
+!macro RobustDelete path label
+  Push $R0
+  StrCpy $R0 0
+  delete_retry_${label}:
+    Delete "${path}"
+    IfFileExists "${path}" 0 delete_ok_${label}
+      IntOp $R0 $R0 + 1
+      IntCmp $R0 6 delete_giveup_${label}
+      Sleep 500
+      Goto delete_retry_${label}
+  delete_giveup_${label}:
+    Delete /REBOOTOK "${path}"
+  delete_ok_${label}:
+  Pop $R0
 !macroend
 
 ; Windows tiene traccia di OGNI eseguibile mai lanciato sul PC in un
@@ -166,9 +218,41 @@ Section "Install"
   SetOutPath "$INSTDIR"
   File /oname=launcher.exe "${SRC_LAUNCHER}"
 
-  FileOpen $0 "$INSTDIR\current.txt" w
-  FileWrite $0 "${VERSION}"
-  FileClose $0
+  ; Bug reale trovato in questa sessione, in due parti:
+  ; 1) se current.txt risultava ancora bloccato da un processo non
+  ;    del tutto terminato, la scrittura falliva e l'utente si
+  ;    ritrovava a usare ancora la versione precedente dopo un
+  ;    aggiornamento, senza nessun avviso.
+  ; 2) il primo tentativo di fix (IfErrors dopo FileOpen) NON
+  ;    funzionava: verificato con un'installazione silenziosa fatta
+  ;    apposta per isolare il problema, current.txt restava comunque
+  ;    con il valore vecchio — IfErrors non rileva in modo affidabile
+  ;    un fallimento di FileOpen in NSIS, quindi il retry non
+  ;    scattava mai, in silenzio, esattamente come il bug che doveva
+  ;    correggere. Fix vero: si rilegge il file appena scritto e si
+  ;    confronta il contenuto con quello atteso, invece di fidarsi del
+  ;    flag di errore.
+  Push $R0
+  Push $R1
+  StrCpy $R0 0
+  write_currenttxt_retry:
+    FileOpen $2 "$INSTDIR\current.txt" w
+    FileWrite $2 "${VERSION}"
+    FileClose $2
+
+    FileOpen $2 "$INSTDIR\current.txt" r
+    FileRead $2 $R1
+    FileClose $2
+    StrCmp $R1 "${VERSION}" write_currenttxt_ok
+      IntOp $R0 $R0 + 1
+      IntCmp $R0 6 write_currenttxt_failed
+      Sleep 500
+      Goto write_currenttxt_retry
+  write_currenttxt_failed:
+    MessageBox MB_ICONEXCLAMATION "Impossibile completare l'installazione: current.txt risulta ancora bloccato da un altro processo. Chiudi TrackFlow (anche dalla system tray, se presente) e riprova l'installazione."
+  write_currenttxt_ok:
+  Pop $R1
+  Pop $R0
 
   CreateDirectory "$SMPROGRAMS\${PRODUCTNAME}"
   CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk" "$INSTDIR\launcher.exe"
@@ -213,7 +297,7 @@ Section "Uninstall"
   !insertmacro CleanExeTraces "$INSTDIR\launcher.exe"
   !insertmacro CleanExeTraces "$INSTDIR\uninstall.exe"
 
-  RMDir /r "$INSTDIR\versions"
+  !insertmacro RobustRMDirR "$INSTDIR\versions" "versions"
 
   ; Dati utente veri (screenshot, cache icone app, stato watcher,
   ; moduli configurati) — a differenza dei file del programma sopra,
@@ -221,18 +305,35 @@ Section "Uninstall"
   ; l'utente vuole ancora consultare reinstallando in futuro, non va
   ; cancellata in silenzio solo perché "fa parte della pulizia".
   MessageBox MB_YESNO|MB_ICONQUESTION "Vuoi eliminare anche i dati raccolti finora (screenshot, cronologia app, progetti, categorie)?$\n$\nSe scegli No, resteranno sul disco e verranno ritrovati automaticamente in una futura reinstallazione." IDNO skip_app_data
-    RMDir /r "$INSTDIR\app-data"
+    !insertmacro RobustRMDirR "$INSTDIR\app-data" "appdata"
+    ; Il vero database degli eventi (quello che alimenta la Timeline)
+    ; NON vive qui sotto $INSTDIR, ma nella cartella dati "Roaming" di
+    ; Windows -- eredità del codice server vendorizzato da
+    ; aw-server-rust (aw-server/src/dirs.rs, get_data_dir():
+    ; dirs::data_dir().join("activitywatch").join("aw-server-rust") --
+    ; su Windows $APPDATA, non $LOCALAPPDATA). Bug reale trovato in
+    ; questa sessione: nessuna disinstallazione l'aveva mai toccato,
+    ; quindi la cronologia della Timeline sopravviveva SEMPRE a
+    ; qualunque disinstallazione, anche rispondendo "Sì" qui sopra.
+    !insertmacro RobustRMDirR "$APPDATA\activitywatch\aw-server-rust" "eventdb"
   skip_app_data:
 
-  Delete "$INSTDIR\current.txt"
-  Delete "$INSTDIR\launcher.exe"
-  Delete "$INSTDIR\launcher-error.log"
-  Delete "$INSTDIR\uninstall.exe"
+  !insertmacro RobustDelete "$INSTDIR\current.txt" "currenttxt"
+  !insertmacro RobustDelete "$INSTDIR\launcher.exe" "launcherexe"
+  !insertmacro RobustDelete "$INSTDIR\launcher-error.log" "launchererrorlog"
+  !insertmacro RobustDelete "$INSTDIR\uninstall.exe" "uninstallexe"
   RMDir "$INSTDIR"
 
   Delete "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk"
   RMDir "$SMPROGRAMS\${PRODUCTNAME}"
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
+
+  ; "Avvia con Windows" (Impostazioni → Generale in-app) scrive questo
+  ; valore — mai stato ripulito da questo disinstallatore fino ad ora
+  ; (bug reale, trovato in questa sessione): dopo un uninstall
+  ; "pulito" restava comunque un tentativo di avvio automatico che
+  ; punta a un launcher.exe ormai cancellato.
+  DeleteRegValue HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Run" "${PRODUCTNAME}"
 
   DeleteRegKey HKCU "${UNINSTKEY}"
   DeleteRegKey HKCU "${MANUKEY}"

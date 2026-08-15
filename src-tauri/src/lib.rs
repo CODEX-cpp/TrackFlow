@@ -570,8 +570,17 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path) -> AppServer {
         .custom_static
         .insert("app-data".to_string(), app_data_dir.to_string_lossy().to_string());
 
-    let db_path = aw_server::dirs::db_path(testing)
-        .expect("Impossibile risolvere il percorso del database")
+    // Il database vive dentro app_data_dir (stessa cartella di
+    // screenshot/icone/config, quella che l'installer NSIS cancella
+    // già alla disinstallazione) invece che nel percorso di default
+    // di aw-server-rust vendorizzato (aw_server::dirs::db_path,
+    // %APPDATA%\activitywatch\aw-server-rust — ancora col nome del
+    // progetto originale, mai aggiornato al rebrand). Bug reale
+    // segnalato dall'utente: nessuna disinstallazione toccava mai
+    // quel percorso, quindi la cronologia della Timeline sopravviveva
+    // sempre, anche a "dati cancellati" confermato dall'utente.
+    let db_path = app_data_dir
+        .join("sqlite.db")
         .to_str()
         .expect("Percorso del database non valido UTF-8")
         .to_string();
@@ -697,6 +706,16 @@ fn spawn_stdout_drain(
                         // vedi spawn_watcher/stop_watcher per il perché è
                         // un caso speciale senza processo vero).
                         if let Some((app_handle, stato, app_data_dir)) = &categorization_ctx {
+                            // Registrazione dell'app conosciuta SEMPRE,
+                            // indipendentemente da AI/categorizzazione —
+                            // richiesta esplicita dell'utente: l'elenco
+                            // deve restare aggiornato dall'installazione
+                            // in poi, a prescindere da quando/se viene
+                            // mai collegata una chiave AI (usato anche
+                            // dalle Impostazioni, sezioni Notifiche e
+                            // Categorizzazione).
+                            categorization::registra_app_se_nuova(app_data_dir, &app.to_lowercase());
+
                             let categorizzazione_attiva = app_handle
                                 .try_state::<ModulesConfigState>()
                                 .map(|c| *c.0.lock().unwrap().get("ai-categorization").unwrap_or(&true))
@@ -706,6 +725,7 @@ fn spawn_stdout_drain(
                                     server.clone(),
                                     app_data_dir.clone(),
                                     stato.clone(),
+                                    hostname.clone(),
                                     app.to_lowercase(),
                                 );
                             }

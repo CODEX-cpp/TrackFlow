@@ -18,6 +18,7 @@
     <div class="nav-links">
       <a href="index.html#features">Features</a>
       <a href="changelog.html">Changelog</a>
+      <a href="documentation.html">Documentation</a>
       <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
       <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
     </div>
@@ -41,6 +42,15 @@
     errore mostrato.
   -->
   <div id="changelog-root">
+    <section class="changelog-entry">
+      <h2>0.1.11</h2>
+      <ul>
+        <li>The AI assistant now immediately categorizes all already-tracked apps as soon as you connect an API key, instead of waiting for each one to reappear in the Timeline by chance.</li>
+        <li>App lists in Settings (Notifications and Categorization) now only show apps that actually appeared in the Timeline, no longer background system processes you never actively used.</li>
+        <li>Fixed a bug where, after an update, the app could keep running the previous version instead of the newly installed one.</li>
+        <li>Uninstalling now genuinely removes all collected data (previously some files could remain on disk even when choosing to delete them).</li>
+      </ul>
+    </section>
     <section class="changelog-entry">
       <h2>0.1.10</h2>
       <ul>
