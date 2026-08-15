@@ -98,7 +98,26 @@ RequestExecutionLevel user
 
 !insertmacro MUI_LANGUAGE "English"
 
+; Se TrackFlow (o uno qualsiasi dei suoi sidecar watcher) è ancora in
+; esecuzione, i suoi .exe restano bloccati da Windows e il "File"
+; qui sotto fallisce con "Error opening file for writing" — bug reale
+; riprodotto più volte durante i test di questa stessa sessione,
+; installando/reinstallando mentre l'app girava ancora (anche solo in
+; tray). Un utente reale può benissimo dimenticarsi di chiuderla prima
+; di lanciare l'installer o un aggiornamento manuale — meglio chiudere
+; tutto da soli invece di affidarsi a quella disciplina. `taskkill`
+; ritorna un codice di errore se un processo non è in esecuzione, ma
+; con ExecToLog non lo controlliamo: è normale e atteso che la maggior
+; parte di questi processi non esista già.
+!macro KillTrackFlowProcesses
+  nsExec::ExecToLog 'taskkill /F /T /IM app.exe /IM launcher.exe /IM aw-watcher-afk.exe /IM aw-watcher-app-icons.exe /IM aw-watcher-claude-code.exe /IM aw-watcher-excel.exe /IM aw-watcher-screenshot.exe /IM aw-watcher-tray.exe /IM aw-watcher-vpn.exe /IM aw-watcher-vscode.exe /IM aw-watcher-window.exe'
+  Pop $0
+  Sleep 500
+!macroend
+
 Section "Install"
+  !insertmacro KillTrackFlowProcesses
+
   ; Watcher/app della versione corrente — MAI sovrascrive una versione
   ; già installata: ogni versione vive nella propria cartella, così
   ; un'installazione (= un aggiornamento, dal punto di vista
@@ -155,6 +174,8 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
+  !insertmacro KillTrackFlowProcesses
+
   RMDir /r "$INSTDIR\versions"
   Delete "$INSTDIR\current.txt"
   Delete "$INSTDIR\launcher.exe"
