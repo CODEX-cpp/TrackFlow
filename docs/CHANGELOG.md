@@ -17,6 +17,7 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Corretto un bug per cui il campo "Numero eventi" nella pagina di dettaglio di una sorgente dati era sempre vuoto.
 - Corretto un bug per cui la scelta del modello di visualizzazione durante la creazione di un watcher personalizzato mostrava solo l'opzione "predefinito" invece dell'elenco completo.
 - Corretto un fastidioso lampeggiare di finestre nere (prompt dei comandi) quando un watcher personalizzato viene avviato.
+- Corretto un bug per cui, dopo aver creato un watcher personalizzato, il pulsante "Apri" per vederne i dati poteva non comparire mai, restando bloccato su "in attesa di dati" anche a watcher funzionante.
 - Rifatta la documentazione online sui watcher personalizzati, ora divisa in guide separate e più complete.
 
 ### en
@@ -29,6 +30,7 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Fixed a bug where the "Event count" field on a data source's detail page was always empty.
 - Fixed a bug where choosing a visualization template while creating a custom watcher only showed the "default" option instead of the full list.
 - Fixed black command-prompt windows briefly flashing on screen when a custom watcher starts running.
+- Fixed a bug where, after creating a custom watcher, the "Open" button to view its data could never appear, staying stuck on "waiting for data" even though the watcher was working fine.
 - Rewrote the online documentation for custom watchers into separate, more complete guides.
 
 ## 0.1.11

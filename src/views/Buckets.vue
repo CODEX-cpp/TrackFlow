@@ -569,6 +569,14 @@ export default {
       showWatcherWizard: false,
       watcherStatuses: [] as WatcherStatusDto[],
       customWatchers: [] as WatcherPersonalizzatoInfo[],
+      // Aggiorna in automatico bucket/watcher mentre la pagina resta
+      // aperta — senza questo, un watcher appena creato restava bloccato
+      // su "in attesa di dati" (nessun pulsante "Apri") per sempre: il
+      // refresh dopo la creazione scatta subito alla chiusura del wizard,
+      // troppo presto perché lo script abbia già prodotto il primo dato,
+      // e nient'altro richiamava più `loadBuckets()` finché l'utente non
+      // ricaricava la pagina a mano (bug reale segnalato da un utente).
+      bucketsPollInterval: null as ReturnType<typeof setInterval> | null,
       // Toggle di un watcher "rischioso" (vedi CONFERME_TOGGLE_RISCHIOSO)
       // in attesa di conferma — null quando nessun popup è aperto.
       pendingToggle: null as null | {
@@ -695,6 +703,12 @@ export default {
       this.customWatchers = await invoke<WatcherPersonalizzatoInfo[]>('elenca_watcher_personalizzati');
     } catch {
       this.customWatchers = [];
+    }
+    this.bucketsPollInterval = setInterval(this.refreshWatchersAndBuckets, 3000);
+  },
+  beforeDestroy: function () {
+    if (this.bucketsPollInterval) {
+      clearInterval(this.bucketsPollInterval);
     }
   },
   methods: {
