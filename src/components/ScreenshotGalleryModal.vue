@@ -210,10 +210,12 @@ div
 // matching timestamps between the Top Window Titles breakdown and the
 // screenshot strip by hand. This groups screenshots by whichever window
 // title was actually active when each was taken (via titleSegments'
-// real start/end times, see HomeTimelineSection.vue's
-// selectedBlockTitleSegments()), and opens a larger lightbox with
-// Prev/Next navigation across every screenshot in the block, not just
-// the ones in the group you clicked from.
+// real start/end times — the caller, TimelineBlockDetailModal.vue,
+// passes only the segments/screenshots for whichever title's "N foto"
+// link was clicked, already scoped to that title's own occurrences),
+// and opens a larger lightbox with Prev/Next navigation across every
+// screenshot passed in, not just the ones in the group you clicked
+// from within the lightbox.
 import moment from 'moment';
 import 'vue-awesome/icons/angle-left';
 import 'vue-awesome/icons/angle-right';

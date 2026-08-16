@@ -14,35 +14,44 @@ div
         span.block-detail-label {{ $t('home.timelineBlockDetail.duration') }}
         span.block-detail-value {{ formatDuration(block.end.diff(block.start, 'seconds')) }}
 
-    div.block-detail-subhead(v-if="occurrences.length > 1") {{ $t('home.timelineBlockDetail.otherOccurrences') }}
-    table.block-detail-table(v-if="occurrences.length > 1")
+    div.block-detail-subhead-row(v-if="occurrencesByTitle.length || occurrences.length > 1")
+      span.block-detail-subhead {{ $t('home.timelineBlockDetail.otherOccurrences') }}
+      // Solo nel caso non raggruppato — quando i titoli sono raggruppati,
+      // il pulsante vive accanto a ciascun titolo invece che qui.
+      span.block-detail-photos-btn(
+        v-if="!occurrencesByTitle.length && screenshotsFor(occurrences).length"
+        @click="openGallery(displayName, occurrences)"
+      ) {{ $t('home.timelineBlockDetail.viewPhotos', { count: screenshotsFor(occurrences).length }) }}
+    template(v-if="occurrencesByTitle.length")
+      div.block-detail-title-group(v-for="group in occurrencesByTitle" :key="group.title")
+        div.block-detail-title-group-head
+          span.block-detail-title-group-name {{ group.title }}
+          // Filtrato SOLO agli orari di questo titolo — richiesta
+          // esplicita: non tutte le foto del blocco, solo quelle cadute
+          // dentro una delle fasce orarie elencate qui sotto.
+          span.block-detail-photos-btn(
+            v-if="screenshotsFor(group.occurrences).length"
+            @click="openGallery(group.title, group.occurrences)"
+          ) {{ $t('home.timelineBlockDetail.viewPhotos', { count: screenshotsFor(group.occurrences).length }) }}
+        table.block-detail-table.block-detail-title-group-table
+          tbody
+            tr(v-for="(occ, i) in group.occurrences" :key="i")
+              td {{ occ.start.format('HH:mm') }} – {{ occ.end.format('HH:mm') }}
+              td {{ formatDuration(occ.end.diff(occ.start, 'seconds')) }}
+    table.block-detail-table(v-else-if="occurrences.length > 1")
       tbody
         tr(v-for="(occ, i) in occurrences" :key="i")
           td {{ occ.start.format('HH:mm') }} – {{ occ.end.format('HH:mm') }}
           td {{ formatDuration(occ.end.diff(occ.start, 'seconds')) }}
 
-    div.block-detail-subhead(v-if="titleBreakdown.length") {{ $t('home.timelineBlockDetail.topWindowTitles') }}
-    table.block-detail-table(v-if="titleBreakdown.length")
-      tbody
-        tr(v-for="(t, i) in titleBreakdown" :key="i")
-          td {{ t.title }}
-          td {{ formatDuration(t.duration) }}
-
     div.edit-modal-actions
-      // Explicit request: no more thumbnails dumped inline here (they
-      // read as disconnected from *when* in the block they happened) —
-      // a single button instead, opening a dedicated gallery that groups
-      // them by which window title was active, so "show me the
-      // screenshots of activity X" doesn't require mentally matching
-      // timestamps by hand.
-      div.pill-btn-ghost(v-if="screenshots.length" @click="showGallery = true") {{ $t('home.timelineBlockDetail.viewScreenshots', { count: screenshots.length }) }}
       div.pill-btn-ghost(@click="$emit('close')") {{ $t('home.timelineBlockDetail.close') }}
 
   screenshot-gallery-modal(
     v-if="showGallery"
-    :screenshots="screenshots"
-    :title-segments="titleSegments"
-    :display-name="displayName"
+    :screenshots="galleryScreenshots"
+    :title-segments="galleryTitleSegments"
+    :display-name="galleryTitle"
     @close="showGallery = false"
   )
 </template>
@@ -52,7 +61,7 @@ div
 @import '../style/modals.css';
 
 .block-detail-modal {
-  width: 400px;
+  width: 480px;
   max-height: 75vh;
   overflow-y: auto;
 }
@@ -79,11 +88,42 @@ div
   font-weight: var(--font-weight-semibold);
 }
 
+.block-detail-subhead-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
 .block-detail-subhead {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-dim);
-  margin: 16px 0 8px;
+}
+
+// Vero pulsante a pillola a destra del titolo (non più un link a
+// testo semplice, giudicato brutto) — apre la galleria filtrata solo
+// agli orari di QUEL titolo (vedi screenshotsFor()/openGallery()
+// sotto), non a tutto il blocco.
+.block-detail-photos-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-dim);
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.block-detail-photos-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-accent1);
 }
 
 .block-detail-table {
@@ -106,6 +146,60 @@ div
 .block-detail-table tr:last-child td {
   border-bottom: none;
 }
+
+.block-detail-title-group + .block-detail-title-group {
+  margin-top: 12px;
+}
+
+.block-detail-title-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.block-detail-title-group-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+// Righe orario leggermente rientrate, con una barra verticale a
+// sinistra allineata col titolo sopra — richiesta estetica esplicita.
+// Il padding va sulla prima cella, non sulla <table>: il padding di un
+// elemento <table> non crea spazio visibile prima del contenuto delle
+// celle (a differenza di un div), motivo per cui riga e barra
+// risultavano incollate nel primo tentativo.
+.block-detail-title-group-table {
+  margin-left: 0;
+  border-left: 2px solid var(--color-border);
+}
+
+.block-detail-title-group-table td:first-child {
+  padding-left: 10px;
+}
+
+// La riga di separazione tra un orario e l'altro (border-bottom, da
+// .block-detail-table td) partiva dal bordo sinistro della cella —
+// stesso punto della barra verticale qui sopra, formando una "T" ad
+// ogni riga. Sostituita con una linea disegnata via gradiente, che
+// parte più a destra (stesso rientro del testo) invece di toccare la
+// barra.
+.block-detail-title-group-table td {
+  border-bottom: none;
+}
+
+.block-detail-title-group-table tr {
+  background-image: linear-gradient(to right, transparent 10px, var(--color-border) 10px);
+  background-position: bottom;
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+}
+
+.block-detail-title-group-table tr:last-child {
+  background-image: none;
+}
 </style>
 
 <script lang="ts">
@@ -120,6 +214,12 @@ import { formatDuration } from '~/util/projectTime';
 import { displayNameForApp } from '~/util/appNames';
 import { getHomeClient } from '~/util/awclient';
 
+interface Screenshot {
+  filename: string;
+  time: string;
+  timestamp: moment.Moment;
+}
+
 export default {
   name: 'TimelineBlockDetailModal',
   components: {
@@ -129,33 +229,39 @@ export default {
     block: { type: Object, required: true },
     laneName: { type: String, required: true },
     occurrences: { type: Array, default: () => [] },
-    // Per-title time breakdown within this block's own range — computed
-    // by the parent (HomeTimelineSection.vue's selectedBlockTitleBreakdown(),
-    // which has the raw window events this needs), empty for anything
-    // that isn't a whole Generale-lane app block.
-    titleBreakdown: { type: Array, default: () => [] },
-    // Same source data as titleBreakdown but with real start/end moments
-    // instead of just totals — handed straight through to the gallery
-    // (see selectedBlockTitleSegments()), which needs actual timestamps
-    // to match each screenshot to the title active when it was taken.
-    titleSegments: { type: Array, default: () => [] },
+    // Stessa lista di occurrences, ma raggruppata per titolo — quando
+    // presente sostituisce del tutto la tabella piatta sopra (solo per
+    // le corsie i cui eventi grezzi hanno un campo title distinto, vedi
+    // selectedOccurrencesByTitle() in HomeTimelineSection.vue).
+    occurrencesByTitle: { type: Array, default: () => [] },
   },
   data() {
     return {
-      // Desktop screenshots (aw-watcher-screenshot) captured during this
-      // block's own time range — not scoped to `laneName`, since a
-      // screenshot is evidence of what was on screen regardless of
-      // which lane the clicked block belongs to.
-      screenshots: [] as { filename: string; time: string; timestamp: moment.Moment }[],
-      // Explicit request: no more inline thumbnails/lightbox here — a
-      // single button opens the dedicated gallery instead (see
-      // ScreenshotGalleryModal.vue).
+      // Screenshot di TUTTA la giornata coperta da occurrences/
+      // occurrencesByTitle (non solo l'intervallo del blocco cliccato,
+      // vedi screenshotRange) — caricati una sola volta, poi filtrati
+      // per titolo al volo in screenshotsFor() invece di rifare una
+      // richiesta di rete ad ogni click su un pulsante diverso.
+      screenshots: [] as Screenshot[],
       showGallery: false,
+      galleryTitle: '',
+      galleryScreenshots: [] as Screenshot[],
+      galleryTitleSegments: [] as { title: string; start: moment.Moment; end: moment.Moment }[],
     };
   },
   computed: {
     displayName(): string {
       return displayNameForApp(this.block.key);
+    },
+    // L'intervallo da interrogare per gli screenshot: non solo
+    // block.start/end (una singola occorrenza), ma l'estremo min/max fra
+    // TUTTE le occorrenze del giorno — necessario perché ogni pulsante
+    // "N foto" può aprire la galleria per un titolo comparso ore prima o
+    // dopo l'istanza di blocco effettivamente cliccata.
+    screenshotRange(): { start: moment.Moment; end: moment.Moment } {
+      const starts = [this.block.start, ...this.occurrences.map((o: any) => o.start)];
+      const ends = [this.block.end, ...this.occurrences.map((o: any) => o.end)];
+      return { start: moment.min(starts), end: moment.max(ends) };
     },
   },
   watch: {
@@ -177,8 +283,8 @@ export default {
       try {
         // Detached client — see getHomeClient() for why.
         events = await getHomeClient().getEvents('aw-watcher-screenshot', {
-          start: this.block.start.toDate(),
-          end: this.block.end.toDate(),
+          start: this.screenshotRange.start.toDate(),
+          end: this.screenshotRange.end.toDate(),
           limit: -1,
         });
       } catch {
@@ -195,6 +301,20 @@ export default {
         // The API returns newest-first; the gallery reads left-to-right/
         // top-to-bottom as "earliest in this block" first.
         .reverse();
+    },
+    // Solo gli screenshot caduti dentro una qualunque delle fasce
+    // orarie passate — usato sia per decidere se mostrare il pulsante
+    // (nessuna foto = nessun pulsante) sia per popolare la galleria.
+    screenshotsFor(occs: { start: moment.Moment; end: moment.Moment }[]): Screenshot[] {
+      return this.screenshots.filter((s: Screenshot) =>
+        occs.some(o => !s.timestamp.isBefore(o.start) && s.timestamp.isBefore(o.end))
+      );
+    },
+    openGallery(title: string, occs: { start: moment.Moment; end: moment.Moment }[]) {
+      this.galleryTitle = title;
+      this.galleryScreenshots = this.screenshotsFor(occs);
+      this.galleryTitleSegments = occs.map(o => ({ title, start: o.start, end: o.end }));
+      this.showGallery = true;
     },
   },
 };

@@ -5,6 +5,20 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.14
+
+### it
+- Nuovo: l'attività dei browser (Chrome, Firefox, Edge, Zen, Brave e molti altri) ha ora una corsia dedicata nella Timeline della Home, invece di riempire la corsia "Generale" con un blocco per ogni pagina/scheda visitata.
+- Nuovo: nel dettaglio di un blocco della Timeline, quando ci sono più titoli distinti (es. più pagine visitate nello stesso browser), "Altre occorrenze" li mostra ora raggruppati per titolo invece che come un unico elenco mescolato.
+- Nuovo: ogni titolo raggruppato ha un pulsante per vedere solo gli screenshot catturati durante gli orari di quel titolo specifico, non quelli dell'intero blocco.
+- Corretto un bug per cui, cliccando un'attività specifica di un browser da "Titoli finestra principali", la Timeline evidenziava per sbaglio tutta la corsia (tutte le sessioni della giornata) invece della sola attività cliccata.
+
+### en
+- New: browser activity (Chrome, Firefox, Edge, Zen, Brave and many others) now gets its own dedicated lane in the Home Timeline, instead of filling the "General" lane with one block per page/tab visited.
+- New: in a Timeline block's detail popup, when there are multiple distinct titles (e.g. several pages visited in the same browser), "Other occurrences" now groups them by title instead of one mixed list.
+- New: each grouped title has a button to view only the screenshots captured during that specific title's own time ranges, not the whole block's.
+- Fixed a bug where clicking a specific browser activity from "Top Window Titles" incorrectly highlighted the entire lane (every session that day) instead of just the clicked activity.
+
 ## 0.1.13
 
 ### it

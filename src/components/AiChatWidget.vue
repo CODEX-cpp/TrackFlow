@@ -289,9 +289,9 @@ export default {
   white-space: pre-wrap;
 }
 
-// Vue 2 (non Vue 3): ::v-deep, non :deep() — vedi lo stesso pattern già
-// usato in ScreenshotGalleryModal.vue per raggiungere markup iniettato
-// dinamicamente (lì un SVG, qui l'HTML prodotto da marked via v-html).
+// Vue 2 (non Vue 3): ::v-deep, non :deep() — stesso pattern già usato
+// altrove nell'app per raggiungere markup iniettato dinamicamente
+// (qui l'HTML prodotto da marked via v-html).
 .ai-chat-markdown {
   ::v-deep p {
     margin: 0 0 8px;

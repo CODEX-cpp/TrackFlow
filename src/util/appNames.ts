@@ -153,6 +153,58 @@ export function isExcelApp(rawName: string): boolean {
   return normalize(rawName) === 'excel.exe';
 }
 
+// Nomi .exe Windows dei browser più comuni — richiesta esplicita
+// "una lista di browser il più completa possibile", usata per
+// separare l'attività di navigazione dalla corsia "Generale" della
+// Timeline (vedi HomeTimelineSection.vue). Solo nomi processo esatti
+// (a differenza di browser_appname_regex in queries.ts, pensato per
+// bucket ID multi-piattaforma delle estensioni browser) — sufficiente
+// per l'app watcher finestra su Windows, dove il nome del processo non
+// varia per versione/piattaforma come su Linux/macOS.
+const BROWSER_APPS = new Set([
+  'chrome.exe',
+  'chromium.exe',
+  'msedge.exe',
+  'firefox.exe',
+  'librewolf.exe',
+  'waterfox.exe',
+  'brave.exe',
+  'opera.exe',
+  'opera_gx.exe',
+  'vivaldi.exe',
+  'zen.exe',
+  'arc.exe',
+  'browser.exe',
+  'floorp.exe',
+  'helium.exe',
+  'orion.exe',
+  'iexplore.exe',
+  'seamonkey.exe',
+  'maxthon.exe',
+  'ucbrowser.exe',
+  'coccoc.exe',
+  'epic.exe',
+  'palemoon.exe',
+  'basilisk.exe',
+  'avastbrowser.exe',
+  'avgbrowser.exe',
+  'whale.exe',
+  'sleipnir.exe',
+  'torch.exe',
+  'iron.exe',
+  'dragon.exe',
+  'icedragon.exe',
+  'min.exe',
+  'colibri.exe',
+  'wavebox.exe',
+  'superbird.exe',
+  'thorium.exe',
+]);
+
+export function isBrowserApp(rawName: string): boolean {
+  return BROWSER_APPS.has(normalize(rawName));
+}
+
 // VS Code's window title encodes what's open as "<file> - <project> -
 // Visual Studio Code" once a folder/workspace is open, or just
 // "<file> - Visual Studio Code" with a single file and no folder, or

@@ -670,8 +670,7 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       time: 'Orario',
       duration: 'Durata',
       otherOccurrences: 'Altre occorrenze oggi',
-      topWindowTitles: 'Top Window Titles',
-      viewScreenshots: 'Vedi {count} screenshot',
+      viewPhotos: '{count} foto',
       close: 'Chiudi',
     },
     calendarPicker: {

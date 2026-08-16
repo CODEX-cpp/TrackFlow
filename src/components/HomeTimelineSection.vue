@@ -90,6 +90,20 @@ div.timeline-section
                 @mousemove="moveTooltip($event)"
                 @mouseleave="hoveredBlock = null"
               )
+            // Same idea, for the Browser lane when the highlight came
+            // from a Top Window Titles row on a browser app — see
+            // browserTitleHighlightRanges().
+            template(v-if="lane.key === 'browser' && highlightedTitle")
+              div.lane-title-highlight(
+                v-for="(seg, i) in browserTitleHighlightRanges"
+                :key="'browser-title-hl-' + i"
+                :class="{ 'lane-block-instant': isWheelZooming }"
+                :style="{ left: seg.left + 'px', width: seg.width + 'px', top: seg.top + 'px', backgroundColor: seg.color }"
+                @click="openSubBlock(lane, seg)"
+                @mouseenter="hoverSubBlock(seg, $event)"
+                @mousemove="moveTooltip($event)"
+                @mouseleave="hoveredBlock = null"
+              )
 
   div.timeline-tooltip(v-if="hoveredBlock" :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }")
     div.timeline-tooltip-name {{ displayForKey(hoveredBlock.key) }}
@@ -100,8 +114,7 @@ div.timeline-section
     :block="selectedBlock"
     :lane-name="selectedLane.name"
     :occurrences="selectedOccurrences"
-    :title-breakdown="selectedBlockTitleBreakdown"
-    :title-segments="selectedBlockTitleSegments"
+    :occurrences-by-title="selectedOccurrencesByTitle"
     @close="selectedBlock = null; selectedSubOccurrences = null"
   )
 </template>
@@ -440,6 +453,7 @@ import {
   iconColorForApp,
   isVSCodeApp,
   isExcelApp,
+  isBrowserApp,
   vscodeTitleDisplayName,
 } from '~/util/appNames';
 import { projectDisplayName, fileDisplayName, isKnownEditorValue } from '~/util/editorNames';
@@ -541,7 +555,7 @@ export default {
       laneEventInputs: null as null | {
         vpnEvents: any[];
         claudeCombined: any[];
-        browserEvents: any[];
+        browserCombined: any[];
         vscodeCombined: any[];
         excelEvents: any[];
         voispeedEvents: any[];
@@ -617,6 +631,10 @@ export default {
       // Top Editor Files click can recompute exact file sub-ranges
       // without a re-fetch.
       rawEditorEvents: [] as any[],
+      // Same idea, for the Browser lane's browserTitleHighlightRanges()
+      // — solo gli eventi arrivati dal watcher finestra (nessun URL),
+      // vedi isBrowserWindow più sotto.
+      rawBrowserWindowEvents: [] as any[],
       // Auto-refresh (explicit request): re-fetch every 30s while this
       // component is mounted, so new activity shows up without the user
       // having to reload the page or bounce the day picker. Cleared in
@@ -731,48 +749,82 @@ export default {
       if (!this.selectedLane) return [];
       return this.selectedLane.blocks.filter(b => b.key === this.selectedBlock.key);
     },
-    // Per-title time segments within the selected block's own range —
-    // explicit request: clicking an app in the Timeline (opened from Top
-    // Applications) shows start/end/duration for the app as a whole, but
-    // not which window titles made up that time, unlike the Top Window
-    // Titles module (which only ever shows totals for the whole day, not
-    // scoped to one specific occurrence) — and, further request, these
-    // real start/end times are what let the screenshot gallery match
-    // each screenshot to the title that was actually active then,
-    // instead of the user having to cross-reference times by hand. Only
-    // meaningful for a whole Generale-lane app block — a title/file
-    // sub-block (see selectedSubOccurrences) is already as specific as
-    // it gets, and other lanes' events don't carry a `title` field the
-    // same way.
-    selectedBlockTitleSegments(): { title: string; start: moment.Moment; end: moment.Moment }[] {
-      if (!this.selectedBlock || this.selectedLaneKey !== 'general' || this.selectedSubOccurrences) {
-        return [];
-      }
-      const key = this.selectedBlock.key;
-      const events = this.rawGeneralEvents.filter(
-        e => (e.data.app || e.data.title || 'Sconosciuto') === key
-      );
-      const segments = mergeEventsByKey(events, e => e.data.title || 'Sconosciuto', MERGE_GAP_SECONDS);
-      return segments
-        .map(s => ({
-          title: s.key,
-          start: moment.max(s.start, this.selectedBlock.start),
-          end: moment.min(s.end, this.selectedBlock.end),
-        }))
-        // Clipped to the block's own range, same reasoning as
-        // titleHighlightRanges() — a segment can end up entirely outside
-        // it (a different same-key occurrence elsewhere in the day).
-        .filter(s => s.end.isAfter(s.start))
-        .sort((a, b) => a.start.diff(b.start));
+    // Raw (pre-merge) events per corsia, stessa fonte usata da
+    // rebuildLanes() per costruire i blocchi (laneEventInputs) — servono
+    // qui per ricalcolare al volo, per QUALUNQUE corsia, quali eventi
+    // grezzi appartengono al blocco cliccato (vedi
+    // selectedOccurrencesByTitle() sotto).
+    rawEventsByLane(): Record<string, any[]> {
+      if (!this.laneEventInputs) return {};
+      const {
+        vpnEvents,
+        claudeCombined,
+        browserCombined,
+        vscodeCombined,
+        excelEvents,
+        voispeedEvents,
+        windowEvents,
+        customLanes,
+      } = this.laneEventInputs;
+      const map: Record<string, any[]> = {
+        vpn: vpnEvents,
+        claude: claudeCombined,
+        browser: browserCombined,
+        vscode: vscodeCombined,
+        excel: excelEvents,
+        voispeed: voispeedEvents,
+        general: windowEvents,
+      };
+      customLanes.forEach((l: any) => {
+        map[`custom-${l.id}`] = l.events;
+      });
+      return map;
     },
-    selectedBlockTitleBreakdown(): { title: string; duration: number }[] {
-      const totals = new Map<string, number>();
-      for (const seg of this.selectedBlockTitleSegments) {
-        totals.set(seg.title, (totals.get(seg.title) || 0) + seg.end.diff(seg.start, 'seconds'));
+    // Sostituisce del tutto "Altre occorrenze" (sopra) con la stessa
+    // lista di orari ma raggruppata per titolo, per QUALUNQUE corsia —
+    // richiesta esplicita, estesa da un primo tentativo solo per la
+    // corsia Browser (a sua volta sostituto di un precedente tentativo
+    // ancora diverso, un'unica tabella "titolo → durata totale", trovato
+    // poco utile e rimosso). Un blocco raggruppa gli eventi per il suo
+    // stesso criterio (vedi laneKeyFn — VPN per cliente, Excel per file,
+    // Generale/Browser per app...), quindi "Altre occorrenze" mostra
+    // tutte le sue sessioni della giornata mescolate — utile sapere
+    // QUANDO, ma non a cosa corrispondesse ciascuna. Qui, quando gli
+    // eventi grezzi hanno anche un campo `title` distinto (non tutte le
+    // corsie ce l'hanno — vedi il fallback in laneKeyFn), ogni titolo
+    // diventa una sua sezione con l'elenco vero degli orari in cui è
+    // comparso. Copre l'INTERA giornata (come "Altre occorrenze"), non
+    // un singolo intervallo clippato.
+    selectedOccurrencesByTitle(): { title: string; occurrences: { start: moment.Moment; end: moment.Moment }[] }[] {
+      if (!this.selectedBlock || !this.selectedLaneKey || this.selectedSubOccurrences) return [];
+      const rawEvents = this.rawEventsByLane[this.selectedLaneKey];
+      if (!rawEvents) return [];
+      const keyFn = this.laneKeyFn(this.selectedLaneKey);
+      const key = this.selectedBlock.key;
+      const events = rawEvents.filter((e: any) => keyFn(e) === key);
+      // Nessun campo title (la maggior parte delle corsie non-Generale/
+      // Browser): tutti gli eventi ricadono sulla stessa chiave (il
+      // blocco stesso) — un solo gruppo, scartato subito sotto.
+      const segments = mergeEventsByKey(
+        events,
+        (e: any) => (e.data && e.data.title) || key,
+        MERGE_GAP_SECONDS
+      ).sort((a, b) => a.start.diff(b.start));
+
+      const groups = new Map<string, { start: moment.Moment; end: moment.Moment }[]>();
+      for (const seg of segments) {
+        if (!groups.has(seg.key)) groups.set(seg.key, []);
+        (groups.get(seg.key) as { start: moment.Moment; end: moment.Moment }[]).push({
+          start: seg.start,
+          end: seg.end,
+        });
       }
-      return [...totals.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([title, duration]) => ({ title, duration }));
+      // Un solo gruppo (o nessuno): "Altre occorrenze" al modo consueto
+      // è già chiaro così com'è, non serve la sotto-suddivisione.
+      if (groups.size < 2) return [];
+      return [...groups.entries()]
+        .map(([title, occurrences]) => ({ title, occurrences }))
+        .sort((a, b) => a.occurrences[0].start.diff(b.occurrences[0].start));
     },
     // Only meaningful together with highlightedKey (see
     // stores/timelineHighlight.ts's toggleTitle — always set as a
@@ -794,54 +846,13 @@ export default {
       start: moment.Moment;
       end: moment.Moment;
     }[] {
-      if (!this.highlightedTitle || !this.highlightedKey) return [];
-      const generalLane = this.lanes.find(l => l.key === 'general');
-      if (!generalLane) return [];
-      const appBlocks = generalLane.blocks.filter(b => b.key === this.highlightedKey);
-      if (!appBlocks.length) return [];
-
-      const titleEvents = this.rawGeneralEvents.filter(
-        e =>
-          (e.data.app || e.data.title || 'Sconosciuto') === this.highlightedKey &&
-          e.data.title === this.highlightedTitle
+      return this.subRangeHighlight(
+        'general',
+        this.highlightedTitle,
+        this.rawGeneralEvents,
+        (e: any) => (e.data.app || e.data.title || 'Sconosciuto') === this.highlightedKey,
+        (e: any) => e.data.title
       );
-      const segments = mergeEventsByKey(
-        titleEvents,
-        () => this.highlightedTitle as string,
-        MERGE_GAP_SECONDS
-      );
-
-      const result: {
-        left: number;
-        width: number;
-        top: number;
-        color: string;
-        key: string;
-        start: moment.Moment;
-        end: moment.Moment;
-      }[] = [];
-      for (const seg of segments) {
-        const container = appBlocks.find(
-          b => !seg.start.isBefore(b.start) && !seg.end.isAfter(b.end)
-        );
-        // A containing block can be missing if it was dropped by the
-        // anti-clutter filter (short overlapping blocks — see
-        // util/timelineBlocks.ts's dropShortOverlappingRanges()): in
-        // that case the segment has nothing left to visually anchor
-        // to, so it's simply omitted instead of inventing a position.
-        if (!container) continue;
-        const { left, width } = this.blockExtent(seg);
-        result.push({
-          left,
-          width,
-          top: this.rowTop(container.row),
-          color: container.color,
-          key: seg.key,
-          start: seg.start,
-          end: seg.end,
-        });
-      }
-      return result;
     },
     // Same idea as titleHighlightRanges(), for the VSCode lane: a Top
     // Editor Files click sets highlightedKey to the file's owning
@@ -858,49 +869,39 @@ export default {
       start: moment.Moment;
       end: moment.Moment;
     }[] {
-      if (!this.highlightedFile || !this.highlightedKey) return [];
-      const vscodeLane = this.lanes.find(l => l.key === 'vscode');
-      if (!vscodeLane) return [];
-      const projectBlocks = vscodeLane.blocks.filter(b => b.key === this.highlightedKey);
-      if (!projectBlocks.length) return [];
-
-      const fileEvents = this.rawEditorEvents.filter(
-        e =>
-          projectDisplayName(e.data.project) === this.highlightedKey &&
-          fileDisplayName(e.data.file) === this.highlightedFile
+      return this.subRangeHighlight(
+        'vscode',
+        this.highlightedFile,
+        this.rawEditorEvents,
+        (e: any) => projectDisplayName(e.data.project) === this.highlightedKey,
+        (e: any) => fileDisplayName(e.data.file)
       );
-      const segments = mergeEventsByKey(
-        fileEvents,
-        () => this.highlightedFile as string,
-        MERGE_GAP_SECONDS
+    },
+    // Stessa idea, per la corsia Browser: un click su un titolo di
+    // "Titoli finestra principali" imposta highlightedKey al browser
+    // (e.data.app, che combacia già col block.key dei blocchi derivati
+    // dal solo watcher finestra — nessuna estensione) e highlightedTitle
+    // al titolo grezzo. Bug reale corretto: prima non esisteva alcun
+    // segmento più stretto, quindi l'intero blocco (spesso l'intera
+    // giornata di quel browser, tutte le sessioni comprese) risultava
+    // sempre "selezionato" a prescindere da quale titolo fosse stato
+    // cliccato — vedi shouldDimBlock/highlightMatchesLaneByProcessName.
+    browserTitleHighlightRanges(): {
+      left: number;
+      width: number;
+      top: number;
+      color: string;
+      key: string;
+      start: moment.Moment;
+      end: moment.Moment;
+    }[] {
+      return this.subRangeHighlight(
+        'browser',
+        this.highlightedTitle,
+        this.rawBrowserWindowEvents,
+        (e: any) => (e.data.app || 'Sconosciuto') === this.highlightedKey,
+        (e: any) => e.data.title
       );
-
-      const result: {
-        left: number;
-        width: number;
-        top: number;
-        color: string;
-        key: string;
-        start: moment.Moment;
-        end: moment.Moment;
-      }[] = [];
-      for (const seg of segments) {
-        const container = projectBlocks.find(
-          b => !seg.start.isBefore(b.start) && !seg.end.isAfter(b.end)
-        );
-        if (!container) continue;
-        const { left, width } = this.blockExtent(seg);
-        result.push({
-          left,
-          width,
-          top: this.rowTop(container.row),
-          color: container.color,
-          key: seg.key,
-          start: seg.start,
-          end: seg.end,
-        });
-      }
-      return result;
     },
     // "Time active: HH:MM" next to the Timeline title (explicit
     // request) — total not-afk duration, straight from the same
@@ -1487,6 +1488,24 @@ export default {
       // escludere Excel da Generale, la corsia dedicata usa
       // direttamente excelEvents.
       const isExcelWindow = (e: any) => isExcelApp((e.data && e.data.app) || '');
+      // Pulizia richiesta esplicitamente dall'utente: un browser genera
+      // un evento nuovo ad ogni cambio di titolo (spesso ogni singola
+      // scheda/pagina), che in Generale si vedeva come un muro di
+      // blocchi quasi identici (es. episodio dopo episodio dello stesso
+      // sito). Il dominio VERO richiederebbe l'estensione browser
+      // ufficiale di ActivityWatch (bucket web.tab.current) — non
+      // praticabile qui perché quell'estensione parla HTTP con una
+      // porta reale, mentre questo server gira solo in-process (vedi
+      // build_app_server in lib.rs); browserEvents (sotto, dati veri
+      // dall'estensione se mai disponibili) resta comunque nella
+      // pipeline per quando/se un giorno tornasse utilizzabile. Con
+      // solo il watcher finestra a disposizione (app/title, nessun
+      // URL), la corsia dedicata raggruppa per nome del browser
+      // (vedi rebuildLanes) invece che per singolo titolo — non è il
+      // dominio reale, ma toglie comunque il muro di blocchi da
+      // Generale.
+      const isBrowserWindow = (e: any) => isBrowserApp((e.data && e.data.app) || '');
+      const browserWindowEvents = rawWindowEvents.filter(isBrowserWindow);
       // Same system-app exclusion as Top Applications/Titles
       // (SelectableVisualization.vue) — shell/host processes nobody
       // asked to track, kept out of Generale entirely rather than
@@ -1496,9 +1515,11 @@ export default {
           !isClaudeWindow(e) &&
           !isVSCodeWindow(e) &&
           !isExcelWindow(e) &&
+          !isBrowserWindow(e) &&
           !isHiddenSystemApp((e.data && e.data.app) || '')
       );
       this.rawGeneralEvents = windowEvents;
+      this.rawBrowserWindowEvents = browserWindowEvents;
 
       // Heartbeats with no real file focused report every field as the
       // literal string "unknown" (see util/editorNames.ts) — dropped
@@ -1541,7 +1562,7 @@ export default {
       this.laneEventInputs = {
         vpnEvents,
         claudeCombined: [...claudeEvents, ...claudeWindowEvents],
-        browserEvents,
+        browserCombined: [...browserEvents, ...browserWindowEvents],
         vscodeCombined: [...editorEvents, ...vscodeWindowEvents],
         excelEvents,
         voispeedEvents,
@@ -1591,7 +1612,7 @@ export default {
       const {
         vpnEvents,
         claudeCombined,
-        browserEvents,
+        browserCombined,
         vscodeCombined,
         excelEvents,
         voispeedEvents,
@@ -1635,7 +1656,15 @@ export default {
         {
           key: 'browser',
           name: this.$t('home.timeline.laneBrowser'),
-          blocks: this.buildBlocks(browserEvents, domainForEvent),
+          // Dominio vero quando l'evento arriva dall'estensione browser
+          // (data.url presente, vedi domainForEvent) — nome del browser
+          // stesso quando arriva invece dal watcher finestra (nessun
+          // URL disponibile, vedi browserWindowEvents più sopra).
+          blocks: this.buildBlocks(browserCombined, e =>
+            e.data && e.data.url
+              ? domainForEvent(e)
+              : (e.data && e.data.app) || (e.data && e.data.title) || 'Sconosciuto'
+          ),
         },
         {
           key: 'vscode',
@@ -1726,12 +1755,14 @@ export default {
         // Impostazioni, non dal menu Moduli) — solo la visibilità del
         // modulo conta per il controllo 1, stesso caso di VSCode/Browser.
         voispeed: { watcher: null, moduleTypes: ['top_voispeed_contacts'] },
-        // Stesso caso di VSCode: i dati arrivano dall'estensione
-        // browser ufficiale di ActivityWatch (aw-watcher-web-*), non da
-        // un nostro sidecar con toggle nel menu Moduli della tray —
-        // solo la visibilità del modulo conta per il controllo 1.
+        // A differenza di VSCode/VoiSpeed, questa corsia NON dipende
+        // più solo dall'estensione browser (aw-watcher-web-*, oggi non
+        // raggiungibile — vedi il commento su browserWindowEvents più
+        // sopra): riceve dati anche dal solo watcher finestra, quindi
+        // conta come "usata" già solo con quello acceso, come
+        // VPN/Claude/Excel.
         browser: {
-          watcher: null,
+          watcher: 'aw-watcher-window',
           moduleTypes: ['top_domains', 'top_urls', 'top_browser_titles'],
         },
       };
@@ -1780,6 +1811,110 @@ export default {
       const maxRow = lane.blocks.reduce((m, b) => Math.max(m, b.row), 0);
       return computeTrackHeight(maxRow, BLOCK_HEIGHT, ROW_GAP, TRACK_PADDING);
     },
+    // Motore condiviso dietro titleHighlightRanges()/fileHighlightRanges()/
+    // browserTitleHighlightRanges() — stessa identica forma tre volte
+    // (trova la corsia, trova i blocchi già chiavati su highlightedKey,
+    // ri-unisce gli eventi grezzi filtrati per quel sotto-valore, e
+    // posiziona ogni segmento sopra al blocco che lo contiene davvero),
+    // estratta qui invece di ripeterla una terza volta. `containerMatch`
+    // decide quali eventi grezzi appartengono al blocco selezionato
+    // (stesso criterio usato per chiavare i blocchi di quella corsia in
+    // rebuildLanes), `valueFn` legge il sotto-valore da evidenziare
+    // (titolo o file).
+    subRangeHighlight(
+      laneKey: string,
+      highlightValue: string | null,
+      rawEvents: any[],
+      containerMatch: (e: any) => boolean,
+      valueFn: (e: any) => string
+    ): {
+      left: number;
+      width: number;
+      top: number;
+      color: string;
+      key: string;
+      start: moment.Moment;
+      end: moment.Moment;
+    }[] {
+      if (!highlightValue || !this.highlightedKey) return [];
+      const lane = this.lanes.find(l => l.key === laneKey);
+      if (!lane) return [];
+      const containerBlocks = lane.blocks.filter(b => b.key === this.highlightedKey);
+      if (!containerBlocks.length) return [];
+
+      const matchingEvents = rawEvents.filter(e => containerMatch(e) && valueFn(e) === highlightValue);
+      const segments = mergeEventsByKey(matchingEvents, () => highlightValue, MERGE_GAP_SECONDS);
+
+      const result: {
+        left: number;
+        width: number;
+        top: number;
+        color: string;
+        key: string;
+        start: moment.Moment;
+        end: moment.Moment;
+      }[] = [];
+      for (const seg of segments) {
+        const container = containerBlocks.find(
+          b => !seg.start.isBefore(b.start) && !seg.end.isAfter(b.end)
+        );
+        // A containing block can be missing if it was dropped by the
+        // anti-clutter filter (short overlapping blocks — see
+        // util/timelineBlocks.ts's dropShortOverlappingRanges()): in
+        // that case the segment has nothing left to visually anchor
+        // to, so it's simply omitted instead of inventing a position.
+        if (!container) continue;
+        const { left, width } = this.blockExtent(seg);
+        result.push({
+          left,
+          width,
+          top: this.rowTop(container.row),
+          color: container.color,
+          key: seg.key,
+          start: seg.start,
+          end: seg.end,
+        });
+      }
+      return result;
+    },
+    // Stessa identica funzione di raggruppamento usata da rebuildLanes()
+    // per costruire i blocchi di ciascuna corsia (vedi keyFn passata a
+    // buildBlocks lì) — duplicata qui apposta invece di farla richiamare
+    // da entrambe: rebuildLanes() resta la definizione "viva" di ogni
+    // corsia, questa serve solo a ritrovare gli eventi grezzi di un
+    // blocco già disegnato (selectedOccurrencesByTitle) senza dipendere
+    // dall'ordine di costruzione delle corsie stesse.
+    laneKeyFn(laneKey: string): (e: any) => string {
+      switch (laneKey) {
+        case 'vpn':
+        case 'voispeed':
+          return (e: any) => (e.data && e.data.cliente) || 'Sconosciuto';
+        case 'claude':
+          return (e: any) => (e.data && e.data.cliente) || 'Claude Desktop (finestra)';
+        case 'browser':
+          return (e: any) =>
+            e.data && e.data.url
+              ? domainForEvent(e)
+              : (e.data && e.data.app) || (e.data && e.data.title) || 'Sconosciuto';
+        case 'vscode':
+          return (e: any) =>
+            (e.data.project
+              ? projectDisplayName(e.data.project)
+              : vscodeTitleDisplayName(e.data.title || '')) || 'VS Code (finestra)';
+        case 'excel':
+          return (e: any) => e.data.file || 'Sconosciuto';
+        case 'general':
+          return (e: any) => e.data.app || e.data.title || 'Sconosciuto';
+        default: {
+          if (laneKey.startsWith('custom-')) {
+            const lane = this.lanes.find((l: Lane) => l.key === laneKey);
+            return (e: any) =>
+              (e.data && (e.data.etichetta || e.data.label)) || (lane ? lane.name : 'Sconosciuto');
+          }
+          return () => 'Sconosciuto';
+        }
+      }
+    },
     // Top Applications selects by the raw process name (e.g.
     // "claude.exe", "Code.exe") — but the Claude/VSCode lanes key their
     // own blocks by session/project name instead (richer, but a
@@ -1797,6 +1932,16 @@ export default {
       if (lane.key === 'claude') return isClaudeAppName(this.highlightedKey);
       if (lane.key === 'vscode') return isVSCodeApp(this.highlightedKey);
       if (lane.key === 'excel') return isExcelApp(this.highlightedKey);
+      // La corsia Browser NON serve qui, a differenza delle altre tre:
+      // i suoi blocchi (senza estensione) sono chiavati per nome del
+      // browser (e.data.app), lo stesso valore grezzo che arriva già
+      // da un click su "Applicazioni principali" — combacia da solo col
+      // confronto normale block.key === highlightedKey più sotto, come
+      // per la corsia Generale. Bug reale corretto: un `return true`
+      // qui selezionava l'INTERA corsia (ogni sessione separata nella
+      // giornata) anche cliccando un singolo titolo da "Titoli finestra
+      // principali", perché il controllo non guardava affatto
+      // highlightedTitle.
       return false;
     },
     // Normally a block is dimmed only when its key doesn't match the
@@ -1811,6 +1956,11 @@ export default {
       if (block.key !== this.highlightedKey) return true;
       if (lane.key === 'general') return !!this.highlightedTitle;
       if (lane.key === 'vscode') return !!this.highlightedFile;
+      // Stesso trattamento di Generale: un titolo specifico selezionato
+      // sposta l'evidenziazione dal blocco intero (tutta la sessione di
+      // quel browser) al segmento più stretto disegnato sopra, vedi
+      // browserTitleHighlightRanges().
+      if (lane.key === 'browser') return !!this.highlightedTitle;
       return false;
     },
     // The bright outline treatment (same look as .lane-title-highlight,
@@ -1870,7 +2020,12 @@ export default {
         width: seg.width,
         color: seg.color,
       };
-      const source = lane.key === 'general' ? this.titleHighlightRanges : this.fileHighlightRanges;
+      const source =
+        lane.key === 'general'
+          ? this.titleHighlightRanges
+          : lane.key === 'browser'
+            ? this.browserTitleHighlightRanges
+            : this.fileHighlightRanges;
       this.selectedSubOccurrences = source.map(s => ({
         key: s.key,
         start: s.start,
