@@ -108,6 +108,16 @@ export const useViewsStore = defineStore('views', {
     addVisualization(this: State, { view_id, type }) {
       this.views.find(v => v.id == view_id).elements.push({ type: type });
     },
+    // Come addVisualization, ma con props già pronti — usato dalla
+    // creazione di un watcher personalizzato per aggiungere subito il
+    // suo modulo in Home (bucketId/title/gridWidth), senza dover passare
+    // dal flusso "+ Aggiungi modulo" → scelta tipo a vuoto.
+    addVisualizationWithProps(
+      this: State,
+      { view_id, type, props }: { view_id: string; type: string; props: Record<string, unknown> }
+    ) {
+      this.views.find(v => v.id == view_id).elements.push({ type, props });
+    },
     removeVisualization(this: State, { view_id, el_id }) {
       this.views.find(v => v.id == view_id).elements.splice(el_id, 1);
     },

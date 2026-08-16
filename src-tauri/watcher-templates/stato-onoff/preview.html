@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body {
+      margin: 0;
+      padding: 4px 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+      background: transparent;
+      color: #b8a999;
+    }
+    .stato-onoff {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pallino {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background-color: #7c9a5c;
+      flex-shrink: 0;
+    }
+    .etichetta {
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Anteprima statica con dati d'esempio (non c'è ancora un bucket
+       reale in questa fase del wizard) - mostra all'utente come apparirà
+       questo modello una volta collegato ai dati veri. -->
+  <div class="stato-onoff">
+    <div class="pallino"></div>
+    <div class="etichetta">playnite_avviato: Attivo</div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How to write a new tracking module — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="A step-by-step guide to adding a new built-in watcher, compiled as part of TrackFlow itself, with a real working example.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html" class="active">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>How to write a new tracking module</h2>
+        <p class="docs-guide-lede">A "watcher" is what TrackFlow calls each little program that tracks one thing — the active window, your browser, VS Code, and so on. This guide walks through building a brand new <em>built-in</em> one, compiled as part of TrackFlow itself.</p>
+        <p><strong>Most people don't need this guide.</strong> If you just want to track your own thing without touching TrackFlow's source code or rebuilding the app, use <a href="custom-watchers-overview.html" style="color:var(--color-accent1)">custom watchers</a> instead — same underlying idea (a small program that prints data), created and managed entirely from inside the app. This guide is for adding a watcher that ships as part of TrackFlow itself, for everyone who installs it.</p>
+
+        <h3>Before you start</h3>
+        <ul>
+          <li>You'll need the Rust toolchain installed — if <code>cargo --version</code> in a terminal prints something, you're set. Otherwise get it from <a href="https://rustup.rs" style="color:var(--color-accent1)">rustup.rs</a> (a few clicks, no configuration needed).</li>
+          <li>You should be comfortable opening a terminal and running a command someone gives you — nothing more advanced than that.</li>
+          <li>You don't need to know Tauri, or how TrackFlow's server works internally. That's the whole point of this guide.</li>
+        </ul>
+
+        <h3>The big idea, in one paragraph</h3>
+        <p>A watcher is <em>just a program that prints text</em>. It doesn't connect to the internet, doesn't call an API, doesn't know anything about databases. Every second or so, it figures out "what's happening right now" and prints one line of JSON describing it. TrackFlow's main app reads whatever the watcher prints and takes care of the rest. That's the entire contract — if you can print a line of text from a loop, you can write a watcher.</p>
+
+        <h3>Worked example: a watcher that reports the time of day</h3>
+        <p>To make this concrete, here's a complete, real, working watcher — <code>aw-watcher-clock</code> — that just reports whether it's currently "morning", "afternoon", "evening" or "night". It's intentionally trivial so every piece is visible; a real watcher just replaces the "figure out what's happening" part with something more useful.</p>
+
+        <p><strong>Step 1 — create the folder and the crate.</strong> In the project's root folder, create <code>aw-watcher-clock-rust/</code>, and inside it a file called <code>Cargo.toml</code>:</p>
+        <pre><code>[package]
+name = "aw-watcher-clock-rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aw-watcher-clock"
+path = "src/main.rs"
+
+[dependencies]
+chrono = "0.4"
+serde_json = "1"
+gethostname = "0.4"</code></pre>
+
+        <p><strong>Step 2 — write the watcher itself.</strong> Create <code>aw-watcher-clock-rust/src/main.rs</code> with this content:</p>
+        <pre><code>use std::io::Write;
+use std::{thread, time::Duration};
+use serde_json::json;
+
+fn time_of_day() -> &amp;'static str {
+    let hour = chrono::Local::now().format("%H").to_string().parse::&lt;u32&gt;().unwrap();
+    match hour {
+        5..=11 =&gt; "morning",
+        12..=17 =&gt; "afternoon",
+        18..=21 =&gt; "evening",
+        _ =&gt; "night",
+    }
+}
+
+fn main() {
+    let hostname = gethostname::gethostname().to_string_lossy().to_string();
+    loop {
+        let envelope = json!({
+            "bucket_id": format!("aw-watcher-clock_{hostname}"),
+            "bucket_type": "clock.timeofday",
+            "client": "aw-watcher-clock",
+            "op": "heartbeat",
+            "pulsetime": 60,
+            "event": {
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "duration": 0,
+                "data": { "period": time_of_day() }
+            }
+        });
+
+        // println! alone is not enough: Rust buffers stdout, so without
+        // an explicit flush the line can sit in memory instead of
+        // actually reaching TrackFlow. This one line is the single most
+        // common reason a new watcher "does nothing".
+        println!("{envelope}");
+        std::io::stdout().flush().unwrap();
+
+        thread::sleep(Duration::from_secs(30));
+    }
+}</code></pre>
+        <p>That's a complete, real watcher. Every 30 seconds it prints one line like this to its own terminal output:</p>
+        <pre><code>{"bucket_id":"aw-watcher-clock_MY-PC","bucket_type":"clock.timeofday","client":"aw-watcher-clock","op":"heartbeat","pulsetime":60,"event":{"timestamp":"2026-08-15T20:00:00Z","duration":0,"data":{"period":"evening"}}}</code></pre>
+        <p>The two things worth noticing about that line:</p>
+        <ul>
+          <li><code>"op": "heartbeat"</code> means "this is a continuation of whatever I was already reporting, if it's the same as last time" — perfect for something that stays the same for a while (like the time of day, or the active window). Use <code>"event"</code> instead for something that happens once and is done, like a screenshot being taken.</li>
+          <li>Everything specific to your watcher goes inside <code>"data"</code> — TrackFlow doesn't care what's in there, it just stores it.</li>
+        </ul>
+
+        <h3>Making TrackFlow actually run it</h3>
+        <p>The watcher above compiles and runs on its own, but TrackFlow won't launch it automatically yet, and it won't be in the installer. Three separate things need to happen — miss one, and the watcher either won't start or won't ship. Go through them in order.</p>
+
+        <h4 style="margin:24px 0 10px;font-size:1rem;color:var(--color-text)">1. Tell the app it exists (<code>src-tauri/src/lib.rs</code>)</h4>
+        <ul>
+          <li>Find the <code>WATCHERS</code> list and add <code>"aw-watcher-clock"</code> to it — this is the list TrackFlow actually loops over to start watchers when it launches.</li>
+          <li>Find <code>ALL_MODULES</code> and add <code>("aw-watcher-clock", "Time of day")</code> — the second part is the label shown in the tray's "Modules" menu, where anyone can turn your watcher on or off.</li>
+        </ul>
+        <p>You don't need to write any other Rust code for a simple watcher like this one — TrackFlow already knows how to launch a generic watcher, feed it standard input if needed, and read its output.</p>
+
+        <h4 style="margin:24px 0 10px;font-size:1rem;color:var(--color-text)">2. Make it part of a release build</h4>
+        <p>A new watcher name has to be typed in <strong>four</strong> separate files. This is the step people forget — if you skip one, everything still compiles and works on your own machine, but the watcher silently won't be in the installer other people download.</p>
+        <table>
+          <tr><th>File</th><th>What to add</th></tr>
+          <tr><td><code>src-tauri/tauri.conf.json</code></td><td>Add <code>"binaries/aw-watcher-clock"</code> to the <code>bundle.externalBin</code> list</td></tr>
+          <tr><td><code>.github/workflows/release.yml</code></td><td>Add <code>clock</code> to the <code>WATCHERS</code> line near the top (space-separated list of names)</td></tr>
+          <tr><td><code>release.yml</code> <em>and</em> <code>cache-warmup.yml</code></td><td>In both files, add a line <code>aw-watcher-clock-rust -&gt; target</code> to the cache <code>workspaces:</code> list — do it in both, or the two files stop agreeing and the build cache stops working</td></tr>
+          <tr><td><code>cache-warmup.yml</code></td><td>Add <code>clock</code> to its own <code>WATCHERS</code> line too, same as in <code>release.yml</code></td></tr>
+        </table>
+
+        <h4 style="margin:24px 0 10px;font-size:1rem;color:var(--color-text)">3. (Optional) Show it on the first-run screen</h4>
+        <p>Skip this if you're happy with people finding your watcher later in the tray menu. If you want it offered as a toggle the very first time someone installs TrackFlow:</p>
+        <ul>
+          <li>In <code>src/i18n/locales/en.ts</code> and <code>it.ts</code>, add a line like <code>'aw-watcher-clock': 'Time of day'</code> under <code>firstRunSetup.modules</code>.</li>
+          <li>In <code>src/components/FirstRunWatcherSetup.vue</code>, add <code>"aw-watcher-clock"</code> to the <code>WATCHER_NAMES</code> list, and decide if it should be checked by default.</li>
+        </ul>
+
+        <h3>Mistakes that are easy to make (and how to spot them)</h3>
+        <ul>
+          <li><strong>"My watcher compiles but nothing happens."</strong> Almost always a missing <code>.flush()</code> after <code>println!</code> — Rust holds output in a buffer, and without flushing, TrackFlow never actually sees it.</li>
+          <li><strong>"It works on my machine but isn't in the download."</strong> One of the four release/CI places above was missed — go through that table again, line by line.</li>
+          <li><strong>"Two watchers seem to be fighting over the same data."</strong> Every watcher needs its own unique <code>bucket_id</code> (the hostname suffix in the example above handles this automatically). Two watchers writing to the same <code>bucket_id</code> will overwrite each other.</li>
+          <li><strong>"The cache stopped speeding up my builds after I added a watcher."</strong> The <code>workspaces:</code> list in <code>release.yml</code> and <code>cache-warmup.yml</code> has to be <em>identical</em> in both files — a mismatch here silently breaks the cache without any error.</li>
+        </ul>
+
+        <h3>Checklist</h3>
+        <ul>
+          <li>☐ Crate created, compiles, prints valid JSON with <code>.flush()</code> after every line</li>
+          <li>☐ Added to <code>WATCHERS</code> and <code>ALL_MODULES</code> in <code>lib.rs</code></li>
+          <li>☐ Added to <code>tauri.conf.json</code>'s <code>externalBin</code></li>
+          <li>☐ Added to <code>WATCHERS</code> in both <code>release.yml</code> and <code>cache-warmup.yml</code></li>
+          <li>☐ Added to the cache <code>workspaces:</code> list in both workflow files</li>
+          <li>☐ (Optional) Added to the first-run screen</li>
+        </ul>
+
+        <p>None of this requires Rust specifically, by the way — the contract is just "print a line of JSON to stdout." A watcher written in Python, Go, or anything else that can do that would work exactly the same way; it just wouldn't currently fit into this repository's existing Cargo-based build pipeline without some adjustment.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

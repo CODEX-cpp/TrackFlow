@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Creating a custom watcher — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Step by step through the in-app wizard for creating a custom watcher in Simple mode.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html" class="active">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>Creating one in the app</h2>
+        <p class="docs-guide-lede">A guided, six-step popup — no field is required beyond a name.</p>
+        <ol>
+          <li>Open the <strong>Data sources</strong> page and click <strong>"+ New custom watcher"</strong>.</li>
+          <li>Pick <strong>"Simplified mode"</strong>.</li>
+          <li>Fill in the form: a name for the watcher, how often it should run, and an optional toggle to give it its own row on the Timeline.</li>
+          <li>Choose how wide the module should be on your Home page — four sizes are offered, from a compact single column up to the full width.</li>
+          <li>Choose how the data should be displayed — see <a href="custom-watchers-templates.html" style="color:var(--color-accent1)">Visualization templates</a> for the full list, each shown with a small live preview so you can see roughly what it looks like before picking it.</li>
+          <li>Click <strong>"Create module"</strong>.</li>
+        </ol>
+        <p>The moment you click Create, three things happen automatically: the watcher's folder and starter script are created on disk, the watcher starts running immediately (no restart needed), and a module showing its data — empty until the first data point arrives — appears on your Home page at the size and with the visualization you picked.</p>
+        <p>A confirmation screen shows you exactly where the folder was created and offers a button to open it directly in Explorer, so you can start editing the script right away — see <a href="custom-watchers-script.html" style="color:var(--color-accent1)">Writing the watcher script</a> for what to put in it.</p>
+        <p>Next: <a href="custom-watchers-templates.html" style="color:var(--color-accent1)">Visualization templates</a>.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

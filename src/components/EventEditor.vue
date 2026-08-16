@@ -1,56 +1,98 @@
 <template lang="pug">
-b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEditModal", :title="$t('modals.eventEditor.title')", centered, hide-footer)
-  div(v-if="!editedEvent")
-    | {{ $t('modals.eventEditor.loading') }}
+div(v-if="event && event.id")
+  div.modal-backdrop(@click="close")
+  div.edit-modal.event-editor-modal.themed-scroll
+    div.edit-modal-title {{ $t('modals.eventEditor.title') }}
 
-  div(v-else)
-    table(style="width: 100%")
-      tr
-        th {{ $t('modals.eventEditor.bucket') }}
-        td {{ bucket_id }}
-      tr
-        th {{ $t('modals.eventEditor.id') }}
-        td {{ event.id }}
-      tr
-        th {{ $t('modals.eventEditor.start') }}
+    div(v-if="!editedEvent") {{ $t('modals.eventEditor.loading') }}
+
+    div(v-else)
+      div.event-editor-row
+        span.event-editor-label {{ $t('modals.eventEditor.bucket') }}
+        span.event-editor-value {{ bucket_id }}
+      div.event-editor-row
+        span.event-editor-label {{ $t('modals.eventEditor.id') }}
+        span.event-editor-value {{ event.id }}
+      div.event-editor-row
+        span.event-editor-label {{ $t('modals.eventEditor.start') }}
         datetime(type="datetime" v-model="start")
-      tr
-        th {{ $t('modals.eventEditor.end') }}
+      div.event-editor-row
+        span.event-editor-label {{ $t('modals.eventEditor.end') }}
         datetime(type="datetime" v-model="end")
-      tr
-        th {{ $t('modals.eventEditor.duration') }}
-        td {{ editedEvent.duration | friendlyduration }}
+      div.event-editor-row
+        span.event-editor-label {{ $t('modals.eventEditor.duration') }}
+        span.event-editor-value {{ editedEvent.duration | friendlyduration }}
 
-    hr
+      div.event-editor-divider
 
-    table(style="width: 100%")
-      tr
-        th {{ $t('modals.eventEditor.key') }}
-        th {{ $t('modals.eventEditor.value') }}
-      tr(v-for="(v, k) in editedEvent.data" :key="k")
-        td
-          b-input(disabled, :value="k", size="sm")
-        td
-          b-checkbox(v-if="typeof event.data[k] === typeof true", v-model="editedEvent.data[k]", style="margin: 0.25em")
-          b-input(v-if="typeof event.data[k] === typeof 'string'", v-model="editedEvent.data[k]", size="sm")
-          b-input(v-if="typeof event.data[k] === 'number'", v-model.number="editedEvent.data[k]", size="sm", type="number")
+      div.event-editor-data-row(v-for="(v, k) in editedEvent.data" :key="k")
+        input.edit-field.event-editor-key(disabled, :value="k")
+        input.edit-field(
+          v-if="typeof event.data[k] === typeof true"
+          type="checkbox"
+          v-model="editedEvent.data[k]"
+          style="width: auto"
+        )
+        input.edit-field(v-if="typeof event.data[k] === typeof 'string'", v-model="editedEvent.data[k]")
+        input.edit-field(v-if="typeof event.data[k] === 'number'", v-model.number="editedEvent.data[k]", type="number")
 
-    hr
-
-    div.float-left
-      b-button.mx-1(@click="delete_(); close();" variant="danger")
-        icon.mx-1(name="trash")
-        | {{ $t('modals.eventEditor.delete') }}
-    div.float-right
-      b-button.mx-1(@click="close")
-        icon.mx-1(name="times")
-        | {{ $t('modals.eventEditor.cancel') }}
-      b-button.mx-1(@click="save(); close();", variant="primary")
-        icon.mx-1(name="save")
-        | {{ $t('modals.eventEditor.save') }}
+      div.edit-modal-actions
+        div.pill-btn-danger(@click="delete_(); close();")
+          icon.mr-1(name="trash")
+          | {{ $t('modals.eventEditor.delete') }}
+        div.pill-btn-ghost(@click="close") {{ $t('modals.eventEditor.cancel') }}
+        div.pill-btn(@click="save(); close();") {{ $t('modals.eventEditor.save') }}
 </template>
 
-<style lang="scss"></style>
+<style lang="scss" scoped>
+@import '../style/theme.css';
+@import '../style/modals.css';
+
+.event-editor-modal {
+  width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.event-editor-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+
+.event-editor-row:last-child {
+  border-bottom: none;
+}
+
+.event-editor-label {
+  width: 90px;
+  flex-shrink: 0;
+  color: var(--color-text-faint);
+}
+
+.event-editor-value {
+  color: var(--color-text-dim);
+  word-break: break-all;
+}
+
+.event-editor-divider {
+  border-top: 1px solid var(--color-border);
+  margin: 14px 0;
+}
+
+.event-editor-data-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.event-editor-key {
+  opacity: 0.7;
+}
+</style>
 
 <script lang="ts">
 // This EventEditor can be used to edit events in a specific bucket.
@@ -63,8 +105,6 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
 
 import moment from 'moment';
 
-import 'vue-awesome/icons/times';
-import 'vue-awesome/icons/save';
 import 'vue-awesome/icons/trash';
 
 export default {
@@ -128,7 +168,6 @@ export default {
       }
     },
     close() {
-      this.$refs.eventEditModal.hide();
       this.$emit('close', this.event);
     },
   },

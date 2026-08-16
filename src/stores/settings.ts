@@ -74,6 +74,11 @@ interface State {
   // Guardato lato JS in main.js (contextmenu/keydown) — vedi
   // util/devtoolsGuard.ts per il motivo per cui è lì e non solo qui.
   devtoolsEnabled: boolean;
+  // Pulsante "Apri" su ogni riga della tabella Sorgenti dati (Watchers) —
+  // spento di default: è un pannello tecnico (timeline grezza + lista
+  // eventi) non pensato per l'uso quotidiano, va acceso solo per
+  // diagnosticare un problema. Vedi views/Buckets.vue.
+  rawDataDiagnosticsEnabled: boolean;
 
   // Whether to hide visualizations that lack required data (default: off)
   hideUnsupportedVisualizations: boolean;
@@ -146,6 +151,7 @@ export const useSettingsStore = defineStore('settings', {
     requestTimeout: 30,
     developerModeEnabled: false,
     devtoolsEnabled: false,
+    rawDataDiagnosticsEnabled: false,
     hideUnsupportedVisualizations: false,
     hideEmptyModules: true,
     hideEmptyTimelineLanes: true,

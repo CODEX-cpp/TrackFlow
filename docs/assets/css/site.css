@@ -294,6 +294,53 @@ footer a:hover { color: var(--color-accent1); }
 .docs-sidebar a:target,
 .docs-sidebar a.active { color: var(--color-accent1); border-left-color: var(--color-accent1); }
 
+/* Sidebar groups: plain <details>/<summary>, no JS required. Each group
+   keeps the exact same ul/a styling as before (still direct descendants
+   of .docs-sidebar) — only the group header and its own indent/spacing
+   are new here. */
+.docs-nav-group { margin-bottom: 18px; }
+.docs-nav-group:last-child { margin-bottom: 0; }
+.docs-nav-group summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--color-text-faint);
+  padding: 2px 0 10px;
+  user-select: none;
+}
+.docs-nav-group summary::-webkit-details-marker { display: none; }
+.docs-nav-group summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--color-text-faint);
+  border-bottom: 1.5px solid var(--color-text-faint);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.docs-nav-group[open] summary::before { transform: rotate(45deg); }
+
+/* Small breadcrumb back to the guides index, at the top of every
+   individual guide page (each guide is now its own .html file, not an
+   anchor within one long page). */
+.docs-back {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--color-text-faint);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.docs-back:hover { color: var(--color-accent1); }
+.docs-nav-group summary:hover { color: var(--color-text); }
+
 .docs-content { flex: 1 1 0; min-width: 0; }
 
 @media (max-width: 900px) {

@@ -2,7 +2,7 @@
 div.vis-card(v-if="visibile")
   h5.vis-card-title
     icon.handle(name="bars" v-if="editable" style="opacity: 0.6; cursor: grab;")
-    | {{ visualizations[type].title }}
+    | {{ cardTitle }}
   div(v-if="editable").vis-style-dropdown-btn
     b-dropdown.mr-1(size="sm" variant="outline-secondary" right)
       template(v-slot:button-content)
@@ -127,7 +127,11 @@ div.vis-card(v-if="visibile")
                  with_limit)
     div(v-if="type == 'top_categories'")
       aw-category-bar(:apps="top_apps_filtered")
-    div(v-if="type == 'custom_vis'")
+    div(v-if="type == 'custom_watcher_view' && !props.templateId")
+      aw-custom-watcher-view(:bucket-id="props.bucketId" :title="props.title")
+    div(v-if="type == 'custom_watcher_view' && props.templateId")
+      iframe.watcher-template-frame(:src="watcherTemplateSrc" frameborder="0")
+    div(v-if="type == 'custom_html_module'")
       aw-custom-vis(:visname="props.visname" :title="props.title")
 </template>
 
@@ -255,6 +259,19 @@ div.vis-card(v-if="visibile")
 .vis-alert-link {
   color: var(--color-accent1);
 }
+
+// Nessuna sincronizzazione automatica dell'altezza col contenuto reale
+// dell'iframe (richiederebbe il modello stesso a segnalare la propria
+// altezza via postMessage) — stessa limitazione già accettata dai
+// "Moduli HTML personalizzati" (CustomVisualization.vue), che non
+// stilizzano affatto il proprio iframe. Un'altezza fissa modesta basta
+// per un indicatore compatto come "Stato acceso/spento"; un modello
+// futuro più corposo potrebbe aver bisogno di un valore diverso qui.
+.watcher-template-frame {
+  width: 100%;
+  height: 60px;
+  border: none;
+}
 </style>
 
 <script lang="ts">
@@ -317,7 +334,8 @@ export default {
         'top_excel_files',
         'top_voispeed_contacts',
         'top_categories',
-        'custom_vis',
+        'custom_watcher_view',
+        'custom_html_module',
         'top_vpn_clients',
         'top_claude_usage',
       ],
@@ -420,9 +438,13 @@ export default {
           // "watcher mancante" per questo tipo.
           available: true,
         },
-        custom_vis: {
-          title: this.$t('visualizations.customVis'),
-          available: true, // TODO: Implement
+        custom_watcher_view: {
+          title: this.$t('visualizations.customWatcherView'),
+          available: true,
+        },
+        custom_html_module: {
+          title: this.$t('visualizations.customHtmlModule'),
+          available: true,
         },
         top_vpn_clients: {
           title: this.$t('visualizations.topVpnClients'),
@@ -444,6 +466,37 @@ export default {
     },
     has_prerequisites() {
       return this.visualizations[this.type].available;
+    },
+    // Watcher personalizzati e moduli HTML personalizzati sono creati
+    // dall'utente in più copie dello stesso "tipo" — l'etichetta
+    // generica per tipo (visualizations[type].title, es. "Watcher
+    // personalizzato") non li distingue. Se questa istanza ha un titolo
+    // proprio (props.title, impostato alla creazione/selezione), usa
+    // quello nell'intestazione della card; altrimenti resta il
+    // generico, es. per uno slot appena aggiunto e non ancora
+    // configurato.
+    cardTitle() {
+      if (
+        (this.type === 'custom_watcher_view' || this.type === 'custom_html_module') &&
+        this.props &&
+        this.props.title
+      ) {
+        return this.props.title;
+      }
+      return this.visualizations[this.type].title;
+    },
+    // Stessa risoluzione dell'origine già usata da CustomVisualization.vue
+    // (moduli HTML personalizzati) per il proprio iframe — il server
+    // aw-server-rust serve sia le API sia queste pagine statiche sulla
+    // stessa origine della finestra, tranne in dev mode (porta 27180),
+    // dove serve un fallback esplicito.
+    watcherTemplateSrc() {
+      let origin = document.location.origin;
+      if (document.location.port == '27180') {
+        origin = 'http://localhost:5666';
+      }
+      const params = new URLSearchParams({ bucket_id: this.props.bucketId || '' });
+      return origin + '/pages/watcher-templates/' + this.props.templateId + '/?' + params.toString();
     },
     // Alcuni moduli restano visibili ma vuoti quando non ci sono dati da
     // mostrare per il periodo — richiesta esplicita dell'utente: in quel

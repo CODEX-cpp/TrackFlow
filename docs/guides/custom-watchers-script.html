@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Writing the watcher script — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="The contract a custom watcher script follows, supported languages, and where the script lives on disk.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html" class="active">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>Writing the watcher script</h2>
+        <p class="docs-guide-lede">The entire contract, in one sentence: your script runs, prints one line of data, and exits. TrackFlow takes care of everything else.</p>
+
+        <h3>The contract</h3>
+        <ul>
+          <li>TrackFlow re-launches your script on the interval you chose (every 30 seconds, minute, 5 minutes, or 15 minutes).</li>
+          <li>Your script should print <strong>one line of JSON</strong> describing whatever you want tracked, then exit normally.</li>
+          <li>If your script prints other lines too (progress messages, debug output, warnings) that's fine — TrackFlow only pays attention to the <em>last non-empty line</em> it printed.</li>
+          <li>The JSON can contain whatever fields you want, with whatever names you want. TrackFlow doesn't need to know your field names in advance.</li>
+        </ul>
+
+        <h3>A minimal example</h3>
+        <p>This is a complete, working watcher body in PowerShell — the language TrackFlow starts you off with:</p>
+        <pre><code>$dati = @{
+    valore = 42
+    etichetta = "esempio"
+}
+$dati | ConvertTo-Json -Compress</code></pre>
+        <p>The same idea in Python:</p>
+        <pre><code>import json
+
+print(json.dumps({"valore": 42, "etichetta": "esempio"}))</code></pre>
+        <p>Both print exactly one line: <code>{"valore":42,"etichetta":"esempio"}</code>. That's all TrackFlow needs.</p>
+
+        <h3>Supported languages</h3>
+        <p>TrackFlow looks at the <strong>file extension</strong> of the script you point it at and picks the matching interpreter automatically:</p>
+        <table>
+          <tr><th>Extension</th><th>Runs with</th></tr>
+          <tr><td><code>.ps1</code></td><td>PowerShell (the default — every new watcher starts with a <code>watcher.ps1</code>)</td></tr>
+          <tr><td><code>.py</code> / <code>.pyw</code></td><td>Python</td></tr>
+          <tr><td><code>.js</code></td><td>Node.js</td></tr>
+          <tr><td><code>.cmd</code> / <code>.bat</code></td><td>Windows batch, via <code>cmd /C</code></td></tr>
+          <tr><td>Anything else</td><td>Run directly as a program — useful for pointing at an already-compiled <code>.exe</code></td></tr>
+        </table>
+        <p>The runtime for whatever language you pick (Python, Node, …) has to already be installed on your computer and available on your <code>PATH</code> — TrackFlow doesn't install one for you. If it's missing, that shows up clearly in the watcher's own log — see <a href="custom-watchers-manage.html" style="color:var(--color-accent1)">Managing one afterwards</a> — instead of anywhere silent.</p>
+
+        <h3>Where the script lives</h3>
+        <p>Each watcher gets its own folder on disk, and its script can be opened, edited, and saved with any editor you like while TrackFlow keeps running it in the background — there's no need to restart the app after editing the file's contents. The folder also contains a small file called <code>watcher.json</code>, which TrackFlow keeps hidden — that's its own internal settings for this watcher (interval, which script to run, and so on), and it's managed entirely from inside the app, never by hand.</p>
+        <p>Next: <a href="custom-watchers-create.html" style="color:var(--color-accent1)">Creating one in the app</a>.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

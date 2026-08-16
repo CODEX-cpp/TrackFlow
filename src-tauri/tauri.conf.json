@@ -29,7 +29,8 @@
     ],
     "resources": {
       "../dist": "dist",
-      "icons/128x128.png": "icons/notification-icon.png"
+      "icons/128x128.png": "icons/notification-icon.png",
+      "watcher-templates": "watcher-templates"
     },
     "externalBin": [
       "binaries/aw-watcher-vpn",

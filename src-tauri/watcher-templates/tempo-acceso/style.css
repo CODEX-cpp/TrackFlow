@@ -1,0 +1,26 @@
+body {
+  margin: 0;
+  padding: 4px 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+  background: transparent;
+  color: #b8a999;
+  text-align: center;
+}
+
+.tempo-acceso {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.durata {
+  font-size: 24px;
+  font-weight: 700;
+  color: #7c9a5c;
+  line-height: 1;
+}
+
+.etichetta {
+  font-size: 12px;
+}

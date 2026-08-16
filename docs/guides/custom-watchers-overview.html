@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Custom watchers: how they work — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Track anything you want without writing code or recompiling anything — how TrackFlow's custom watchers work.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html" class="active">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>Custom watchers: how they work</h2>
+        <p class="docs-guide-lede">Track anything you want — without writing a single line of TrackFlow's own code, and without recompiling anything. This is the easiest way to add a new data source, and the one almost everyone should use.</p>
+
+        <h3>What a custom watcher actually is</h3>
+        <p>A custom watcher is your own small program or script that TrackFlow runs on a schedule, on your own computer. Every time it runs, it can print a bit of data — a number, a status, a name, whatever you want — and TrackFlow saves it, shows it on your Home page, and lets you export it, exactly like any of the built-in trackers (active window, VS Code, VPN, and so on).</p>
+        <p>You create, edit, and delete custom watchers entirely from inside the app — no code editor for TrackFlow itself, no rebuilding, no restart of the app required.</p>
+
+        <h3>Two modes — this guide covers Simple mode</h3>
+        <p>When you create a watcher, TrackFlow asks you to pick one of two modes:</p>
+        <ul>
+          <li><strong>Simple mode</strong> — you write one small script in a language of your choice. TrackFlow re-runs it automatically every so often, reads whatever it printed, and turns that into tracked data for you. You never have to think about buckets, timestamps, or TrackFlow's internal data format. <em>This is what the rest of this guide is about.</em></li>
+          <li><strong>Expert mode</strong> — for advanced use: a long-running process you write yourself, following TrackFlow's full internal contract (the same one built-in watchers use). More power, more responsibility, and not covered here.</li>
+        </ul>
+
+        <h3>Where this lives in the app</h3>
+        <p>Everything happens on the <strong>Data sources</strong> page (the sidebar icon that looks like a database). It shows two tables: the built-in modules TrackFlow ships with, and — further down — every custom watcher you've created, along with a <strong>"+ New custom watcher"</strong> button right below that second table.</p>
+        <p>Next: <a href="custom-watchers-script.html" style="color:var(--color-accent1)">Writing the watcher script</a>.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

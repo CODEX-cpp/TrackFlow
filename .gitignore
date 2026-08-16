@@ -75,3 +75,9 @@ RELEASE.md
 # BLUEPRINT.md sezione 30) — solo materiale sorgente locale, le copie
 # usate davvero vivono gia' in docs/assets/img/screenshots/.
 /images/
+
+# Stato locale dell'auto-updater (src-tauri/src/updater.rs) generato
+# provando gli aggiornamenti in locale durante lo sviluppo — mai file
+# sorgente, non ha senso nel repository (2026-08-16).
+src-tauri/current.txt
+src-tauri/versions/

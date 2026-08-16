@@ -9,6 +9,10 @@ Vue.filter('iso8601', function (timestamp) {
   return moment.parseZone(timestamp).format();
 });
 
+Vue.filter('datait', function (timestamp) {
+  return moment.parseZone(timestamp).format('DD/MM/YYYY HH:mm:ss');
+});
+
 Vue.filter('friendlytime', function (timestamp) {
   return friendlydate(timestamp);
 });

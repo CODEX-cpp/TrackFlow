@@ -43,6 +43,19 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.12</h2>
+      <ul>
+        <li>New: when creating a custom watcher you can now pick from 8 ready-made visualization templates for its Home module (on/off status, numeric value, text, progress bar, last update, pill list, total on-time today, top values ranking today).</li>
+        <li>New: every custom watcher now has a detail page with process status, total tracked time, a live log of every run, and the ability to change its associated script at any time (with automatic interpreter detection: PowerShell, Python, JavaScript, cmd/bat).</li>
+        <li>New: the width and visualization template chosen for a custom watcher's Home module are now remembered, even if you remove and re-add it.</li>
+        <li>New: newly created custom watchers now include a direct link to the online documentation.</li>
+        <li>Fixed a bug where deleting a custom watcher didn't stop its process or delete its folder, causing it to silently reappear with no way to actually remove it.</li>
+        <li>Fixed a crash that could occur when creating a new custom watcher.</li>
+        <li>Fixed a bug where the "Event count" field on a data source's detail page was always empty.</li>
+        <li>Rewrote the online documentation for custom watchers into separate, more complete guides.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.11</h2>
       <ul>
         <li>The AI assistant now immediately categorizes all already-tracked apps as soon as you connect an API key, instead of waiting for each one to reappear in the Timeline by chance.</li>

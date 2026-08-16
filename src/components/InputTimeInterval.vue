@@ -1,85 +1,157 @@
 <template lang="pug">
 div
-  div
-    b-alert(v-if="invalidDaterange", variant="warning", show)
-      | {{ $t('modals.inputTimeInterval.invalidRange') }}
-    b-alert(v-if="daterangeTooLong", variant="warning", show)
-      | {{ $t('modals.inputTimeInterval.tooLongRange', { days: maxDuration/(24*60*60) }) }}
+  div.time-interval-warning(v-if="invalidDaterange")
+    | {{ $t('modals.inputTimeInterval.invalidRange') }}
+  div.time-interval-warning(v-if="daterangeTooLong")
+    | {{ $t('modals.inputTimeInterval.tooLongRange', { days: maxDuration/(24*60*60) }) }}
 
-  div.input-time-interval.d-flex.flex-wrap.align-items-start.justify-content-between
-    // Two-row grid: labels share a fixed-width column so the Mode toggle
-    // and the Range controls line up vertically and the secondary label
-    // stays in the same spot (just "Range") regardless of which mode is
-    // active. Previously the label flipped between "Quick range" / "Range"
-    // and the inputs shifted horizontally on every toggle.
+  div.input-time-interval
     div.time-interval-grid
-      label.col-form-label.col-form-label-sm.mb-0(for="time-mode") {{ $t('modals.inputTimeInterval.mode') }}
-      b-form-radio-group#time-mode(
-        v-model="mode",
-        @change="valueChanged",
-        buttons,
-        button-variant="outline-secondary",
-        size="sm",
-        :options="modeOptions"
-      )
+      label.time-interval-label {{ $t('modals.inputTimeInterval.mode') }}
+      div.mode-toggle
+        div.mode-toggle-option(
+          v-for="opt in modeOptions"
+          :key="opt.value"
+          :class="{ 'mode-toggle-option-active': mode === opt.value }"
+          @click="mode = opt.value; valueChanged()"
+        )
+          | {{ opt.text }}
 
-      label.col-form-label.col-form-label-sm.mb-0 {{ $t('modals.inputTimeInterval.range') }}
-      div.d-flex.flex-wrap.align-items-center(v-if="mode == 'last_duration'")
-        div.btn-group(role="group" :aria-label="$t('modals.inputTimeInterval.quickDurations')")
-          template(v-for="(dur, idx) in durations")
-            input(
-              type="radio"
-              :id="'dur' + idx"
-              :value="dur.seconds"
-              v-model="duration"
-              @change="applyLastDuration"
-            ).d-none
-            label(:for="'dur' + idx" v-html="dur.label").btn.btn-light.btn-sm
-      div.d-flex.flex-wrap.align-items-center(v-else)
-        input.form-control.form-control-sm.mr-1(
-          type="date", v-model="start", :max="end || undefined", style="width: auto"
+      label.time-interval-label {{ $t('modals.inputTimeInterval.range') }}
+      div.duration-row(v-if="mode == 'last_duration'")
+        div.duration-pill(
+          v-for="(dur, idx) in durations"
+          :key="idx"
+          :class="{ 'duration-pill-active': duration === dur.seconds }"
+          @click="duration = dur.seconds; applyLastDuration()"
+          v-html="dur.label"
+        )
+      div.range-row(v-else)
+        input.time-interval-field(
+          type="date", v-model="start", :max="end || undefined"
           :aria-label="$t('modals.inputTimeInterval.startDate')"
         )
-        input.form-control.form-control-sm.mr-1(
-          type="date", v-model="end", :min="start || undefined", placeholder="(optional)", style="width: auto"
+        input.time-interval-field(
+          type="date", v-model="end", :min="start || undefined"
           :aria-label="$t('modals.inputTimeInterval.endDate')"
         )
-        b-button(
-          size="sm" variant="outline-dark"
-          :disabled="invalidDaterange || emptyDaterange || daterangeTooLong"
+        div.pill-btn(
+          :class="{ 'pill-btn-disabled': invalidDaterange || emptyDaterange || daterangeTooLong }"
           @click="applyRange"
         ) {{ $t('modals.inputTimeInterval.apply') }}
 
-    div.text-right.d-none.d-md-block(v-if="showUpdate")
-      b-button.px-2(@click="refresh()", variant="outline-dark", size="sm")
+    div.time-interval-update(v-if="showUpdate")
+      div.pill-btn-ghost(@click="refresh()")
         icon.mr-1(name="sync")
-        span.d-none.d-md-inline
-          | {{ $t('modals.inputTimeInterval.refresh') }}
-      div.mt-2.small.text-muted(v-if="lastUpdate")
+        | {{ $t('modals.inputTimeInterval.refresh') }}
+      div.time-interval-last-update(v-if="lastUpdate")
         | {{ $t('modals.inputTimeInterval.lastUpdate') }} #[time(:datetime="lastUpdate.format()") {{lastUpdate | friendlytime}}]
 </template>
 
 <style scoped lang="scss">
+@import '../style/theme.css';
+
+.time-interval-warning {
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: var(--font-size-sm);
+  color: #d9534f;
+  margin-bottom: 10px;
+}
+
 .input-time-interval {
-  row-gap: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  row-gap: 12px;
+  margin-bottom: 16px;
 }
 
 .time-interval-grid {
   display: grid;
-  // Fixed label column keeps Mode/Range labels aligned and the controls
-  // start at the same X regardless of which mode is active.
   grid-template-columns: 4rem 1fr;
-  column-gap: 0.75rem;
-  row-gap: 0.5rem;
+  column-gap: 12px;
+  row-gap: 10px;
   align-items: center;
 }
 
-.btn-group {
-  input[type='radio']:checked + label {
-    background-color: #495057;
-    color: #fff;
-    border-color: #495057;
-  }
+.time-interval-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+}
+
+.mode-toggle {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  width: fit-content;
+}
+
+.mode-toggle-option {
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  cursor: pointer;
+  background-color: var(--color-surface2);
+}
+
+.mode-toggle-option-active {
+  background-color: var(--color-accent1);
+  color: #241a12;
+}
+
+.duration-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.duration-pill {
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.duration-pill-active {
+  background-color: var(--color-accent1);
+  color: #241a12;
+  border-color: var(--color-accent1);
+}
+
+.range-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-interval-field {
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  color-scheme: dark;
+}
+
+.time-interval-update {
+  text-align: right;
+}
+
+.time-interval-last-update {
+  margin-top: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
 }
 </style>
 
@@ -188,6 +260,7 @@ export default {
       this.valueChanged();
     },
     applyRange() {
+      if (this.invalidDaterange || this.emptyDaterange || this.daterangeTooLong) return;
       this.mode = 'range';
       this.duration = 0;
       this.valueChanged();

@@ -1,0 +1,10 @@
+[
+  { "id": "stato-onoff", "nome_it": "Stato acceso/spento", "nome_en": "On/off status" },
+  { "id": "valore-numero", "nome_it": "Valore numerico in evidenza", "nome_en": "Highlighted numeric value" },
+  { "id": "testo-evidenza", "nome_it": "Testo in evidenza", "nome_en": "Highlighted text" },
+  { "id": "progresso", "nome_it": "Barra di avanzamento", "nome_en": "Progress bar" },
+  { "id": "ultimo-aggiornamento", "nome_it": "Ultimo aggiornamento", "nome_en": "Last update" },
+  { "id": "pillole", "nome_it": "Elenco a pillole", "nome_en": "Pill list" },
+  { "id": "tempo-acceso", "nome_it": "Tempo totale acceso (oggi)", "nome_en": "Total on-time (today)" },
+  { "id": "classifica", "nome_it": "Classifica valori più frequenti (oggi)", "nome_en": "Top values ranking (today)" }
+]

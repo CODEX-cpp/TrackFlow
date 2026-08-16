@@ -67,6 +67,13 @@ div.modules-section(v-if="view")
       :editable="false"
       @onVisibilityChange="onVisibilityChange"
     )
+
+  custom-module-picker(
+    v-if="wizardEntryType"
+    :entry-type="wizardEntryType"
+    @close="wizardEntryType = null"
+    @created="onWizardCreated"
+  )
 </template>
 
 <style lang="scss" scoped>
@@ -180,9 +187,16 @@ interface PackedLayout {
 
 export default {
   name: 'HomeModulesSection',
+  components: {
+    'custom-module-picker': () => import('./CustomModulePicker.vue'),
+  },
   data() {
     return {
       editing: false,
+      // Tipo di modulo per cui è aperto il wizard di creazione ('watcher'
+      // | 'html' | null se chiuso) — vedi onTypeChange/onWizardCreated.
+      wizardEntryType: null as 'watcher' | 'html' | null,
+      wizardTargetElId: null as number | null,
       columnCount: 4,
       columnWidthPx: 0,
       activityStore: useActivityStore(),
@@ -436,7 +450,14 @@ export default {
       const layout: Record<number, { x: number; y: number; width: number; height: number }> = {};
       const colW = this.columnWidthPx > 0 ? this.columnWidthPx : COLUMN_MIN_WIDTH;
       for (const el of order) {
-        const span = this.isLarge(el.type)
+        // Larghezza per-istanza (es. i moduli creati dal wizard watcher
+        // personalizzato, che lasciano scegliere la dimensione alla
+        // creazione) ha priorità sulla larghezza fissa per TIPO usata da
+        // tutti gli altri moduli — additivo, non tocca isLarge/isDouble.
+        const gridWidth = el.props && typeof el.props.gridWidth === 'number' ? el.props.gridWidth : null;
+        const span = gridWidth
+          ? Math.min(this.columnCount, Math.max(1, Math.round(gridWidth)))
+          : this.isLarge(el.type)
           ? this.columnCount
           : this.isDouble(el.type)
           ? Math.min(2, this.columnCount)
@@ -607,15 +628,26 @@ export default {
     },
     async onTypeChange(id: number, type: string) {
       if (!this.view) return;
-      let props = {};
-      if (type === 'custom_vis') {
-        const visname = prompt(this.$t('activityView.promptWatcher') as string, 'aw-watcher-');
-        if (!visname) return;
-        const title = prompt(this.$t('activityView.promptTitle') as string);
-        if (!title) return;
-        props = { visname, title };
+      if (type === 'custom_watcher_view' || type === 'custom_html_module') {
+        this.wizardTargetElId = id;
+        this.wizardEntryType = type === 'custom_watcher_view' ? 'watcher' : 'html';
+        return;
       }
-      await useViewsStore().editView({ view_id: this.view.id, el_id: id, type, props });
+      await useViewsStore().editView({ view_id: this.view.id, el_id: id, type, props: {} });
+    },
+    async onWizardCreated(payload: { type: string; props: Record<string, unknown> }) {
+      if (!this.view || this.wizardTargetElId === null) {
+        this.wizardEntryType = null;
+        return;
+      }
+      await useViewsStore().editView({
+        view_id: this.view.id,
+        el_id: this.wizardTargetElId,
+        type: payload.type,
+        props: payload.props,
+      });
+      this.wizardEntryType = null;
+      this.wizardTargetElId = null;
     },
     async onRemove(id: number) {
       if (!this.view) return;

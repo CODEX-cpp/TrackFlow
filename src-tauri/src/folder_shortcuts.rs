@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::Manager;
 
-fn apri_in_esplora_risorse(path: &Path) -> Result<(), String> {
+pub(crate) fn apri_in_esplora_risorse(path: &Path) -> Result<(), String> {
     // create_dir_all invece di limitarsi a controllare che esista: la
     // cartella di configurazione di aw-watcher-afk, in particolare, non
     // esiste finché l'utente non l'ha mai personalizzata — senza

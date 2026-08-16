@@ -19,6 +19,13 @@ div
       div.settings-toggle(:class="{ 'settings-toggle-on': devtoolsEnabled }" @click="onToggleDevtools")
         div.settings-toggle-thumb
 
+    div.settings-row.dev-inner-row
+      div
+        div.settings-row-title {{ $t('settings.developer.rawDataDiagnosticsTitle') }}
+        div.settings-row-help {{ $t('settings.developer.rawDataDiagnosticsHelp') }}
+      div.settings-toggle(:class="{ 'settings-toggle-on': rawDataDiagnosticsEnabled }" @click="onToggleRawDataDiagnostics")
+        div.settings-toggle-thumb
+
     div.dev-section
       div.settings-row-title {{ $t('settings.developer.watcherStatus.title') }}
       div.settings-row-help {{ $t('settings.developer.watcherStatus.help') }}
@@ -224,6 +231,9 @@ export default {
     },
     devtoolsEnabled(): boolean {
       return this.settingsStore.devtoolsEnabled;
+    },
+    rawDataDiagnosticsEnabled(): boolean {
+      return this.settingsStore.rawDataDiagnosticsEnabled;
     },
     watcherRows(this: any) {
       return this.watchers.map((w: WatcherStatusDto) => {
@@ -436,7 +446,11 @@ export default {
         // così non restano attive "in silenzio" dopo aver richiuso la
         // sezione (vedi devtoolsGuard.ts: legge developerModeEnabled
         // solo indirettamente tramite devtoolsEnabled).
-        this.settingsStore.update({ developerModeEnabled: false, devtoolsEnabled: false });
+        this.settingsStore.update({
+          developerModeEnabled: false,
+          devtoolsEnabled: false,
+          rawDataDiagnosticsEnabled: false,
+        });
       } else {
         this.showConfirm = true;
       }
@@ -444,6 +458,9 @@ export default {
     confirmEnableDeveloperMode() {
       this.showConfirm = false;
       this.settingsStore.update({ developerModeEnabled: true });
+    },
+    async onToggleRawDataDiagnostics() {
+      await this.settingsStore.update({ rawDataDiagnosticsEnabled: !this.rawDataDiagnosticsEnabled });
     },
     async onToggleDevtools() {
       const next = !this.devtoolsEnabled;

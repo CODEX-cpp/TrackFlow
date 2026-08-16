@@ -1,6 +1,8 @@
 use rust_embed::RustEmbed;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use gethostname::gethostname;
 use rocket::fs::FileServer;
@@ -140,6 +142,92 @@ fn server_info(config: &State<AWConfig>, state: &State<ServerState>) -> Json<Inf
     })
 }
 
+// Mappa nome-modulo-personalizzato -> cartella su disco, condivisa (stesso
+// Arc) con il lato Tauri (custom_modules.rs) che la ripopola ogni volta
+// che l'utente apre il selettore "Aggiungi modulo -> Personalizzato" o
+// preme "Aggiorna" — una sola route generica montata una volta sola
+// all'avvio, che risolve il nome a runtime leggendo questa mappa, invece
+// di dover rimontare l'intero Rocket per ogni nuova cartella scoperta
+// (non supportato: la mount-table di Rocket è fissa dopo l'avvio). Vedi
+// `custom_static` più sotto per il meccanismo "storico", a mount fisso,
+// usato solo per la cartella interna "app-data".
+pub type CustomPagesRegistry = std::sync::RwLock<HashMap<String, PathBuf>>;
+
+#[get("/<name>/<file..>")]
+fn custom_page(
+    name: String,
+    file: PathBuf,
+    registry: &State<Arc<CustomPagesRegistry>>,
+) -> Option<(ContentType, Vec<u8>)> {
+    let cartella = {
+        let mappa = registry.read().ok()?;
+        mappa.get(&name)?.clone()
+    };
+    let file = if file.as_os_str().is_empty() {
+        PathBuf::from("index.html")
+    } else {
+        file
+    };
+    let percorso = cartella.join(&file);
+
+    // Protezione anti path-traversal: il file risolto deve restare
+    // dentro la cartella del modulo (un `file..` con `..` letterali
+    // potrebbe altrimenti uscirne).
+    let base_canonica = std::fs::canonicalize(&cartella).ok()?;
+    let file_canonico = std::fs::canonicalize(&percorso).ok()?;
+    if !file_canonico.starts_with(&base_canonica) {
+        return None;
+    }
+
+    let dati = std::fs::read(&file_canonico).ok()?;
+    let content_type = file
+        .extension()
+        .and_then(OsStr::to_str)
+        .and_then(ContentType::from_extension)
+        .unwrap_or(ContentType::Bytes);
+    Some((content_type, dati))
+}
+
+// Cartella dei modelli di visualizzazione per i watcher personalizzati
+// (bundled come risorsa Tauri, dentro l'installazione dell'app — non in
+// app_data_dir — così un aggiornamento dell'app aggiorna anche i modelli,
+// richiesta esplicita dell'utente). A differenza di CustomPagesRegistry
+// sopra, l'insieme dei modelli è fisso per una data versione dell'app
+// (non scoperto/registrato a runtime), quindi qui basta il percorso
+// della cartella base: `template_id` risolve direttamente la
+// sottocartella, nessuna mappa serve.
+pub struct WatcherTemplatesDir(pub PathBuf);
+
+#[get("/<template_id>/<file..>")]
+fn watcher_template_page(
+    template_id: String,
+    file: PathBuf,
+    dir: &State<Arc<WatcherTemplatesDir>>,
+) -> Option<(ContentType, Vec<u8>)> {
+    let cartella = dir.0.join(&template_id);
+    let file = if file.as_os_str().is_empty() {
+        PathBuf::from("index.html")
+    } else {
+        file
+    };
+    let percorso = cartella.join(&file);
+
+    // Stessa protezione anti path-traversal di custom_page sopra.
+    let base_canonica = std::fs::canonicalize(&cartella).ok()?;
+    let file_canonico = std::fs::canonicalize(&percorso).ok()?;
+    if !file_canonico.starts_with(&base_canonica) {
+        return None;
+    }
+
+    let dati = std::fs::read(&file_canonico).ok()?;
+    let content_type = file
+        .extension()
+        .and_then(OsStr::to_str)
+        .and_then(ContentType::from_extension)
+        .unwrap_or(ContentType::Bytes);
+    Some((content_type, dati))
+}
+
 fn get_file(file: PathBuf, state: &State<ServerState>) -> Option<(ContentType, Vec<u8>)> {
     let asset = state.asset_resolver.resolve(&file.display().to_string())?;
 
@@ -152,7 +240,12 @@ fn get_file(file: PathBuf, state: &State<ServerState>) -> Option<(ContentType, V
     Some((content_type, asset))
 }
 
-pub fn build_rocket(server_state: ServerState, config: AWConfig) -> rocket::Rocket<rocket::Build> {
+pub fn build_rocket(
+    server_state: ServerState,
+    config: AWConfig,
+    custom_pages_registry: Arc<CustomPagesRegistry>,
+    watcher_templates_dir: Arc<WatcherTemplatesDir>,
+) -> rocket::Rocket<rocket::Build> {
     info!(
         "Starting aw-server-rust at {}:{}",
         config.address, config.port
@@ -173,6 +266,8 @@ pub fn build_rocket(server_state: ServerState, config: AWConfig) -> rocket::Rock
         .manage(cors)
         .manage(server_state)
         .manage(config)
+        .manage(custom_pages_registry)
+        .manage(watcher_templates_dir)
         .mount(
             "/",
             routes![
@@ -222,7 +317,9 @@ pub fn build_rocket(server_state: ServerState, config: AWConfig) -> rocket::Rock
                 settings::settings_get,
             ],
         )
-        .mount("/", rocket_cors::catch_all_options_routes());
+        .mount("/", rocket_cors::catch_all_options_routes())
+        .mount("/pages/custom", routes![custom_page])
+        .mount("/pages/watcher-templates", routes![watcher_template_page]);
 
     // for each custom static directory, mount it at the given name
     for (name, dir) in custom_static {

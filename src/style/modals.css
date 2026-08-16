@@ -122,6 +122,16 @@ select.edit-field {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
+  /* Queste classi vengono usate anche su <router-link> (renderizzato
+     come <a>) — senza questo, la sottolineatura di default di
+     Bootstrap su a:hover spunta fuori al passaggio del mouse. */
+  text-decoration: none;
+}
+
+.pill-btn:hover,
+.pill-btn-ghost:hover,
+.pill-btn-danger:hover {
+  text-decoration: none;
 }
 
 .pill-btn {

@@ -68,8 +68,12 @@ const router = new VueRouter({
         },
       ],
     },
-    { path: '/buckets', component: Buckets },
-    { path: '/buckets/:id', component: Bucket, props: true },
+    // bareLayout come /settings/stopwatch sotto — stessa causa dello
+    // stesso bug: senza questo la pagina resta intrappolata nel vecchio
+    // contenitore Bootstrap .container/.aw-container di App.vue,
+    // impossibile da ripulire davvero con theme.css finché non se ne esce.
+    { path: '/buckets', component: Buckets, meta: { bareLayout: true } },
+    { path: '/buckets/:id', component: Bucket, props: true, meta: { bareLayout: true } },
     // bareLayout (same as /stopwatch below) skips the old Bootstrap
     // .container/.aw-container wrapper App.vue still renders pages
     // through by default — that wrapper is what dark.css's #0f131a/

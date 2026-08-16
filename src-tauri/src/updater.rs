@@ -254,3 +254,46 @@ pub fn installa_aggiornamento_e_riavvia(app_handle: AppHandle, versione: String)
     app_handle.exit(0);
     Ok(())
 }
+
+/// Tiene sempre e solo le due versioni più recenti dentro `versions\`
+/// (quella in esecuzione ora + la precedente, come rete di sicurezza) —
+/// richiesta esplicita dell'utente dopo aver notato che ogni
+/// aggiornamento lascia lì la cartella della versione vecchia, per
+/// sempre, senza che nessuno la ripulisca mai. Chiamata all'avvio di
+/// `app.exe` (vedi lib.rs), quindi SOLO dopo che QUESTA versione è già
+/// arrivata fin qui con successo — non subito dopo l'installazione: se
+/// anche questa versione avesse un problema, la precedente resta
+/// comunque disponibile invece di lasciare l'utente senza nulla di
+/// funzionante.
+pub(crate) fn pulisci_versioni_vecchie() {
+    let Ok(cartella) = cartella_installazione() else { return };
+    let Ok(exe_corrente) = std::env::current_exe() else { return };
+    // <INSTDIR>\versions\<versione>\app.exe -> <versione>
+    let Some(versione_corrente) =
+        exe_corrente.parent().and_then(Path::file_name).map(|s| s.to_string_lossy().to_string())
+    else {
+        return;
+    };
+
+    let Ok(elenco) = std::fs::read_dir(cartella.join("versions")) else { return };
+    let mut altre: Vec<(PathBuf, std::time::SystemTime)> = elenco
+        .filter_map(Result::ok)
+        .filter(|voce| voce.path().is_dir())
+        .filter(|voce| voce.file_name().to_string_lossy() != versione_corrente)
+        .filter_map(|voce| {
+            let meta = voce.metadata().ok()?;
+            let quando = meta.created().or_else(|_| meta.modified()).ok()?;
+            Some((voce.path(), quando))
+        })
+        .collect();
+
+    // Più recente prima: la prima (indice 0) resta come versione
+    // precedente di riserva, tutte le altre (più vecchie) vengono
+    // cancellate.
+    altre.sort_by(|a, b| b.1.cmp(&a.1));
+    for (percorso, _) in altre.into_iter().skip(1) {
+        if std::fs::remove_dir_all(&percorso).is_ok() {
+            log::info!("Rimossa vecchia cartella versione non più necessaria: {}", percorso.display());
+        }
+    }
+}

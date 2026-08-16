@@ -430,6 +430,7 @@ div.timeline-section
 // decomposition, see BLUEPRINT.md section 7.3), and the click-to-detail
 // popup lives in TimelineBlockDetailModal.vue.
 import moment from 'moment';
+import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '~/util/projectTime';
 import { colorVarForName } from '~/util/hashColor';
 import { domainForEvent } from '~/util/browserDomain';
@@ -546,6 +547,10 @@ export default {
         voispeedEvents: any[];
         windowEvents: any[];
         trayEvents: any[];
+        // Una corsia per ogni watcher personalizzato che ha richiesto
+        // "mostra su una riga separata nella Timeline" (wizard,
+        // CustomModuleWizard.vue) — vedi loadCustomLanes()/rebuildLanes().
+        customLanes: { id: string; name: string; events: any[] }[];
       },
       hoveredBlock: null as (Block & { laneName?: string }) | null,
       tooltipX: 0,
@@ -1377,6 +1382,7 @@ export default {
         // aspettare un nuovo giro di rete.
         this.fetchEvents('tray-apps', this.dayStart, this.dayEnd),
       ]);
+      const customLanes = await this.loadCustomLanes();
 
       // Auto-refresh (every 30s, see mounted()) short-circuits here on a
       // poll that found nothing new — cheap count+last-id fingerprint,
@@ -1393,6 +1399,7 @@ export default {
         rawVoispeedEventsUnclipped,
         afkEvents,
         trayEventsRaw,
+        ...customLanes.map(l => l.events),
       ]);
       if (signature === this.lastLoadSignature) return;
       this.lastLoadSignature = signature;
@@ -1540,10 +1547,40 @@ export default {
         voispeedEvents,
         windowEvents,
         trayEvents,
+        customLanes,
       };
       this.rebuildLanes();
       this.loading = false;
       this.measureContainer();
+    },
+    // Una corsia per ogni watcher personalizzato con "mostra su una riga
+    // separata nella Timeline" attivo (wizard, modalità semplificata —
+    // vedi CustomModuleWizard.vue/custom_watchers.rs). Solo i watcher in
+    // modalità "interval" possono chiederla: il bucket è sempre
+    // custom-watcher-<id>_<host>, convenzione fissa lato Rust — un
+    // watcher "raw"/esperto sceglie il proprio bucket_id liberamente,
+    // quindi non è collegabile qui in automatico (timeline_lane resta
+    // false per quelli, impostato lato backend).
+    async loadCustomLanes(): Promise<{ id: string; name: string; events: any[] }[]> {
+      if (!this.host) return [];
+      let watchers: { id: string; name: string; timeline_lane: boolean }[] = [];
+      try {
+        watchers = await invoke('elenca_watcher_personalizzati');
+      } catch {
+        return [];
+      }
+      const conLinea = watchers.filter(w => w.timeline_lane);
+      return Promise.all(
+        conLinea.map(async w => ({
+          id: w.id,
+          name: w.name,
+          events: await this.fetchEvents(
+            `custom-watcher-${w.id}_${this.host}`,
+            this.dayStart,
+            this.dayEnd
+          ),
+        }))
+      );
     },
     // Separata da load() apposta: il toggle Normale/Background nella
     // Topbar deve poter ricostruire le corsie all'istante (nessun nuovo
@@ -1560,6 +1597,7 @@ export default {
         voispeedEvents,
         windowEvents,
         trayEvents,
+        customLanes,
       } = this.laneEventInputs;
 
       if (this.timelineMode === 'background') {
@@ -1642,6 +1680,18 @@ export default {
             key => iconColorForApp(key) || colorVarForName(key)
           ),
         },
+        // Etichetta di raggruppamento facoltativa: se lo script scrive
+        // un campo "etichetta" (o "label") nei suoi dati, i blocchi si
+        // raggruppano per quel valore — altrimenti tutta l'attività del
+        // watcher forma un'unica barra col suo nome.
+        ...customLanes.map(l => ({
+          key: `custom-${l.id}`,
+          name: l.name,
+          blocks: this.buildBlocks(
+            l.events,
+            (e: any) => (e.data && (e.data.etichetta || e.data.label)) || l.name
+          ),
+        })),
       ];
 
       // Nasconde le corsie di feature non usate invece di lasciarle

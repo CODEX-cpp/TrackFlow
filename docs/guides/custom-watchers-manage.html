@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Managing a custom watcher — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Editing, watching, and deleting a custom watcher after you've created it, and how to bring back its Home module if removed by mistake.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html" class="active">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>Managing a watcher afterwards</h2>
+        <p class="docs-guide-lede">Everything about a watcher you've already created — editing, watching it run, and removing it — happens from the Data sources page.</p>
+
+        <h3>The custom watchers table</h3>
+        <p>Every watcher you've created shows up here, even before it has produced any data yet. Each row has three actions: <strong>Open</strong> (jump to its detail page), <strong>export as CSV</strong>, and <strong>delete</strong>.</p>
+        <p><strong>Deleting a watcher is complete</strong> — it stops the running process, deletes its folder from disk, and deletes its stored data, all in one step. It's not just removing the module from your Home page; there's nothing left behind to accidentally resurrect itself.</p>
+
+        <h3>The detail page</h3>
+        <p>Clicking "Open" on a custom watcher shows some extra information you won't see for built-in modules:</p>
+        <ul>
+          <li><strong>Process status</strong> — whether it's currently running, and its mode.</li>
+          <li><strong>Poll interval</strong> — how often it's re-run, in minutes.</li>
+          <li><strong>File to run</strong> — an editable field. Change it to point at a different script at any time (it must stay in the watcher's own folder — no other path is allowed); TrackFlow detects the right interpreter from the new file's extension (see <a href="custom-watchers-script.html" style="color:var(--color-accent1)">Writing the watcher script</a>) and restarts the watcher immediately with the new file.</li>
+          <li><strong>A live log window</strong>, at the bottom of the page. It shows, in real time: when the watcher was created, every time it started running (with the exact command it used), the data it read on each run, timeouts, and any errors — the fastest way to tell whether TrackFlow failed to launch your script at all, or whether your script ran but returned something unexpected. Log entries older than seven days are cleaned up automatically.</li>
+        </ul>
+
+        <h3>If you remove the Home module by mistake</h3>
+        <p>The watcher itself keeps running even if its module disappears from Home — data isn't lost. To bring it back: on Home, click <strong>"Edit modules" → "+ Add module"</strong>, pick <strong>"Custom watcher data"</strong> from the type picker, and select your watcher by name from the list. It reappears at the same width you originally chose for it — see <a href="custom-watchers-templates.html" style="color:var(--color-accent1)">Visualization templates</a> for what the different sizes look like.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

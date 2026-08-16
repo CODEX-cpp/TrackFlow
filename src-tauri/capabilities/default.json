@@ -12,6 +12,8 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "dialog:default",
+    "fs:allow-write-text-file"
   ]
 }

@@ -14,6 +14,8 @@ mod about;
 mod agent;
 mod autostart;
 mod categorization;
+mod custom_modules;
+mod custom_watchers;
 mod devtools;
 mod dpapi;
 mod folder_shortcuts;
@@ -232,6 +234,9 @@ struct AppServer {
     /// usata anche per scrivere il file di override dell'intervallo
     /// screenshot quando cambia dalle impostazioni (vedi dispatch()).
     app_data_dir: PathBuf,
+    /// Registro nome->cartella dei moduli personalizzati, condiviso con
+    /// la route Rocket `/pages/custom/<nome>/` — vedi custom_modules.rs.
+    pub(crate) custom_pages_registry: Arc<aw_server::endpoints::CustomPagesRegistry>,
 }
 
 impl AppServer {
@@ -563,7 +568,7 @@ fn attach_navigation_retry(window: &tauri::WebviewWindow) {
 /// codice del binario originale (`aw_server::endpoints::build_rocket`),
 /// solo dispatchato in memoria invece che su una vera porta TCP — vedi
 /// BLUEPRINT.md, Fase 5, per il perché e la verifica di fattibilità.
-async fn build_app_server(app_data_dir: &Path, webui_dir: &Path) -> AppServer {
+async fn build_app_server(app_data_dir: &Path, webui_dir: &Path, watcher_templates_dir: &Path) -> AppServer {
     let testing = false;
     let mut config = aw_server::config::create_config(testing, None);
     config
@@ -593,7 +598,24 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path) -> AppServer {
         device_id: aw_server::device_id::get_device_id(),
     };
 
-    let rocket = aw_server::endpoints::build_rocket(server_state, config);
+    // Registro nome->cartella dei moduli personalizzati (vedi
+    // custom_modules.rs) — un solo Arc condiviso tra questo Rocket (che
+    // lo consulta ad ogni richiesta a /pages/custom/<nome>/) e i comandi
+    // Tauri che lo ripopolano quando l'utente apre il selettore "Aggiungi
+    // modulo" o preme "Aggiorna", permettendo di scoprire nuove cartelle
+    // senza mai dover riavviare il server.
+    let custom_pages_registry: Arc<aw_server::endpoints::CustomPagesRegistry> =
+        Arc::new(std::sync::RwLock::new(HashMap::new()));
+
+    let watcher_templates_dir = Arc::new(aw_server::endpoints::WatcherTemplatesDir(
+        watcher_templates_dir.to_path_buf(),
+    ));
+    let rocket = aw_server::endpoints::build_rocket(
+        server_state,
+        config,
+        custom_pages_registry.clone(),
+        watcher_templates_dir,
+    );
     let client = rocket::local::asynchronous::Client::tracked(rocket)
         .await
         .expect("Impossibile avviare il server aw-server-rust in-process");
@@ -602,21 +624,53 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path) -> AppServer {
         client,
         known_buckets: AsyncMutex::new(HashSet::new()),
         app_data_dir: app_data_dir.to_path_buf(),
+        custom_pages_registry,
     }
 }
 
 /// Un evento ricevuto dallo stdout di un watcher (una riga JSON — vedi
 /// BLUEPRINT.md, Fase 5, per il contratto completo, documentato anche
-/// per watcher di terze parti).
-#[derive(serde::Deserialize)]
-struct WatcherEnvelope {
-    bucket_id: String,
-    bucket_type: String,
-    client: String,
-    op: String,
+/// per watcher di terze parti). Pubblico nel crate: è lo stesso contratto
+/// riusato dai watcher personalizzati in modalità "raw" (custom_watchers.rs).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct WatcherEnvelope {
+    pub(crate) bucket_id: String,
+    pub(crate) bucket_type: String,
+    pub(crate) client: String,
+    pub(crate) op: String,
     #[serde(default)]
-    pulsetime: Option<f64>,
-    event: serde_json::Value,
+    pub(crate) pulsetime: Option<f64>,
+    pub(crate) event: serde_json::Value,
+}
+
+/// Inoltra un envelope già interpretato al server in-process — crea il
+/// bucket se serve (idempotente) poi dispatcha heartbeat/event. Punto di
+/// ingresso condiviso tra il drenaggio stdout dei sidecar integrati
+/// (spawn_stdout_drain) e i watcher personalizzati (custom_watchers.rs,
+/// sia modalità "raw" che l'envelope sintetico della modalità "interval")
+/// — un solo posto che parla con AppServer, invece di duplicare la
+/// stessa logica ensure_bucket+dispatch in più punti.
+pub(crate) async fn elabora_envelope_watcher(
+    envelope: &WatcherEnvelope,
+    server: &Arc<AppServer>,
+    hostname: &str,
+) {
+    server
+        .ensure_bucket(&envelope.bucket_id, &envelope.bucket_type, &envelope.client, hostname)
+        .await;
+
+    match envelope.op.as_str() {
+        "heartbeat" => {
+            let pulsetime = envelope.pulsetime.unwrap_or(60.0);
+            server.heartbeat(&envelope.bucket_id, pulsetime, &envelope.event).await;
+        }
+        "event" => {
+            server.insert_event(&envelope.bucket_id, &envelope.event).await;
+        }
+        other => {
+            log::warn!("{}: op sconosciuta '{other}' ignorata", envelope.client);
+        }
+    }
 }
 
 /// Drena in continuo lo stdout di un watcher già avviato, interpretando
@@ -733,22 +787,7 @@ fn spawn_stdout_drain(
                     }
                 }
 
-                server
-                    .ensure_bucket(&envelope.bucket_id, &envelope.bucket_type, &envelope.client, &hostname)
-                    .await;
-
-                match envelope.op.as_str() {
-                    "heartbeat" => {
-                        let pulsetime = envelope.pulsetime.unwrap_or(60.0);
-                        server.heartbeat(&envelope.bucket_id, pulsetime, &envelope.event).await;
-                    }
-                    "event" => {
-                        server.insert_event(&envelope.bucket_id, &envelope.event).await;
-                    }
-                    other => {
-                        log::warn!("{watcher_name}: op sconosciuta '{other}' ignorata");
-                    }
-                }
+                elabora_envelope_watcher(&envelope, &server, &hostname).await;
             }
         }
     });
@@ -983,6 +1022,12 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        // Dialogo "Salva con nome" nativo + scrittura file — servono a
+        // util/export.ts's downloadFile() per il pulsante "Esporta come
+        // CSV" (i link <a download> non funzionano dentro una webview
+        // Tauri, vedi il commento in quel file).
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(SidecarProcesses(std::sync::Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             voispeed::voispeed_connect,
@@ -1002,11 +1047,25 @@ pub fn run() {
             watcher_status::riavvia_watcher,
             watcher_status::imposta_moduli_iniziali,
             watcher_status::moduli_gia_configurati,
+            watcher_status::imposta_modulo_watcher,
             folder_shortcuts::apri_cartella_dati,
             folder_shortcuts::apri_cartella_log,
             folder_shortcuts::apri_cartella_config_afk,
             folder_shortcuts::apri_cartella_watcher,
             folder_shortcuts::apri_cartella_database,
+            custom_watchers::elenca_watcher_personalizzati,
+            custom_watchers::ricarica_watcher_personalizzati,
+            custom_watchers::crea_watcher_personalizzato_semplice,
+            custom_watchers::crea_watcher_personalizzato_esperto,
+            custom_watchers::apri_cartella_custom_watcher,
+            custom_watchers::elimina_watcher_personalizzato,
+            custom_watchers::leggi_log_watcher,
+            custom_watchers::imposta_file_watcher,
+            custom_watchers::elenca_modelli_visualizzazione_watcher,
+            custom_modules::elenca_moduli_personalizzati,
+            custom_modules::ricarica_moduli_personalizzati,
+            custom_modules::crea_modulo_personalizzato,
+            custom_modules::apri_cartella_custom_modulo,
             vpn_mapping::leggi_mapping_vpn,
             vpn_mapping::salva_mapping_vpn_manuale,
             notifications::invia_notifica_generica,
@@ -1062,6 +1121,7 @@ pub fn run() {
                 .resource_dir()
                 .expect("Impossibile risolvere la cartella risorse dell'app");
             let webui_dir = resource_dir.join("dist");
+            let watcher_templates_dir = resource_dir.join("watcher-templates");
 
             let app_data_dir = std::env::var("LOCALAPPDATA")
                 .map(PathBuf::from)
@@ -1069,6 +1129,16 @@ pub fn run() {
                 .join("TrackFlow")
                 .join("app-data");
             let _ = std::fs::create_dir_all(&app_data_dir);
+
+            // Solo qui, non subito dopo un'installazione/aggiornamento:
+            // arrivare fin qui in .setup() senza essere andati in panic
+            // è già una conferma ragionevole che QUESTA versione
+            // funziona, prima di eventualmente cancellare quella
+            // precedente rimasta come rete di sicurezza. Vedi il
+            // commento su pulisci_versioni_vecchie() per il perché
+            // (richiesta esplicita dell'utente: le cartelle di versione
+            // si accumulavano all'infinito, mai ripulite).
+            updater::pulisci_versioni_vecchie();
 
             let hostname = gethostname::gethostname().to_string_lossy().to_string();
 
@@ -1095,6 +1165,7 @@ pub fn run() {
             app.manage(Arc::new(categorization::CategorizationState::new()));
             let icons_stdin: IconsHandle = Arc::new(std::sync::Mutex::new(None));
             app.manage(icons_stdin.clone());
+            app.manage(custom_watchers::CustomWatcherProcesses::new());
 
             // Server in-process, protocollo personalizzato, watcher —
             // SEMPRE, sia in debug che in release. Prima questo blocco
@@ -1120,7 +1191,8 @@ pub fn run() {
                 let icons_stdin = icons_stdin.clone();
 
                 tauri::async_runtime::spawn(async move {
-                    let server = Arc::new(build_app_server(&app_data_dir, &webui_dir).await);
+                    let server =
+                        Arc::new(build_app_server(&app_data_dir, &webui_dir, &watcher_templates_dir).await);
                     app_handle.manage(server.clone());
 
                     // Prima si fermava dopo 15s e creava/mostrava la finestra
@@ -1213,6 +1285,26 @@ pub fn run() {
                             );
                         }
                     }
+
+                    // Watcher personalizzati (scritti dall'utente, non
+                    // compilati come sidecar) — scoperti sotto
+                    // app_data_dir/custom/watchers/, avviati dopo tutti i
+                    // watcher integrati. Vedi custom_watchers.rs.
+                    {
+                        let tracked = app_handle.state::<custom_watchers::CustomWatcherProcesses>();
+                        custom_watchers::spawn_custom_watchers(
+                            server.clone(),
+                            hostname.clone(),
+                            &app_data_dir,
+                            &tracked,
+                        );
+                    }
+
+                    // Pulizia giornaliera dei log dei watcher personalizzati
+                    // (richiesta esplicita: righe più vecchie di 7 giorni
+                    // eliminate, un controllo al giorno). Vedi
+                    // custom_watchers::avvia_pulizia_log_periodica.
+                    custom_watchers::avvia_pulizia_log_periodica(app_data_dir.clone());
 
                     // VoiSpeed: riprende da solo il ciclo di aggiornamento
                     // se risultava già collegato prima di questo avvio

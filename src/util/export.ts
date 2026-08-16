@@ -9,13 +9,24 @@
  * See: https://github.com/ActivityWatch/aw-tauri/issues/199
  */
 
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
+
 interface FileFilter {
   name: string;
   extensions: string[];
 }
 
 function isTauri(): boolean {
-  return '__TAURI__' in window;
+  // '__TAURI__' esiste solo se `app.withGlobalTauri` è attivo in
+  // tauri.conf.json (qui non lo è) — '__TAURI_INTERNALS__' è invece il
+  // bridge IPC interno che @tauri-apps/api/i plugin usano sempre,
+  // indipendentemente da quell'opzione, quindi è il modo giusto per
+  // rilevare "sto girando dentro Tauri" senza doverla attivare solo per
+  // questo. Bug reale: con '__TAURI__' il controllo era sempre falso, e
+  // downloadFile() finiva SEMPRE nel metodo browser (che non funziona in
+  // una webview Tauri, vedi sopra) anche con i permessi dialog/fs a posto.
+  return '__TAURI_INTERNALS__' in window;
 }
 
 /**
@@ -52,18 +63,6 @@ async function downloadFileTauri(
   mimeType: string
 ): Promise<void> {
   try {
-    // These modules are only available in the Tauri runtime (injected by aw-tauri).
-    // Using new Function() to bypass static analysis by webpack and rollup,
-    // which would otherwise fail to resolve these packages at build time.
-    // eslint-disable-next-line no-new-func
-    const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<unknown>;
-    const { save } = (await dynamicImport('@tauri-apps/plugin-dialog')) as {
-      save: (opts: object) => Promise<string | null>;
-    };
-    const { writeTextFile } = (await dynamicImport('@tauri-apps/plugin-fs')) as {
-      writeTextFile: (path: string, contents: string) => Promise<void>;
-    };
-
     const path = await save({
       title: 'Save export',
       defaultPath: filename,

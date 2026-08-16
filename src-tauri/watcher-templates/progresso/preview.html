@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body {
+      margin: 0;
+      padding: 4px 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+      background: transparent;
+      color: #b8a999;
+    }
+    .progresso {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .etichetta {
+      font-size: 12px;
+    }
+    .barra {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background-color: #2b3037;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .riempimento {
+      height: 100%;
+      width: 67%;
+      border-radius: 999px;
+      background-color: #d3a355;
+    }
+  </style>
+</head>
+<body>
+  <div class="progresso">
+    <div class="etichetta">avanzamento: 67%</div>
+    <div class="barra">
+      <div class="riempimento"></div>
+    </div>
+  </div>
+</body>
+</html>

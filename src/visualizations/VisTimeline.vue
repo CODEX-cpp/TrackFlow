@@ -2,11 +2,15 @@
   div
     div#visualization
 
-    div.small.text-muted.my-2(v-if="bucketsFromEither.length != 1")
+    div.hidden-buckets-hint(v-if="bucketsFromEither.length != 1")
       i {{ $t('visualizations.visTimeline.hiddenBucketsHint') }}
 
+    div.edit-hint-toast(v-if="showEditHint")
+      div.edit-hint-toast-title {{ $t('visualizations.visTimeline.editSavedTitle') }}
+      div {{ $t('visualizations.visTimeline.editSavedMsg') }}
+
     div(v-if="editingEvent")
-      EventEditor(:event="editingEvent" :bucket_id="editingEventBucket")
+      EventEditor(:event="editingEvent" :bucket_id="editingEventBucket" @close="closeEditor")
 </template>
 
 <style lang="scss">
@@ -38,8 +42,6 @@ div#visualization {
   }
 
   .timeline-timeline {
-    font-family: sans-serif !important;
-
     .timeline-panel {
       box-sizing: border-box;
     }
@@ -48,6 +50,28 @@ div#visualization {
       border-radius: 2px;
     }
   }
+}
+
+.hidden-buckets-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  margin: 8px 0;
+}
+
+.edit-hint-toast {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  margin: 8px 0;
+}
+
+.edit-hint-toast-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin-bottom: 2px;
 }
 </style>
 
@@ -117,6 +141,8 @@ export default {
       },
       editingEvent: null,
       editingEventBucket: null,
+      showEditHint: false,
+      editHintTimer: null as ReturnType<typeof setTimeout> | null,
 
       updateHasRun: false,
     };
@@ -210,6 +236,7 @@ export default {
     if (el) {
       el.removeEventListener('wheel', this.onHorizontalWheel, { capture: true });
     }
+    if (this.editHintTimer) clearTimeout(this.editHintTimer);
   },
   methods: {
     onHorizontalWheel: function (event: WheelEvent) {
@@ -234,8 +261,9 @@ export default {
       event.preventDefault();
       event.stopImmediatePropagation();
     },
-    openEditor: function () {
-      this.$bvModal.show('edit-modal-' + this.editingEvent.id);
+    closeEditor: function () {
+      this.editingEvent = null;
+      this.editingEventBucket = null;
     },
     onSelect: async function (properties) {
       if (properties.items.length == 0) {
@@ -248,11 +276,6 @@ export default {
 
         // Skip editing if event has no ID (e.g. merged query results) or bucket is a placeholder
         if (!event.id || !bucketId || bucketId === 'events' || bucketId === 'search') {
-          console.log(
-            'Event has no ID or bucket is a placeholder, skipping editor',
-            event,
-            bucketId
-          );
           return;
         }
 
@@ -261,22 +284,17 @@ export default {
         this.editingEvent = await this.$aw.getEvent(bucketId, event.id);
         this.editingEventBucket = bucketId;
 
-        this.$nextTick(() => {
-          console.log('Editing event', event, ', in bucket', bucketId);
-          this.openEditor();
-        });
         if (!isAlertWarningShown) {
-          // Show a one-time inline toast instead of a blocking alert(),
+          // Show a one-time inline banner instead of a blocking alert(),
           // which fired on top of the editor and rudely interrupted the
           // edit flow. Persist the dismissal via localStorage so the user
           // doesn't see it every session.
           if (!this.editRefreshHintDismissed()) {
-            this.$bvToast.toast(this.$t('visualizations.visTimeline.editSavedMsg'), {
-              title: this.$t('visualizations.visTimeline.editSavedTitle'),
-              variant: 'info',
-              autoHideDelay: 6000,
-              solid: true,
-            });
+            this.showEditHint = true;
+            if (this.editHintTimer) clearTimeout(this.editHintTimer);
+            this.editHintTimer = setTimeout(() => {
+              this.showEditHint = false;
+            }, 6000);
             this.markEditRefreshHintDismissed();
           }
           isAlertWarningShown = true;

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How privacy filters work — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Rules that automatically hide sensitive data, like window titles, before it's ever saved to your computer.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html" class="active">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>How privacy filters work</h2>
+        <p class="docs-guide-lede">Rules that automatically hide sensitive data (like window titles) before it's ever saved to your computer.</p>
+
+        <h3>The one thing to understand</h3>
+        <p>A privacy filter is checked <strong>before</strong> anything gets saved. If a rule throws an event away, that data never touches your disk — not hidden, not encrypted somewhere, <em>never stored at all</em>. Not even TrackFlow itself can show it to you afterwards, because it's gone before it ever exists.</p>
+
+        <h3>Quick start (2 minutes, no typing required)</h3>
+        <ol>
+          <li>Open TrackFlow and go to <strong>Settings → Privacy</strong>.</li>
+          <li>Pick one of the three ready-made examples below.</li>
+          <li>Click inside the empty box on that page, and paste it in exactly as written.</li>
+          <li>Click <strong>Save</strong>.</li>
+        </ol>
+        <p>That's it — the rule is active immediately, no restart needed. You can paste more than one rule at once too: just put a comma between them and wrap the whole thing in square brackets, like <code>[ {"…first rule…"}, {"…second rule…"} ]</code>.</p>
+
+        <h3>Copy one of these</h3>
+
+        <p><strong>1. Hide incognito/private browsing entirely</strong><br>Any window with "incognito" or "private browsing" in the title disappears completely, as if it never happened.</p>
+        <pre><code>{
+  "enabled": true,
+  "bucket_prefix": "aw-watcher-window",
+  "field": "title",
+  "pattern": "(?i)(private browsing|incognito)",
+  "action": "drop"
+}</code></pre>
+
+        <p><strong>2. Blur out anything mentioning "banking"</strong><br>The window still shows up on your timeline (so your time is still counted), but the title is replaced with the word REDACTED instead of the real details.</p>
+        <pre><code>{
+  "enabled": true,
+  "bucket_prefix": "aw-watcher-window",
+  "field": "title",
+  "pattern": "(?i).*banking.*",
+  "action": "redact",
+  "replacement": "REDACTED"
+}</code></pre>
+
+        <p><strong>3. Hide one specific app completely (e.g. WhatsApp or Signal)</strong><br>Every window belonging to that app disappears, no matter what its title says.</p>
+        <pre><code>{
+  "enabled": true,
+  "bucket_prefix": "aw-watcher-window",
+  "field": "app",
+  "pattern": "(?i)signal|whatsapp",
+  "action": "drop"
+}</code></pre>
+
+        <h3>Want to write your own rule? Here's what each part means</h3>
+        <p>You don't need to memorize this — copy an example above and change the words in quotes. But if you're curious what you're actually editing:</p>
+        <table>
+          <tr><th>Field</th><th>In plain words</th></tr>
+          <tr><td><code>enabled</code></td><td>Write <code>true</code> to turn the rule on, <code>false</code> to keep it saved but switched off</td></tr>
+          <tr><td><code>bucket_prefix</code></td><td>Which tracker this applies to. <code>"aw-watcher-window"</code> means "the active window" — leave this line out entirely to apply the rule to everything</td></tr>
+          <tr><td><code>field</code></td><td><code>"title"</code> to match the window's title text, or <code>"app"</code> to match the program's name</td></tr>
+          <tr><td><code>pattern</code></td><td>The word or phrase to look for. <code>(?i)</code> at the front just means "ignore uppercase/lowercase differences" — always safe to keep</td></tr>
+          <tr><td><code>action</code></td><td><code>"drop"</code> to erase the whole event, or <code>"redact"</code> to keep it but hide the details (needs a <code>replacement</code> line too)</td></tr>
+        </table>
+
+        <h3>Turning everything off</h3>
+        <p>Go to Settings → Privacy, delete everything in the box so it's empty (or just <code>[]</code>), and click Save.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

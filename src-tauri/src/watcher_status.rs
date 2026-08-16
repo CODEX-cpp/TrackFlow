@@ -111,6 +111,16 @@ pub fn riavvia_watcher(app_handle: AppHandle, name: String) {
     avvia_watcher_sessione(app_handle, name);
 }
 
+/// Comando Tauri per il toggle di un watcher integrato nella pagina
+/// Watchers (Buckets.vue) — riusa esattamente la stessa `imposta_modulo`
+/// del menu Moduli della tray qui sotto, nessuna logica duplicata: il
+/// toggle nella pagina, il click nel menu tray e il dialogo di primo
+/// avvio finiscono tutti nello stesso posto.
+#[tauri::command]
+pub fn imposta_modulo_watcher(app_handle: AppHandle, nome: String, attivo: bool) {
+    imposta_modulo(&app_handle, &nome, attivo);
+}
+
 /// Accende/spegne un modulo PER DAVVERO (persiste su modules-config.json,
 /// aggiorna la spunta nel menu Moduli della tray, avvia/ferma il
 /// processo) — stessa identica logica usata dal click sul menu Moduli,

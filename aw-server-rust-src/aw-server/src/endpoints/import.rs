@@ -39,6 +39,22 @@ fn event_identity(
 }
 
 fn import(datastore: &Datastore, import: BucketsExport) -> Result<(), HttpErrorJson> {
+    // Richiesta esplicita: "Importa bucket" serve solo ad aggiungere dati
+    // a bucket che esistono già su questo dispositivo, mai a crearne di
+    // nuovi "al buio" da un file — un file che referenzia anche un solo
+    // bucket sconosciuto viene rifiutato per intero, prima di toccare
+    // qualunque dato (nessuna importazione parziale silenziosa).
+    for bucket_id in import.buckets.keys() {
+        if datastore.get_bucket(bucket_id).is_err() {
+            return Err(HttpErrorJson::new(
+                Status::BadRequest,
+                format!(
+                    "Il bucket '{bucket_id}' non esiste su questo dispositivo — l'importazione può solo aggiungere dati a bucket già esistenti, non crearne di nuovi."
+                ),
+            ));
+        }
+    }
+
     for (_bucketname, mut bucket) in import.buckets {
         match datastore.create_bucket(&bucket) {
             Ok(_) => (),

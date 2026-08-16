@@ -1,0 +1,34 @@
+body {
+  margin: 0;
+  padding: 4px 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+  background: transparent;
+  color: #b8a999;
+}
+
+.stato-onoff {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pallino {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #6b5c4a;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease;
+}
+
+.pallino.acceso {
+  background-color: #7c9a5c;
+}
+
+.pallino.spento {
+  background-color: #b3452f;
+}
+
+.etichetta {
+  font-size: 13px;
+}

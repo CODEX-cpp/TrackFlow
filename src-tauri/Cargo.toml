@@ -26,12 +26,14 @@ tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 notify-rust = "4"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 regex = "1"
 chrono = "0.4"
 rocket = { version = "0.5.0", features = ["json"] }
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["sync", "time", "process", "io-util"] }
 aw-server = { path = "../aw-server-rust-src/aw-server" }
 aw-datastore = { path = "../aw-server-rust-src/aw-datastore", default-features = false }
 aw-models = { path = "../aw-server-rust-src/aw-models" }

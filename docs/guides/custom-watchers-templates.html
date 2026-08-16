@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Visualization templates — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Ready-made ways to show a custom watcher's data on Home, and what each one expects from your data.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html" class="active">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>Visualization templates</h2>
+        <p class="docs-guide-lede">Ready-made ways to show your data on Home, picked when you create the watcher — no HTML/CSS to write. Each one looks at your data and figures out what to show on its own; you don't need to tell it your field names in advance.</p>
+        <table>
+          <tr><th>Template</th><th>What it needs from your data</th></tr>
+          <tr><td>Key/value list <em>(default)</em></td><td>Nothing specific — shows every field you send, as-is</td></tr>
+          <tr><td>On/off status</td><td>A field that looks like a state: <code>true</code>/<code>false</code>, exactly <code>0</code>/<code>1</code>, or a common word like <code>"on"</code>/<code>"off"</code>, <code>"yes"</code>/<code>"no"</code>, <code>"connected"</code></td></tr>
+          <tr><td>Highlighted numeric value</td><td>Any numeric field — shown big, with its name as a caption</td></tr>
+          <tr><td>Highlighted text</td><td>Any non-empty text field — shown big, with its name as a caption</td></tr>
+          <tr><td>Progress bar</td><td>A numeric field, treated as a percentage from 0 to 100</td></tr>
+          <tr><td>Last update</td><td>Nothing — it only looks at <em>when</em> your most recent data point arrived, and turns red if it's been more than 15 minutes</td></tr>
+          <tr><td>Pill list</td><td>Nothing specific — same as the key/value list, shown as small rounded chips instead of a table</td></tr>
+          <tr><td>Total on-time (today)</td><td>Same on/off-style field as above — adds up how much time it's been "on" today, e.g. for something like a VPN connection</td></tr>
+          <tr><td>Top values ranking (today)</td><td>A text field — groups today's events by that field and ranks the top 5 by total time, e.g. which file was open the longest</td></tr>
+        </table>
+        <p>None of this is permanent: which template a watcher uses can't be changed after creation from the wizard, but you can always remove the module from Home and <a href="custom-watchers-manage.html" style="color:var(--color-accent1)">re-add it</a> — or just create <a href="custom-watchers-create.html" style="color:var(--color-accent1)">a second watcher</a> pointed at the same idea with a different visualization.</p>
+        <p>Next: <a href="custom-watchers-manage.html" style="color:var(--color-accent1)">Managing one afterwards</a>.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

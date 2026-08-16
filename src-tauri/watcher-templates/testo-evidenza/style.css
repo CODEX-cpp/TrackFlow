@@ -1,0 +1,30 @@
+body {
+  margin: 0;
+  padding: 4px 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+  background: transparent;
+  color: #b8a999;
+  text-align: center;
+}
+
+.testo-evidenza {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.testo {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f2e9dd;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.etichetta {
+  font-size: 12px;
+}
