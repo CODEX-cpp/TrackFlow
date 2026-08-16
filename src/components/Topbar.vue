@@ -115,7 +115,7 @@ div.topbar(data-tauri-drag-region)
       @select="pickSuggestion"
       @close="closeSearch"
     )
-    div.filter-chip(@click="toggleSearch") {{ $t('topbar.search') }}
+    div.filter-chip(v-if="!isBucketsPage" @click="toggleSearch") {{ $t('topbar.search') }}
 
   //- Pulsanti finestra (riduci/ingrandisci/chiudi) — sostituiscono la
   //- barra del titolo nativa di Windows, tolta lato Rust con
@@ -498,6 +498,9 @@ export default {
     },
     isSettingsPage(): boolean {
       return this.$route.path.startsWith('/settings');
+    },
+    isBucketsPage(): boolean {
+      return this.$route.path.startsWith('/buckets');
     },
     // Real suggestions: on the Projects page and on Home (project
     // names), and on Settings (titles/help text of every setting). On

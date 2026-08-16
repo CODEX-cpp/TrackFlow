@@ -62,11 +62,11 @@ div.bucket-page
         div.settings-toggle(:class="{ 'settings-toggle-on': excludeFromModulesToggle }" @click="excludeFromModulesToggle = !excludeFromModulesToggle")
           div.settings-toggle-thumb
 
-  input-timeinterval(v-model="daterange", :maxDuration="maxDuration")
+  input-timeinterval(v-model="selectedDurationSeconds")
 
-  vis-timeline(:buckets="[bucket_with_events]", :showRowLabels="false", :queriedInterval="daterange", :updateTimelineWindow="true")
+  aw-bucket-timeline(v-if="daterange" :events="events" :daterange="daterange" :bucket="bucket")
 
-  aw-eventlist(:bucket_id="id", @save="updateEvent", :events="events" editable=true)
+  aw-eventlist(:bucket_id="id", :bucket="bucket", @save="updateEvent", :events="events" editable=true)
 
   div.log-panel(v-if="customWatcherInfo")
     div.log-panel-title {{ $t('visualizations.bucketPage.logTitle') }}
@@ -203,6 +203,7 @@ div.bucket-page
 </style>
 
 <script lang="ts">
+import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { useBucketsStore } from '~/stores/buckets';
 import { getClient } from '~/util/awclient';
@@ -221,7 +222,13 @@ export default {
       events: [],
       eventcount: '?',
       daterange: null,
-      maxDuration: 31 * 24 * 60 * 60,
+      selectedDurationSeconds: 60 * 60,
+      // Ricalcolata a intervalli regolari (stesso ritmo del log del
+      // watcher sotto) invece che dentro input-timeinterval — così la
+      // finestra [ora - durata, ora] scorre davvero nel tempo invece di
+      // restare congelata al momento dell'ultimo click, e la timeline
+      // segue quasi in tempo reale.
+      daterangeTickInterval: null,
       totalDurationSeconds: null,
       // Popolato solo se questo bucket appartiene a un watcher
       // personalizzato (match su bucket_id) — mostra la sezione
@@ -250,12 +257,6 @@ export default {
     bucket() {
       return this.bucketsStore.getBucket(this.id) || { id: this.id };
     },
-    bucket_with_events() {
-      return {
-        ...this.bucket,
-        events: this.events,
-      };
-    },
     comandoCompleto() {
       if (!this.customWatcherInfo) return '';
       return [this.customWatcherInfo.command, ...(this.customWatcherInfo.args || [])]
@@ -272,6 +273,11 @@ export default {
     daterange: async function () {
       await this.getEvents(this.id);
     },
+    selectedDurationSeconds: function () {
+      // Feedback immediato al click su una pillola, invece di aspettare
+      // fino a 1,5s il prossimo giro del tick qui sotto.
+      this.recomputeDaterange();
+    },
   },
   mounted: async function () {
     await this.bucketsStore.ensureLoaded();
@@ -282,13 +288,21 @@ export default {
       await this.fetchWatcherLog();
       this.logPollInterval = setInterval(this.fetchWatcherLog, 1500);
     }
+    this.recomputeDaterange();
+    this.daterangeTickInterval = setInterval(() => this.recomputeDaterange(), 1500);
   },
   beforeDestroy: function () {
     if (this.logPollInterval) {
       clearInterval(this.logPollInterval);
     }
+    if (this.daterangeTickInterval) {
+      clearInterval(this.daterangeTickInterval);
+    }
   },
   methods: {
+    recomputeDaterange: function () {
+      this.daterange = [moment().subtract(this.selectedDurationSeconds, 'seconds'), moment()];
+    },
     getEvents: async function (bucket_id) {
       const bucket = await this.bucketsStore.getBucketWithEvents({
         id: bucket_id,

@@ -49,13 +49,13 @@ Vue.component('aw-sidebar', () => import('./components/Sidebar.vue'));
 Vue.component('aw-topbar', () => import('./components/Topbar.vue'));
 Vue.component('aw-selectable-vis', () => import('./components/SelectableVisualization.vue'));
 Vue.component('aw-query-options', () => import('./components/QueryOptions.vue'));
+Vue.component('aw-bucket-timeline', () => import('./components/BucketTimeline.vue'));
 
 // Visualization components
 Vue.component('aw-summary', () => import('./visualizations/Summary.vue'));
 Vue.component('aw-top-summary', () => import('./visualizations/TopSummary.vue'));
 Vue.component('aw-eventlist', () => import('./visualizations/EventList.vue'));
 Vue.component('aw-category-bar', () => import('./visualizations/CategoryBar.vue'));
-Vue.component('vis-timeline', () => import('./visualizations/VisTimeline.vue'));
 Vue.component('aw-timeline-barchart', () => import('./visualizations/TimelineBarChart.vue'));
 Vue.component('aw-custom-vis', () => import('./visualizations/CustomVisualization.vue'));
 Vue.component('aw-custom-watcher-view', () => import('./visualizations/CustomWatcherView.vue'));

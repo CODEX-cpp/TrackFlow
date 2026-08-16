@@ -713,19 +713,7 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       save: 'Salva',
     },
     inputTimeInterval: {
-      invalidRange:
-        'L\'intervallo di date selezionato non è valido. La seconda data deve essere maggiore o uguale alla prima.',
-      tooLongRange: 'L\'intervallo di date selezionato è troppo lungo. Il massimo è {days} giorni.',
-      mode: 'Modalità',
-      range: 'Intervallo',
-      quickDurations: 'Durate rapide',
-      startDate: 'Data inizio',
-      endDate: 'Data fine (opzionale)',
-      apply: 'Applica',
-      refresh: 'Aggiorna',
-      lastUpdate: 'Ultimo aggiornamento:',
-      lastDuration: 'Ultima durata',
-      dateRange: 'Intervallo di date',
+      day: 'Giorno',
     },
   },
   visualizations: {
@@ -757,6 +745,8 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       expand: 'Espandi elenco',
       condense: 'Comprimi elenco',
       edit: 'Modifica',
+      time: 'Ora',
+      duration: 'Durata',
     },
     categoryBar: {
       other: 'Altro',
@@ -794,11 +784,8 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       excludeFromModules: 'Escludi dagli altri moduli',
       logTitle: 'Log del watcher',
       logEmpty: 'Nessun log ancora disponibile.',
-    },
-    visTimeline: {
-      hiddenBucketsHint: 'I bucket senza eventi nell\'intervallo interrogato saranno nascosti.',
-      editSavedTitle: 'Attenzione',
-      editSavedMsg: 'La modifica è salvata. Aggiorna la timeline per vederla riflessa.',
+      timelineEmpty: 'Ancora nessun evento in questo intervallo.',
+      timelineUnnamedEvent: 'Evento',
     },
   },
   firstRunSetup: {

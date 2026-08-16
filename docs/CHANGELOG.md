@@ -18,6 +18,10 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Corretto un bug per cui la scelta del modello di visualizzazione durante la creazione di un watcher personalizzato mostrava solo l'opzione "predefinito" invece dell'elenco completo.
 - Corretto un fastidioso lampeggiare di finestre nere (prompt dei comandi) quando un watcher personalizzato viene avviato.
 - Corretto un bug per cui, dopo aver creato un watcher personalizzato, il pulsante "Apri" per vederne i dati poteva non comparire mai, restando bloccato su "in attesa di dati" anche a watcher funzionante.
+- Rifatta la pagina di dettaglio di una sorgente dati: nuova timeline nello stesso stile di quella della Home (al posto della vecchia libreria non più coerente col resto dell'app), selettore dell'intervallo semplificato a "1h / 4h / Giorno", e sia la timeline che la tabella eventi ora si aggiornano da sole quasi in tempo reale.
+- Rifatta anche la tabella eventi sotto la timeline: colonne chiare invece di un unico elenco di etichette, altezza fissa con scorrimento invece di allungare tutta la pagina.
+- Corretto l'aspetto della finestra di modifica di un evento: i campi data/ora avevano uno stile chiaro stonato in mezzo a una finestra scura.
+- Il pulsante "Cerca" nella barra in alto è ora nascosto nella pagina "Sorgenti dati", dove non aveva alcun effetto.
 - Rifatta la documentazione online sui watcher personalizzati, ora divisa in guide separate e più complete.
 
 ### en
@@ -31,6 +35,10 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Fixed a bug where choosing a visualization template while creating a custom watcher only showed the "default" option instead of the full list.
 - Fixed black command-prompt windows briefly flashing on screen when a custom watcher starts running.
 - Fixed a bug where, after creating a custom watcher, the "Open" button to view its data could never appear, staying stuck on "waiting for data" even though the watcher was working fine.
+- Redesigned a data source's detail page: a new timeline in the same style as the Home page's (replacing the old, no-longer-consistent library), a simplified time-range picker ("1h / 4h / Day"), and both the timeline and the events table now update on their own, near real-time.
+- Also redesigned the events table below the timeline: clear columns instead of a single wall of tags, fixed height with scrolling instead of stretching the whole page.
+- Fixed the look of the event-edit popup: the date/time fields had a jarring light style in the middle of a dark window.
+- The "Search" button in the top bar is now hidden on the Data sources page, where it had no effect.
 - Rewrote the online documentation for custom watchers into separate, more complete guides.
 
 ## 0.1.11

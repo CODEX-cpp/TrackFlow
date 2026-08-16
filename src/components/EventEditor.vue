@@ -92,6 +92,64 @@ div(v-if="event && event.id")
 .event-editor-key {
   opacity: 0.7;
 }
+
+// vue-datetime (i campi Inizio/Fine) renderizza il proprio input e il
+// proprio popup calendario/orario con uno stile chiaro di default,
+// stonato in mezzo a un modale scuro — bug estetico reale segnalato da
+// un utente via screenshot. ::v-deep perché è un componente di terze
+// parti, non markup nostro: le sue classi non sono scoped a questo
+// file. Solo aspetto, nessuna delle funzioni sotto (v-model, salvataggio,
+// eliminazione) viene toccata.
+::v-deep .vdatetime-input {
+  width: 100%;
+  padding: 6px 10px;
+  background-color: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+}
+
+::v-deep .vdatetime-overlay {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+::v-deep .vdatetime-popup {
+  background-color: var(--color-bg-elev);
+  color: var(--color-text);
+}
+
+::v-deep .vdatetime-popup__header,
+::v-deep .vdatetime-popup__actions {
+  background-color: var(--color-surface2);
+}
+
+::v-deep .vdatetime-popup__actions__button {
+  color: var(--color-accent1);
+}
+
+::v-deep .vdatetime-calendar__navigation,
+::v-deep .vdatetime-calendar__month__weekday {
+  color: var(--color-text-faint);
+}
+
+::v-deep .vdatetime-calendar__month__day span span {
+  color: var(--color-text-dim);
+}
+
+::v-deep .vdatetime-calendar__month__day:hover > span > span {
+  background-color: var(--color-surface2);
+}
+
+::v-deep .vdatetime-calendar__month__day--selected > span > span {
+  background-color: var(--color-accent1) !important;
+  color: #241a12;
+}
+
+::v-deep .vdatetime-time-picker__item--selected {
+  color: var(--color-accent1);
+}
 </style>
 
 <script lang="ts">

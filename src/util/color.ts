@@ -61,6 +61,25 @@ export function getColorFromString(appname: string): string {
   return customColors[appname] || scale(Math.abs(hashcode(appname) % 20).toString());
 }
 
+// Stessa logica di getTitleAttr (di cui è una specie di gemella), ma
+// ritorna il NOME del campo invece del valore — serve alla tabella
+// eventi (EventList.vue) per sapere quale colonna colorare come
+// "principale" e quali mostrare come testo semplice, per qualunque
+// tipo di bucket (built-in o watcher personalizzato), senza doverlo
+// sapere in anticipo. Duplicata invece di far chiamare l'una dall'altra
+// per non rischiare di alterare il comportamento già in uso della
+// timeline, che dipende da getTitleAttr esattamente com'è oggi.
+export function getPrimaryDataKey(bucket: { type?: string }, e: IEvent): string | null {
+  if (bucket.type == 'currentwindow') return 'app';
+  if (bucket.type == 'web.tab.current') return 'url';
+  if (bucket.type == 'afkstatus') return 'status';
+  if (bucket.type?.startsWith('app.editor')) return 'file';
+  if (bucket.type?.startsWith('general.stopwatch')) return 'label';
+  if (typeof e.data?.title === 'string') return 'title';
+  const keys = Object.keys(e.data || {});
+  return keys.length === 1 ? keys[0] : null;
+}
+
 export function getTitleAttr(bucket: { type?: string }, e: IEvent) {
   if (bucket.type == 'currentwindow') {
     return e.data.app;
