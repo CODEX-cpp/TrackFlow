@@ -8,16 +8,6 @@ Non toccare questo formato senza aggiornare anche quel parser.
 ## 0.1.13
 
 ### it
-- Corretto un bug per cui, dopo l'installazione, la scelta del modello di visualizzazione durante la creazione di un watcher personalizzato mostrava solo l'opzione "predefinito" invece dell'elenco completo.
-- Corretto un fastidioso lampeggiare di finestre nere (prompt dei comandi) quando un watcher personalizzato viene avviato.
-
-### en
-- Fixed a bug where, after installing the app, choosing a visualization template while creating a custom watcher only showed the "default" option instead of the full list.
-- Fixed black command-prompt windows briefly flashing on screen when a custom watcher starts running.
-
-## 0.1.12
-
-### it
 - Nuovo: quando crei un watcher personalizzato puoi scegliere tra 8 modelli di visualizzazione pronti per la Home (stato acceso/spento, valore numerico, testo, barra di avanzamento, ultimo aggiornamento, elenco a pillole, tempo totale acceso oggi, classifica dei valori più frequenti oggi).
 - Nuovo: ogni watcher personalizzato ha ora una pagina di dettaglio con stato del processo, tempo totale tracciato, un log in tempo reale di ogni esecuzione, e la possibilità di cambiare in qualsiasi momento lo script associato (con rilevamento automatico dell'interprete: PowerShell, Python, JavaScript, cmd/bat).
 - Nuovo: la dimensione e il modello di visualizzazione scelti per un watcher personalizzato vengono ora ricordati, anche rimuovendo e riaggiungendo il suo modulo dalla Home.
@@ -25,6 +15,8 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Corretto un bug per cui eliminare un watcher personalizzato non fermava il suo processo né cancellava la sua cartella, lasciandolo "riapparire" da solo senza alcun controllo per rimuoverlo davvero.
 - Corretto un crash dell'app che poteva verificarsi creando un nuovo watcher personalizzato.
 - Corretto un bug per cui il campo "Numero eventi" nella pagina di dettaglio di una sorgente dati era sempre vuoto.
+- Corretto un bug per cui la scelta del modello di visualizzazione durante la creazione di un watcher personalizzato mostrava solo l'opzione "predefinito" invece dell'elenco completo.
+- Corretto un fastidioso lampeggiare di finestre nere (prompt dei comandi) quando un watcher personalizzato viene avviato.
 - Rifatta la documentazione online sui watcher personalizzati, ora divisa in guide separate e più complete.
 
 ### en
@@ -35,6 +27,8 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Fixed a bug where deleting a custom watcher didn't stop its process or delete its folder, causing it to silently reappear with no way to actually remove it.
 - Fixed a crash that could occur when creating a new custom watcher.
 - Fixed a bug where the "Event count" field on a data source's detail page was always empty.
+- Fixed a bug where choosing a visualization template while creating a custom watcher only showed the "default" option instead of the full list.
+- Fixed black command-prompt windows briefly flashing on screen when a custom watcher starts running.
 - Rewrote the online documentation for custom watchers into separate, more complete guides.
 
 ## 0.1.11
