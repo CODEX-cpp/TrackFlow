@@ -5,6 +5,16 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.13
+
+### it
+- Corretto un bug per cui, dopo l'installazione, la scelta del modello di visualizzazione durante la creazione di un watcher personalizzato mostrava solo l'opzione "predefinito" invece dell'elenco completo.
+- Corretto un fastidioso lampeggiare di finestre nere (prompt dei comandi) quando un watcher personalizzato viene avviato.
+
+### en
+- Fixed a bug where, after installing the app, choosing a visualization template while creating a custom watcher only showed the "default" option instead of the full list.
+- Fixed black command-prompt windows briefly flashing on screen when a custom watcher starts running.
+
 ## 0.1.12
 
 ### it

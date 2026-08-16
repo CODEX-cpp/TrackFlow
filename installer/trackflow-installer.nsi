@@ -24,6 +24,7 @@
 !define SRC_ROOT "..\"
 !define SRC_RELEASE "${SRC_ROOT}src-tauri\target\release\"
 !define SRC_DIST "${SRC_ROOT}dist\"
+!define SRC_WATCHER_TEMPLATES "${SRC_ROOT}src-tauri\watcher-templates\"
 !define SRC_ICONS "${SRC_ROOT}src-tauri\icons\"
 !define SRC_LAUNCHER "${SRC_ROOT}launcher\target\release\launcher.exe"
 
@@ -206,6 +207,14 @@ Section "Install"
 
   SetOutPath "$INSTDIR\versions\${VERSION}\dist"
   File /r "${SRC_DIST}*.*"
+
+  ; Modelli di visualizzazione per i moduli Home dei watcher personalizzati
+  ; (elenca_modelli_visualizzazione_watcher in custom_watchers.rs legge
+  ; questa cartella via resource_dir(), che per questo installer coincide
+  ; con $INSTDIR\versions\${VERSION}\ — bug reale, v0.1.12: mancava qui,
+  ; quindi il wizard non mostrava alcun modello dopo l'installazione).
+  SetOutPath "$INSTDIR\versions\${VERSION}\watcher-templates"
+  File /r "${SRC_WATCHER_TEMPLATES}*.*"
 
   ; Solo l'icona usata per il toast di notifica (vedi notifications.rs) —
   ; non serve l'intero set di icone qui, quella vive nell'exe stesso.

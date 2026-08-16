@@ -267,6 +267,7 @@ fn costruisci_comando(manifest: &WatcherManifest, cartella: &Path) -> Option<Com
         .kill_on_drop(true)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    nascondi_finestra_tokio(&mut cmd);
     Some(cmd)
 }
 
@@ -592,8 +593,33 @@ fn slug(nome: &str) -> String {
 /// questo stesso programma) — solo non compare in Esplora risorse a
 /// meno che l'utente non attivi esplicitamente "Elementi nascosti".
 fn nascondi_manifest(path: &Path) {
-    let _ = std::process::Command::new("attrib").args(["+h", &path.to_string_lossy()]).status();
+    let mut cmd = std::process::Command::new("attrib");
+    cmd.args(["+h", &path.to_string_lossy()]);
+    nascondi_finestra(&mut cmd);
+    let _ = cmd.status();
 }
+
+/// Su Windows, impedisce al processo lanciato di aprire la sua finestra
+/// console — senza questo, ogni riga di `attrib`/PowerShell/Python/ecc.
+/// lanciata per i watcher personalizzati fa lampeggiare brevemente una
+/// finestra nera sullo schermo (bug reale segnalato da un utente dopo
+/// aver installato v0.1.12: creare un nuovo watcher apriva "diverse
+/// finestre cmd" prima della conferma). No-op su altre piattaforme.
+#[cfg(windows)]
+fn nascondi_finestra(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+#[cfg(windows)]
+fn nascondi_finestra_tokio(cmd: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+#[cfg(not(windows))]
+fn nascondi_finestra(_cmd: &mut std::process::Command) {}
+#[cfg(not(windows))]
+fn nascondi_finestra_tokio(_cmd: &mut Command) {}
 
 fn crea_cartella_univoca(base: &Path, nome: &str) -> Result<(String, PathBuf), String> {
     std::fs::create_dir_all(base).map_err(|e| e.to_string())?;

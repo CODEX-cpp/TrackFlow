@@ -122,6 +122,7 @@ jobs:
             Copy-Item "src-tauri/target/release/aw-watcher-$w.exe" "stage/"
           }
           Copy-Item -Recurse "dist" "stage/dist"
+          Copy-Item -Recurse "src-tauri/watcher-templates" "stage/watcher-templates"
           Copy-Item "src-tauri/icons/128x128.png" "stage/icons/notification-icon.png"
           Compress-Archive -Path "stage/*" `
             -DestinationPath "trackflow-$version-update-package.zip" -CompressionLevel Optimal
