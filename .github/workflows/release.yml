@@ -162,12 +162,36 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          gh release create "v$version" `
-            "trackflow-$version-update-package.zip" `
-            "trackflow-$version-update-package.zip.sig" `
-            "installer\trackflow-setup-$version.exe" `
-            --title "v$version" `
-            --generate-notes
+
+          # Corpo della release preso dalla sezione "### en" di questa
+          # versione in docs/CHANGELOG.md, invece delle note generate
+          # automaticamente da GitHub (che senza pull request associate
+          # mostrano solo un link "Full Changelog: vX...vY", inutile per
+          # chi guarda la pagina della release senza cliccare altrove).
+          # Fallback su --generate-notes se la sezione non si trova (es.
+          # changelog dimenticato per questa versione, vedi RELEASE.md
+          # sezione 2) invece di far fallire tutta la pubblicazione.
+          $changelog = Get-Content "docs\CHANGELOG.md" -Raw
+          $pattern = "(?ms)^## $([regex]::Escape($version))\s*?\r?\n.*?^### en\s*?\r?\n(.*?)(?=\r?\n## |\z)"
+          if ($changelog -match $pattern) {
+            $note = $matches[1].Trim()
+            $notePath = "release-notes.md"
+            Set-Content -Path $notePath -Value $note -Encoding utf8
+            gh release create "v$version" `
+              "trackflow-$version-update-package.zip" `
+              "trackflow-$version-update-package.zip.sig" `
+              "installer\trackflow-setup-$version.exe" `
+              --title "v$version" `
+              --notes-file $notePath
+          } else {
+            Write-Warning "Nessuna sezione '## $version' / '### en' trovata in docs\CHANGELOG.md — uso le note generate automaticamente."
+            gh release create "v$version" `
+              "trackflow-$version-update-package.zip" `
+              "trackflow-$version-update-package.zip.sig" `
+              "installer\trackflow-setup-$version.exe" `
+              --title "v$version" `
+              --generate-notes
+          }
 
           $assets = gh api "repos/${{ github.repository }}/releases/tags/v$version" --jq '.assets[] | "\(.id) \(.name)"'
           foreach ($riga in $assets) {
