@@ -217,6 +217,11 @@ select.settings-field {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  margin-bottom: 14px;
+}
+
+.settings-field-row:last-child {
+  margin-bottom: 0;
 }
 
 .settings-field-row > .settings-field {

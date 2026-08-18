@@ -5,6 +5,34 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.15
+
+### it
+- Corretto un bug per cui "Importa bucket" (pagina Watcher) non funzionava mai davvero trascinando o scegliendo un file reale — l'importazione falliva in silenzio, senza nessun messaggio.
+- Nuovo: trascinando un file JSON/CSV sopra la finestra, la pagina si oscura ed evidenzia con un bordo dorato dove rilasciarlo; a importazione completata viene mostrato quante attività sono state aggiunte e quante erano già presenti.
+- Corretto un bug per cui reimportare più volte lo stesso file continuava ad aggiungere attività invece di riconoscerle come già presenti.
+- Corretto un bug più serio nella stessa importazione, che in rari casi poteva sovrascrivere dati più recenti con una versione più vecchia dello stesso evento.
+- Corretto un bug per cui alcune impostazioni non comparivano cercandole dalla barra di ricerca in Impostazioni.
+- Nuovo: attivando "Avvia con Windows", l'app si avvia ora in background senza aprire la finestra, restando comunque attiva nella system tray.
+- Nuovo: la finestra principale ricorda ora schermo, posizione e dimensione tra un riavvio e l'altro.
+- Se il sistema operativo non è né in italiano né in inglese, l'app si apre ora in inglese invece che in italiano.
+- Al primo avvio, i moduli VPN, Claude Code, Excel e VoiSpeed partono ora disattivati di default; anche "Nascondi moduli/corsie Timeline quando vuoti" parte disattivato.
+- Cambiati i moduli mostrati di default nella Home al primo avvio.
+- Piccole rifiniture grafiche in Impostazioni (notifiche, integrazione Claude).
+
+### en
+- Fixed a bug where "Import buckets" (Watchers page) never actually worked when dragging or picking a real file — the import silently failed with no message.
+- New: dragging a JSON/CSV file over the window now dims the page and highlights where to drop it with a gold border; once the import completes, it shows how many activities were added and how many were already present.
+- Fixed a bug where re-importing the same file repeatedly kept adding activities instead of recognizing them as already present.
+- Fixed a more serious bug in the same import feature that, in rare cases, could overwrite newer data with an older version of the same event.
+- Fixed a bug where some settings didn't show up when searched for in the Settings search bar.
+- New: enabling "Start with Windows" now launches the app in the background without opening the window, while staying fully active in the system tray.
+- New: the main window now remembers its screen, position, and size between restarts.
+- If the operating system isn't in Italian or English, the app now opens in English instead of Italian.
+- On first launch, the VPN, Claude Code, Excel, and VoiSpeed modules now start disabled by default; "Hide modules/Timeline lanes when empty" also starts disabled.
+- Changed the modules shown by default on the Home page on first launch.
+- Small visual polish in Settings (notifications, Claude integration).
+
 ## 0.1.14
 
 ### it

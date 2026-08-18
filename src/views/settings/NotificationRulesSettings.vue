@@ -16,9 +16,7 @@ div
   div.settings-row-help(v-else) {{ $t('settings.notifications.empty') }}
 
   div.nr-builder
-    div.settings-row-title.nr-builder-title
-      icon(name="plus")
-      | {{ $t('settings.notifications.newRule') }}
+    div.settings-row-title.nr-builder-title {{ $t('settings.notifications.newRule') }}
 
     div.nr-field
       label.settings-field-label {{ $t('settings.notifications.fieldName') }}
@@ -80,7 +78,6 @@ div
 </template>
 
 <script lang="ts">
-import 'vue-awesome/icons/plus';
 import 'vue-awesome/icons/trash';
 import 'vue-awesome/icons/bell';
 import { useSettingsStore } from '~/stores/settings';
@@ -301,9 +298,6 @@ export default {
 }
 
 .nr-builder-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-bottom: 12px;
 }
 

@@ -14,7 +14,7 @@ div
 
   div.settings-field-row
     label.settings-field-label {{ $t('settings.aiAgent.provider') }}
-    select.settings-field(v-model="provider")
+    select.settings-field.aiagent-provider-field(v-model="provider")
       option(value="anthropic") {{ $t('settings.aiAgent.providerAnthropic') }}
 
   div.settings-field-row
@@ -142,6 +142,20 @@ export default {
 </script>
 
 <style scoped>
+/* Stesso motivo/pattern del select del modello qui sotto: senza
+   questo cresceva con flex:1 fino a riempire tutta la larghezza della
+   card, un form lunghissimo per un'unica opzione ("Claude
+   (Anthropic)"). Selettore più specifico di ".settings-field-row >
+   .settings-field" (due classi, vedi settingsPanel.css) apposta: il
+   select del provider è figlio diretto di .settings-field-row (a
+   differenza di quello del modello, dentro un div in più), quindi
+   .aiagent-provider-field da sola perdeva sempre contro quella regola
+   — bug reale trovato in test, stesso tipo di quello del bordo dorato
+   del drag&drop in Buckets.vue. */
+.settings-field-row > .aiagent-provider-field {
+  flex: 0 1 260px;
+}
+
 .aiagent-model-row {
   display: flex;
   gap: 8px;

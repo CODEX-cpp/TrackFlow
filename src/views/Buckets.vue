@@ -1,5 +1,11 @@
 <template lang="pug">
 div.raw-data-page
+  //- Oscura l'intera finestra (fixed, non solo questa pagina) mentre un
+  //- file viene trascinato sopra l'app — la dropzone qui sotto resta in
+  //- primo piano (z-index maggiore) e riceve il bordo dorato, richiesta
+  //- esplicita per rendere ovvio dove rilasciare il file da qualunque
+  //- punto della finestra ci si trovi.
+  div.drag-overlay(v-if="isDraggingFile")
   div.page-head
     div.page-title {{ $t('buckets.title') }}
 
@@ -59,23 +65,30 @@ div.raw-data-page
   div.io-row
     div.io-card
       div.io-card-title {{ $t('buckets.importBuckets') }}
-      div.field-error(v-if="import_error") {{ import_error }}
+      //- Un unico riquadro con tre stati (idle / caricamento / esito) al
+      //- posto suo — richiesta esplicita: l'esito va mostrato DENTRO il
+      //- riquadro stesso, non in una riga di testo staccata sopra come
+      //- prima. Cliccabile in ogni stato tranne il caricamento, per poter
+      //- scegliere subito un altro file dopo aver visto l'esito.
       div.dropzone(
-        v-if="!import_file"
-        :class="{ 'dropzone-active': isDraggingFile }"
+        :class="{ 'dropzone-active': isDraggingFile, 'dropzone-error': !!import_error, 'dropzone-success': import_success, 'dropzone-loading': !!import_file }"
         @click="triggerFileInput"
-        @dragover.prevent="isDraggingFile = true"
-        @dragleave.prevent="isDraggingFile = false"
-        @drop.prevent="onFileDrop"
       )
-        icon.dropzone-icon(name="download")
-        div.dropzone-text {{ $t('buckets.dropzoneText') }}
-        div.dropzone-hint {{ $t('buckets.dropzoneHint') }}
+        template(v-if="import_file")
+          div.progress-bar
+            div.progress-bar-fill
+          div.dropzone-status-text {{ $t('buckets.importing') }}
+        template(v-else-if="import_error")
+          div.dropzone-status-text {{ import_error }}
+          div.dropzone-hint {{ $t('buckets.dropzoneRetryHint') }}
+        template(v-else-if="import_success")
+          div.dropzone-status-text {{ $t('buckets.importSuccess', { added: import_stats.added, skipped: import_stats.skipped }) }}
+          div.dropzone-hint {{ $t('buckets.dropzoneRetryHint') }}
+        template(v-else)
+          icon.dropzone-icon(name="download")
+          div.dropzone-text {{ $t('buckets.dropzoneText') }}
+          div.dropzone-hint {{ $t('buckets.dropzoneHint') }}
       input.dropzone-input(ref="fileInput" type="file" accept="application/json,.csv,text/csv" @change="onImportFileChange")
-      div.progress-loading(v-if="import_file")
-        div.progress-bar
-          div.progress-bar-fill
-        div.progress-loading-text {{ $t('buckets.importing') }}
       div.field-hint {{ $t('buckets.importHelpNew') }}
     div.io-card.io-card-export
       div.io-card-title {{ $t('buckets.exportBuckets') }}
@@ -133,6 +146,19 @@ div.raw-data-page
 
 .raw-data-page {
   padding: 24px 28px;
+}
+
+// Oscura l'intera finestra (non solo questa pagina: fixed + inset:0
+// copre tutto il viewport, sidebar/topbar comprese) mentre un file viene
+// trascinato sopra l'app — richiesta esplicita. z-index sotto quello di
+// .dropzone-active (10000) così il riquadro di importazione resta
+// pienamente visibile "sopra" l'oscuramento invece di sparire anche lui.
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  pointer-events: none;
 }
 
 .page-head {
@@ -369,15 +395,46 @@ div.raw-data-page
   border-radius: var(--radius-md);
   background-color: var(--color-surface2);
   cursor: pointer;
+  // Resta sopra l'overlay di oscuramento a tutta finestra (.drag-overlay,
+  // vedi sotto) mentre un file viene trascinato — è l'unico elemento
+  // della pagina che deve restare pienamente visibile, richiesta
+  // esplicita. position: relative è necessaria perché z-index abbia
+  // effetto su un elemento altrimenti statico.
+  position: relative;
+  z-index: 1;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .dropzone:hover {
   border-color: var(--color-text-faint);
 }
 
-.dropzone-active {
-  border-color: var(--color-accent1);
+// Bordo dorato ben visibile durante il trascinamento — richiesta
+// esplicita ("bordo giallino"), riusa --color-accent1 (già un tono
+// oro/ambra nel tema scuro) invece di un colore fisso non legato al
+// tema. Selettore doppio (.dropzone.dropzone-active, non solo
+// .dropzone-active) apposta: più specifico di .dropzone-error/
+// .dropzone-success qui sotto, così il bordo dorato vince sempre durante
+// un NUOVO trascinamento anche se il riquadro mostra ancora l'esito
+// dell'importazione precedente (bug reale trovato in test: senza questo
+// il bordo verde/rosso dell'esito precedente restava sopra quello
+// dorato).
+.dropzone.dropzone-active {
+  border: 2px solid var(--color-accent1);
   background-color: var(--color-surface);
+  z-index: 10000;
+}
+
+.dropzone-loading {
+  cursor: default;
+}
+
+.dropzone-error {
+  border-color: #d9534f;
+}
+
+.dropzone-success {
+  border-color: var(--color-success);
 }
 
 .dropzone-icon {
@@ -389,6 +446,24 @@ div.raw-data-page
 .dropzone-text {
   font-size: var(--font-size-sm);
   color: var(--color-text-dim);
+}
+
+// Testo condiviso dai tre stati "attivi" del riquadro (caricamento,
+// errore, esito) — occupa lo stesso posto di .dropzone-text ma la sua
+// tinta segue lo stato tramite i modificatori sopra invece di essere
+// sempre neutra.
+.dropzone-status-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  margin-top: 6px;
+}
+
+.dropzone-error .dropzone-status-text {
+  color: #d9534f;
+}
+
+.dropzone-success .dropzone-status-text {
+  color: var(--color-success);
 }
 
 .dropzone-hint {
@@ -454,6 +529,8 @@ import _ from 'lodash';
 import Papa from 'papaparse';
 import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { readTextFile } from '@tauri-apps/plugin-fs';
 
 import { useBucketsStore } from '~/stores/buckets';
 import { useSettingsStore } from '~/stores/settings';
@@ -554,7 +631,29 @@ export default {
 
       import_file: null,
       import_error: null,
+      // Bug reale segnalato dall'utente: un'importazione riuscita non
+      // mostrava MAI nessuna conferma — se il file conteneva solo eventi
+      // già presenti (deduplicati lato server, comportamento corretto),
+      // l'interfaccia restava silenziosa e sembrava non aver fatto nulla.
+      // import_stats arriva ora dal server (vedi ImportStats in
+      // aw-server-rust-src/aw-server/src/endpoints/import.rs) e alimenta
+      // il messaggio "N attività aggiunte, M già presenti".
+      import_success: false,
+      import_stats: null as { added: number; skipped: number } | null,
+      // True per l'intera durata di un trascinamento file sopra QUALUNQUE
+      // punto della finestra (non solo sopra il riquadro) — richiesta
+      // esplicita: tutta la pagina si oscura tranne il riquadro di
+      // importazione, che resta in evidenza con un bordo dorato. Alimentato
+      // dagli eventi nativi di Tauri (vedi mounted()), non dai normali
+      // eventi DOM: un vero trascinamento di file da Esplora risorse su
+      // Windows passa per WebView2/OLE a un livello che i DOM
+      // dragenter/dragover/drop non intercettano mai (un primo tentativo
+      // con quelli sembrava funzionare nei test ma lasciava il cursore
+      // "vietato" con un trascinamento vero).
       isDraggingFile: false,
+      // Funzione per rimuovere i listener di onDragDropEvent, salvata qui
+      // per poterla richiamare in beforeDestroy().
+      unlistenDragDrop: null as (() => void) | null,
       // Esportazione di tutti i bucket in due passi (richiesta esplicita):
       // 'idle' -> click "Esporta" -> 'loading' (raccolta dati, può durare
       // minuti con uno storico lungo) -> 'ready' (dati pronti in memoria,
@@ -705,11 +804,25 @@ export default {
       this.customWatchers = [];
     }
     this.bucketsPollInterval = setInterval(this.refreshWatchersAndBuckets, 3000);
+    // API nativa di Tauri per il drag&drop di file, non i normali eventi
+    // DOM (dragenter/dragover/drop) — richiesta esplicita di poter
+    // trascinare il file su un punto qualsiasi della finestra, non solo
+    // sopra il piccolo riquadro; su Windows solo questa API riceve un vero
+    // trascinamento da Esplora risorse (vedi commento su isDraggingFile
+    // sopra per il perché).
+    try {
+      this.unlistenDragDrop = await getCurrentWebview().onDragDropEvent(this.onTauriDragDropEvent);
+    } catch {
+      // Fuori da Tauri (dev server puro nel browser) — stesso pattern già
+      // usato altrove in questo file.
+      this.unlistenDragDrop = null;
+    }
   },
   beforeDestroy: function () {
     if (this.bucketsPollInterval) {
       clearInterval(this.bucketsPollInterval);
     }
+    if (this.unlistenDragDrop) this.unlistenDragDrop();
   },
   methods: {
     // Accende/spegne un watcher integrato — se il watcher è in
@@ -769,15 +882,22 @@ export default {
     // Punto d'ingresso condiviso tra l'input file nativo (scelto tramite
     // Esplora risorse) e il trascinamento diretto nella dropzone — stessa
     // identica logica in entrambi i casi, solo la provenienza del file cambia.
-    processImportFile: async function (file: File) {
-      this.import_file = file;
+    // Punto d'ingresso condiviso tra l'input file nativo (scelto tramite
+    // Esplora risorse) e il trascinamento (via onTauriDragDropEvent) — in
+    // entrambi i casi si arriva qui già con testo in mano, non un File:
+    // il trascinamento reale usa l'API nativa di Tauri, che dà un
+    // percorso su disco letto con readTextFile(), non un oggetto File.
+    processImportFile: async function (filename: string, text: string) {
+      this.import_file = filename;
+      this.import_success = false;
+      this.import_stats = null;
       try {
-        if (file.name.toLowerCase().endsWith('.csv')) {
-          await this.importCsvFile(file);
-        } else {
-          await this.importBuckets(file);
-        }
+        const response = filename.toLowerCase().endsWith('.csv')
+          ? await this.importCsvFile(text)
+          : await this.importBuckets(text);
+        this.import_stats = response?.data || { added: 0, skipped: 0 };
         this.import_error = null;
+        this.import_success = true;
       } catch (err: any) {
         this.import_error = err?.message || 'Import failed, see aw-server logs for more info';
       }
@@ -787,7 +907,10 @@ export default {
     onImportFileChange: async function (evt: Event) {
       const target = evt.target as HTMLInputElement;
       const file = target.files && target.files[0];
-      if (file) await this.processImportFile(file);
+      if (file) {
+        const text = await file.text();
+        await this.processImportFile(file.name, text);
+      }
       target.value = '';
     },
     // Apre il dialogo nativo di Esplora risorse cliccando sulla dropzone —
@@ -798,17 +921,42 @@ export default {
       const input = this.$refs.fileInput as HTMLInputElement | undefined;
       if (input) input.click();
     },
-    onFileDrop: function (evt: DragEvent) {
-      this.isDraggingFile = false;
-      if (this.import_file) return;
-      const file = evt.dataTransfer && evt.dataTransfer.files && evt.dataTransfer.files[0];
-      if (!file) return;
-      const nome = file.name.toLowerCase();
-      if (!nome.endsWith('.json') && !nome.endsWith('.csv')) {
-        this.import_error = this.$t('buckets.dropzoneUnsupported') as string;
+    // Gestore unico per tutti gli eventi di trascinamento file dell'intera
+    // finestra, dall'API nativa di Tauri (vedi mounted()) — NON i normali
+    // eventi DOM dragenter/dragover/drop, che su Windows un vero
+    // trascinamento da Esplora risorse non attraversa mai (vedi commento
+    // su isDraggingFile in data()). 'enter'/'over' arrivano ripetutamente
+    // per tutta la durata del trascinamento, non serve un contatore come
+    // servirebbe con eventi DOM annidati — qui è un unico flusso a
+    // livello di intera finestra.
+    onTauriDragDropEvent: async function (event: { payload: { type: string; paths?: string[] } }) {
+      const { type, paths } = event.payload;
+      if (type === 'enter' || type === 'over') {
+        this.isDraggingFile = true;
         return;
       }
-      this.processImportFile(file);
+      if (type === 'leave') {
+        this.isDraggingFile = false;
+        return;
+      }
+      if (type === 'drop') {
+        this.isDraggingFile = false;
+        if (this.import_file) return;
+        const path = paths && paths[0];
+        if (!path) return;
+        const filename = path.split(/[\\/]/).pop() || path;
+        const nome = filename.toLowerCase();
+        if (!nome.endsWith('.json') && !nome.endsWith('.csv')) {
+          this.import_error = this.$t('buckets.dropzoneUnsupported') as string;
+          return;
+        }
+        try {
+          const text = await readTextFile(path);
+          await this.processImportFile(filename, text);
+        } catch (err: any) {
+          this.import_error = err?.message || 'Failed to read the dropped file';
+        }
+      }
     },
     openDeleteBucketModal: function (row: { bucketId: string | null; watcherId?: string | null; displayName: string }) {
       this.delete_bucket_selected = row.bucketId || null;
@@ -838,14 +986,24 @@ export default {
         await this.refreshWatchersAndBuckets();
       }
     },
-    importBuckets: async function (importFile) {
-      const formData = new FormData();
-      formData.append('buckets.json', importFile);
-      const headers = { 'Content-Type': 'multipart/form-data' };
+    importBuckets: async function (text: string) {
+      // Niente multipart/FormData qui (un tentativo precedente lo usava,
+      // causando un 422 dal server: un File reale con un percorso su
+      // disco vero, dentro un body FormData, passando per il protocollo
+      // personalizzato "trackflow://" non arrivava mai integro — verificato:
+      // lo stesso identico contenuto, mandato come corpo JSON puro,
+      // funziona sempre). La pagina CSV qui sotto (importCsvFile) già
+      // usava questo stesso schema, mai il problema — da lì la conferma
+      // della causa. Il chiamante ha già in mano il testo (letto da un
+      // File col picker, o da un percorso su disco con readTextFile() nel
+      // caso del trascinamento), non serve più leggerlo qui.
       // timeout: 0 = nessun limite — con uno storico molto lungo
       // l'importazione (dedup evento per evento lato server) può
       // richiedere minuti, ben oltre i 30s di default del client.
-      return this.$aw.req.post('/0/import', formData, { headers, timeout: 0 });
+      return this.$aw.req.post('/0/import', text, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 0,
+      });
     },
     // Riconosce un CSV esportato da "Esporta come CSV" (vedi export_csv:
     // bucket_id/bucket_type/client/hostname ripetuti su ogni riga) e lo
@@ -854,8 +1012,7 @@ export default {
     // lato server, nessuna modifica al backend necessaria. Un CSV con
     // righe di bucket diversi (es. incollate a mano da più export) viene
     // comunque smistato correttamente, riga per riga.
-    importCsvFile: async function (importFile: File) {
-      const text = await importFile.text();
+    importCsvFile: async function (text: string) {
       const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: true });
       const rows = parsed.data as Record<string, any>[];
       if (rows.length === 0) {

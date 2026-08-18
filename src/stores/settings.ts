@@ -153,8 +153,8 @@ export const useSettingsStore = defineStore('settings', {
     devtoolsEnabled: false,
     rawDataDiagnosticsEnabled: false,
     hideUnsupportedVisualizations: false,
-    hideEmptyModules: true,
-    hideEmptyTimelineLanes: true,
+    hideEmptyModules: false,
+    hideEmptyTimelineLanes: false,
     autoUpdateEnabled: true,
     autostartDefaultApplied: false,
 

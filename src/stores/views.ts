@@ -23,10 +23,11 @@ export interface View {
 // request to not carry that over.
 // Ordine e selezione di default al primo avvio (nessun'impostazione
 // salvata ancora) — richiesta esplicita: Top Applications, Top Window
-// Titles, Uso Claude, Top Editor Projects, Top Editor Files, Top
-// Clienti VPN, in quest'ordine. L'utente può comunque personalizzare
-// da "Modifica moduli" in qualunque momento — questo è solo il punto
-// di partenza, non un vincolo permanente.
+// Titles, Top Editor Projects, Top Editor Files, Categorie, in
+// quest'ordine (Uso Claude e Top Clienti VPN tolti, richiesta
+// esplicita). L'utente può comunque personalizzare da "Modifica
+// moduli" in qualunque momento — questo è solo il punto di partenza,
+// non un vincolo permanente.
 const desktopViews: View[] = [
   {
     id: 'summary',
@@ -34,10 +35,9 @@ const desktopViews: View[] = [
     elements: [
       { type: 'top_apps', size: 3 },
       { type: 'top_titles', size: 3 },
-      { type: 'top_claude_usage', size: 3 },
       { type: 'top_editor_projects', size: 3 },
       { type: 'top_editor_files', size: 3 },
-      { type: 'top_vpn_clients', size: 3 },
+      { type: 'top_categories', size: 3 },
     ],
   },
 ];

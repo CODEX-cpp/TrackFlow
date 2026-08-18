@@ -26,6 +26,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntryDef[] = [
     titleKey: 'settings.daystart.startOfWeek',
     helpKey: 'settings.daystart.startOfWeekHelp',
   },
+  {
+    groupId: 'general',
+    titleKey: 'settings.updates.autoUpdate',
+    helpKey: 'settings.updates.autoUpdateHelp',
+  },
+  { groupId: 'general', titleKey: 'settings.autostart.title', helpKey: 'settings.autostart.help' },
   // Home
   { groupId: 'home', titleKey: 'settings.lunchBreak.title', helpKey: 'settings.lunchBreak.help' },
   {
@@ -37,6 +43,16 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntryDef[] = [
     groupId: 'home',
     titleKey: 'settings.screenshot.retentionTitle',
     helpKey: 'settings.screenshot.retentionHelp',
+  },
+  {
+    groupId: 'home',
+    titleKey: 'settings.homeVisibility.hideModules',
+    helpKey: 'settings.homeVisibility.hideModulesHelp',
+  },
+  {
+    groupId: 'home',
+    titleKey: 'settings.homeVisibility.hideTimeline',
+    helpKey: 'settings.homeVisibility.hideTimelineHelp',
   },
   // Aspetto
   { groupId: 'appearance', titleKey: 'settings.theme.title', helpKey: 'settings.theme.help' },
@@ -95,6 +111,9 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntryDef[] = [
     titleKey: 'settings.developer.folderShortcuts.title',
     helpKey: 'settings.developer.folderShortcuts.help',
   },
+  // Informazioni — nessuna vera "impostazione" qui (solo versione e
+  // changelog), il nome del gruppo stesso è l'unica cosa cercabile.
+  { groupId: 'about', titleKey: 'settings.about.changelogTitle' },
   // Nomi dei gruppi stessi — cercare "Aspetto" deve trovare il gruppo
   // anche se nessuna riga al suo interno contiene letteralmente quella
   // parola.
@@ -106,4 +125,5 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntryDef[] = [
   { groupId: 'integrations', titleKey: 'settings.groups.integrations' },
   { groupId: 'privacy', titleKey: 'settings.groups.privacy' },
   { groupId: 'developer', titleKey: 'settings.groups.developer' },
+  { groupId: 'about', titleKey: 'settings.groups.about' },
 ];

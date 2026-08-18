@@ -443,7 +443,8 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     confirmEnableTrayBody:
       'Questo modulo è ancora in sviluppo e potrebbe non funzionare correttamente. Attivalo solo per fare un test.',
     confirmEnableTrayConfirm: 'Attiva comunque',
-    importing: 'Importazione in corso...',
+    importing: 'Caricando il documento...',
+    importSuccess: '{added} attività aggiunte, {skipped} già presenti.',
     importHelpNew:
       "Fornisci un file JSON esportato da uno o più bucket, oppure un CSV esportato da un singolo watcher — se il bucket esiste già, i nuovi eventi vengono aggiunti evitando i duplicati.",
     exportHelp: 'Scarica ogni bucket su questo server come un unico file JSON. Usalo per i backup.',
@@ -461,6 +462,7 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     importBuckets: 'Importa bucket',
     dropzoneText: 'Trascina qui un file, o clicca per sceglierlo',
     dropzoneHint: 'JSON o CSV',
+    dropzoneRetryHint: 'Clicca o trascina un altro file per importarne un altro',
     dropzoneUnsupported: 'Formato non supportato — trascina un file .json o .csv',
     importPlaceholder: 'Scegli o trascina un file qui...',
     importDrop: 'Trascina il file qui...',

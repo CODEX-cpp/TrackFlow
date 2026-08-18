@@ -98,16 +98,18 @@ export default {
       enabled: {
         'aw-watcher-afk': true,
         'aw-watcher-window': true,
-        'aw-watcher-vpn': true,
-        'aw-watcher-claude-code': true,
+        // Spenti di default — stessi motivi del default lato Rust, vedi
+        // load_modules_config() in lib.rs: VPN/Claude Code/Excel non
+        // rilevanti per la maggior parte di chi installa per la prima
+        // volta, la lettura delle icone nascoste della tray non è
+        // ancora affidabile.
+        'aw-watcher-vpn': false,
+        'aw-watcher-claude-code': false,
         'aw-watcher-screenshot': true,
         'aw-watcher-app-icons': true,
-        // Spento di default — stesso motivo del default lato Rust: la
-        // lettura delle icone nascoste della tray non è ancora
-        // affidabile (vedi load_modules_config() in lib.rs).
         'aw-watcher-tray': false,
         'aw-watcher-vscode': true,
-        'aw-watcher-excel': true,
+        'aw-watcher-excel': false,
       } as Record<string, boolean>,
     };
   },

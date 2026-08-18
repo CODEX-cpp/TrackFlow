@@ -25,6 +25,7 @@ mod vpn_mapping;
 mod vpn_notify;
 mod updater;
 mod watcher_status;
+mod window_state;
 use voispeed::VoiSpeedState;
 
 /// Handle condiviso per il processo `aw-watcher-app-icons`: `None`
@@ -175,13 +176,26 @@ fn load_modules_config(app_data_dir: &Path) -> HashMap<String, bool> {
     // default — lo stesso comportamento di sempre finché l'utente non
     // lo spegne esplicitamente.
     //
-    // aw-watcher-tray fa eccezione: richiesta esplicita di disattivarlo
-    // di default per ora (le icone nascoste dietro "Mostra icone
-    // nascoste" non sono ancora lette in modo affidabile, vedi
-    // BLUEPRINT.md sezione 7) — resta comunque riattivabile a mano dal
-    // sottomenu "Moduli" della tray quando la lettura sarà completata.
+    // Eccezioni, spenti di default:
+    // - aw-watcher-tray: le icone nascoste dietro "Mostra icone nascoste"
+    //   non sono ancora lette in modo affidabile (vedi BLUEPRINT.md
+    //   sezione 7).
+    // - aw-watcher-vpn, aw-watcher-claude-code, aw-watcher-excel,
+    //   aw-watcher-voispeed: richiesta esplicita — moduli pensati per chi
+    //   usa VPN aziendali/Claude Code/Excel/VoiSpeed in un certo modo,
+    //   non rilevanti per la maggior parte di chi installa l'app per la
+    //   prima volta.
+    // Tutti restano comunque riattivabili a mano dal sottomenu "Moduli"
+    // della tray.
     for (name, _) in ALL_MODULES {
-        let default_attivo = *name != "aw-watcher-tray";
+        let default_attivo = !matches!(
+            *name,
+            "aw-watcher-tray"
+                | "aw-watcher-vpn"
+                | "aw-watcher-claude-code"
+                | "aw-watcher-excel"
+                | "aw-watcher-voispeed"
+        );
         map.entry((*name).to_string()).or_insert(default_attivo);
     }
     map
@@ -1225,8 +1239,13 @@ pub fn run() {
                     // thread principale — `run_on_main_thread` lo garantisce dato
                     // che questo codice gira in un task asincrono in background.
                     let main_thread_handle = app_handle.clone();
+                    // Clone dedicato: app_data_dir "vero" resta disponibile più
+                    // sotto per i watcher, questo entra nella closure move qui
+                    // sotto insieme al resto.
+                    let app_data_dir_finestra = app_data_dir.clone();
+                    let stato_salvato = window_state::carica(&app_data_dir_finestra);
                     let _ = app_handle.run_on_main_thread(move || {
-                        let window = WebviewWindowBuilder::new(
+                        let mut builder = WebviewWindowBuilder::new(
                             &main_thread_handle,
                             "main",
                             WebviewUrl::CustomProtocol(
@@ -1234,7 +1253,6 @@ pub fn run() {
                             ),
                         )
                         .title("TrackFlow")
-                        .inner_size(1400.0, 900.0)
                         .min_inner_size(900.0, 600.0)
                         .resizable(true)
                         .visible(false)
@@ -1244,18 +1262,141 @@ pub fn run() {
                         // CustomTitlebar.vue), con gli stessi 3 pulsanti
                         // (riduci/ingrandisci/chiudi) integrati nel tema
                         // dell'app invece che nello stile di Windows.
-                        .decorations(false)
-                        .build();
+                        .decorations(false);
+                        // NON disattivare drag_and_drop qui (un tentativo
+                        // precedente lo aveva fatto): su Windows serve al vero
+                        // WebView2/OLE per registrare la finestra come una
+                        // destinazione di drop valida e mostrare il cursore
+                        // corretto durante il trascinamento — disattivarlo
+                        // lasciava il cursore "vietato" per qualunque
+                        // trascinamento reale da Esplora risorse, anche se gli
+                        // eventi DOM standard sembravano tecnicamente
+                        // disponibili. Il drag&drop dei file in Buckets.vue usa
+                        // invece l'API dedicata di Tauri
+                        // (getCurrentWebview().onDragDropEvent), pensata apposta
+                        // per convivere con questa gestione nativa invece di
+                        // sostituirla.
+
+                        // Richiesta esplicita: riapre la finestra dove/come
+                        // l'utente l'aveva lasciata l'ultima volta (schermo,
+                        // posizione, dimensione) invece che sempre al centro
+                        // dello schermo principale — Windows non lo fa da solo
+                        // per una finestra creata così (vedi window_state.rs).
+                        // La validazione contro un monitor scollegato avviene
+                        // DOPO la creazione, quando available_monitors() è
+                        // disponibile — qui si applica lo stato salvato per
+                        // intero, ottimisticamente.
+                        builder = match stato_salvato {
+                            Some(stato) => builder
+                                .position(stato.x as f64, stato.y as f64)
+                                .inner_size(stato.width as f64, stato.height as f64),
+                            None => builder.inner_size(1400.0, 900.0),
+                        };
+
+                        let window = builder.build();
 
                         match window {
                             Ok(window) => {
-                                let _ = window.show();
+                                // Un monitor secondario scollegato dall'ultima
+                                // sessione lascerebbe altrimenti la finestra
+                                // fuori da qualunque schermo visibile — corretto
+                                // PRIMA di un eventuale show(), mai visibile
+                                // all'utente.
+                                if let Some(stato) = stato_salvato {
+                                    if !window_state::dentro_uno_schermo(&window, &stato) {
+                                        let _ = window.center();
+                                    }
+                                }
+                                // Richiesta esplicita: avviato dalla voce di
+                                // avvio automatico di Windows (vedi
+                                // autostart.rs, che passa questo argomento
+                                // solo lì, mai da un doppio click manuale
+                                // sull'icona), la finestra resta nascosta —
+                                // l'app è comunque pienamente attiva
+                                // (watcher, icona nella tray), richiamabile
+                                // in ogni momento dalla tray stessa.
+                                let avvio_minimizzato =
+                                    std::env::args().any(|a| a == "--minimized");
+                                if !avvio_minimizzato {
+                                    let _ = window.show();
+                                }
+                                // Windows stesso riposiziona la finestra da solo
+                                // circa 1-2s dopo la creazione (osservato: succede
+                                // anche SENZA nessuna posizione esplicita nostra,
+                                // quindi non è un effetto del ripristino sopra —
+                                // sembra un "ricorda l'ultima posizione per
+                                // quest'app" del sistema stesso, probabilmente
+                                // accumulato da tutti gli avvii di sviluppo di
+                                // questa sessione). Riafferma la posizione/
+                                // dimensione salvata un attimo più tardi, così ha
+                                // sempre l'ultima parola invece di essere
+                                // silenziosamente sovrascritta.
+                                if let Some(stato) = stato_salvato {
+                                    let window_per_riaffermazione = window.clone();
+                                    std::thread::spawn(move || {
+                                        std::thread::sleep(std::time::Duration::from_millis(2000));
+                                        let _ = window_per_riaffermazione
+                                            .set_position(tauri::PhysicalPosition::new(stato.x, stato.y));
+                                        let _ = window_per_riaffermazione.set_size(
+                                            tauri::PhysicalSize::new(stato.width, stato.height),
+                                        );
+                                    });
+                                }
                                 let window_clone = window.clone();
-                                window.on_window_event(move |event| {
-                                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                                // Debounce con un "numero di turno" condiviso:
+                                // ogni Moved/Resized incrementa il contatore e
+                                // avvia un salvataggio ritardato di 600ms — se
+                                // nel frattempo arriva un altro evento (es. si
+                                // sta ancora trascinando/ridimensionando), il
+                                // contatore è già avanzato quando il salvataggio
+                                // ritardato precedente si sveglia, che allora
+                                // rinuncia senza scrivere. Solo l'ULTIMO evento
+                                // di una sequenza arriva davvero a scrivere su
+                                // disco, invece di un file scritto decine di
+                                // volte al secondo durante un trascinamento.
+                                let turno_salvataggio =
+                                    std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+                                let app_data_dir_eventi = app_data_dir_finestra.clone();
+                                window.on_window_event(move |event| match event {
+                                    tauri::WindowEvent::CloseRequested { api, .. } => {
                                         api.prevent_close();
                                         let _ = window_clone.hide();
                                     }
+                                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                                        let turno = turno_salvataggio
+                                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                            + 1;
+                                        let window_per_salvataggio = window_clone.clone();
+                                        let app_data_dir_per_salvataggio =
+                                            app_data_dir_eventi.clone();
+                                        let turno_salvataggio2 = turno_salvataggio.clone();
+                                        std::thread::spawn(move || {
+                                            std::thread::sleep(std::time::Duration::from_millis(
+                                                600,
+                                            ));
+                                            if turno_salvataggio2
+                                                .load(std::sync::atomic::Ordering::SeqCst)
+                                                != turno
+                                            {
+                                                return;
+                                            }
+                                            if let (Ok(pos), Ok(size)) = (
+                                                window_per_salvataggio.outer_position(),
+                                                window_per_salvataggio.inner_size(),
+                                            ) {
+                                                window_state::salva(
+                                                    &app_data_dir_per_salvataggio,
+                                                    &window_state::StatoFinestra {
+                                                        x: pos.x,
+                                                        y: pos.y,
+                                                        width: size.width,
+                                                        height: size.height,
+                                                    },
+                                                );
+                                            }
+                                        });
+                                    }
+                                    _ => {}
                                 });
                                 attach_navigation_retry(&window);
                             }

@@ -16,7 +16,16 @@ const NOME_VOCE: &str = "TrackFlow";
 
 fn percorso_launcher_tra_virgolette() -> Result<String, String> {
     let installazione = crate::updater::cartella_installazione()?;
-    Ok(format!("\"{}\"", installazione.join("launcher.exe").display()))
+    // --minimized: SOLO qui, mai su un collegamento manuale (Menu Start,
+    // Desktop) — launcher.exe inoltra ogni argomento così com'è ad
+    // app.exe (vedi launcher/src/main.rs), che lo controlla per decidere
+    // se mostrare subito la finestra principale o restare in background
+    // (richiesta esplicita: all'accensione del PC l'app non deve comparire
+    // in primo piano, resta comunque pienamente attiva nella tray).
+    Ok(format!(
+        "\"{}\" --minimized",
+        installazione.join("launcher.exe").display()
+    ))
 }
 
 #[tauri::command]

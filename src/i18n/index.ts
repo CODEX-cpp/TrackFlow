@@ -131,10 +131,11 @@ export function getInitialLocale(): AppLocale {
   } catch {
     /* ignore */
   }
-  // Italiano di default se il browser non dà nessuna indicazione utile
-  // (non solo l'inglese come prima) — coerente con locale:'it' in
-  // stores/settings.ts per la primissima apertura.
-  return detectBrowserLocale() ?? 'it';
+  // Inglese di default se il sistema è in una lingua diversa da italiano
+  // o inglese — richiesta esplicita: solo un sistema davvero in italiano
+  // deve aprire l'app in italiano, qualunque altra lingua (non solo
+  // l'inglese) apre in inglese.
+  return detectBrowserLocale() ?? 'en';
 }
 
 const MOMENT_LOCALE: Record<AppLocale, string> = {
