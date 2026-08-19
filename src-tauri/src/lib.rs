@@ -251,6 +251,17 @@ struct AppServer {
     /// Registro nome->cartella dei moduli personalizzati, condiviso con
     /// la route Rocket `/pages/custom/<nome>/` — vedi custom_modules.rs.
     pub(crate) custom_pages_registry: Arc<aw_server::endpoints::CustomPagesRegistry>,
+    /// Stesso handle passato a `ServerState` (clonato prima, `Datastore`
+    /// è solo un mittente di canale — vedi `#[derive(Clone)]` in
+    /// worker.rs — quindi clonarlo non duplica il database, entrambe le
+    /// copie parlano allo stesso identico thread worker). Serve a poter
+    /// forzare un commit/checkpoint pulito prima di nascondere la
+    /// finestra (chiusura normale) o di uscire per davvero (voce "Esci"
+    /// della tray) — richiesta esplicita dell'utente dopo due
+    /// corruzioni reali del database in questa sessione, quasi certamente
+    /// causate da terminazioni forzate del processo a metà di un
+    /// checkpoint del WAL.
+    pub(crate) datastore: aw_datastore::Datastore,
 }
 
 impl AppServer {
@@ -605,6 +616,12 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path, watcher_templat
         .to_string();
     let legacy_import = true;
     let datastore = aw_datastore::Datastore::new(db_path, legacy_import);
+    // Clonato PRIMA di spostarlo in ServerState — Datastore è solo un
+    // mittente di canale (#[derive(Clone)] in worker.rs), quindi questa
+    // copia parla allo stesso identico thread worker, non ne crea uno
+    // secondo. Serve ad AppServer per poter forzare un commit/checkpoint
+    // pulito alla chiusura, vedi il commento sul campo `datastore` lì.
+    let datastore_per_chiusura = datastore.clone();
 
     let server_state = aw_server::endpoints::ServerState {
         datastore,
@@ -639,6 +656,7 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path, watcher_templat
         known_buckets: AsyncMutex::new(HashSet::new()),
         app_data_dir: app_data_dir.to_path_buf(),
         custom_pages_registry,
+        datastore: datastore_per_chiusura,
     }
 }
 
@@ -1241,9 +1259,13 @@ pub fn run() {
                     let main_thread_handle = app_handle.clone();
                     // Clone dedicato: app_data_dir "vero" resta disponibile più
                     // sotto per i watcher, questo entra nella closure move qui
-                    // sotto insieme al resto.
+                    // sotto insieme al resto. Stesso motivo per server_finestra:
+                    // `server` vero e proprio serve ancora più sotto (avvio
+                    // watcher), questa copia (economica, Datastore è solo un
+                    // mittente di canale) è quella che entra nella closure.
                     let app_data_dir_finestra = app_data_dir.clone();
                     let stato_salvato = window_state::carica(&app_data_dir_finestra);
+                    let server_finestra = server.clone();
                     let _ = app_handle.run_on_main_thread(move || {
                         let mut builder = WebviewWindowBuilder::new(
                             &main_thread_handle,
@@ -1357,10 +1379,33 @@ pub fn run() {
                                 let turno_salvataggio =
                                     std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
                                 let app_data_dir_eventi = app_data_dir_finestra.clone();
+                                let server_per_chiusura = server_finestra.clone();
                                 window.on_window_event(move |event| match event {
                                     tauri::WindowEvent::CloseRequested { api, .. } => {
                                         api.prevent_close();
                                         let _ = window_clone.hide();
+                                        // Richiesta esplicita dell'utente, dopo due
+                                        // corruzioni reali del database in questa
+                                        // sessione (quasi certamente causate da
+                                        // terminazioni forzate del processo — es.
+                                        // Task Manager, `Stop-Process -Force` — nel
+                                        // mezzo di un checkpoint del WAL): ogni volta
+                                        // che la finestra viene chiusa (anche solo
+                                        // nascosta nella tray, l'app resta comunque
+                                        // attiva) si forza un commit immediato invece
+                                        // di aspettare la soglia naturale (100 eventi
+                                        // o 15s) — riduce quanto a lungo ci sono
+                                        // scritture pendenti, quindi la finestra di
+                                        // rischio ad ogni singola chiusura. Non
+                                        // sostituisce una vera terminazione forzata
+                                        // (mai intercettabile da nessuna app, vedi
+                                        // "Esci" nel menu tray per l'unico caso in cui
+                                        // l'uscita è sotto il nostro controllo), ma
+                                        // copre chiusura dalla X della finestra,
+                                        // Alt+F4, e il normale "Termina attività" di
+                                        // Task Manager (che prova prima una richiesta
+                                        // di chiusura educata).
+                                        let _ = server_per_chiusura.datastore.force_commit();
                                     }
                                     tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                                         let turno = turno_salvataggio
@@ -1530,6 +1575,16 @@ pub fn run() {
                             }
                         }
                         "quit" => {
+                            // Richiesta esplicita dell'utente: aspetta che il
+                            // datastore abbia davvero finito di scrivere/
+                            // committare prima di terminare il processo —
+                            // `close()` blocca finché il thread worker non ha
+                            // chiuso per bene (vedi worker.rs). Prima si
+                            // chiamava subito `app.exit(0)`, che poteva correre
+                            // avanti rispetto all'ultimo commit pendente.
+                            if let Some(server) = app.try_state::<Arc<AppServer>>() {
+                                server.datastore.close();
+                            }
                             let processes = app.state::<SidecarProcesses>();
                             for (_, child) in processes.0.lock().unwrap().drain() {
                                 let _ = child.kill();

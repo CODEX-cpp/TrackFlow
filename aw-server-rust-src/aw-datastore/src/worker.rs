@@ -25,6 +25,18 @@ type RequestReceiver = mpsc_requests::RequestReceiver<Command, Result<Response, 
 #[derive(Clone)]
 pub struct Datastore {
     requester: RequestSender,
+    // Joined by `close()` after the worker's ack, so the caller only regains
+    // control once the OS thread has truly returned from `work_loop` — not
+    // just once the commit-ack arrived. The ack fires as soon as `tx.commit()`
+    // succeeds (see `handle_request`/`ack_after_commit`), but `conn` is a
+    // local in `work_loop` and only gets dropped (running SQLite's automatic
+    // WAL checkpoint-on-close for the last connection) *after* that ack is
+    // sent, while the thread unwinds. Without this join, `close()` returned
+    // before that checkpoint's disk write had actually happened, so a caller
+    // that immediately calls `app.exit(0)` after a "clean" close() could
+    // still have the process torn down mid-checkpoint — indistinguishable
+    // from an external force-kill, but entirely internal to a graceful quit.
+    worker_thread: std::sync::Arc<std::sync::Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 impl fmt::Debug for Datastore {
@@ -466,11 +478,14 @@ impl Datastore {
     fn _new_internal(method: DatastoreMethod, legacy_import: bool) -> Self {
         let (requester, responder) =
             mpsc_requests::channel::<Command, Result<Response, DatastoreError>>();
-        let _thread = thread::spawn(move || {
+        let handle = thread::spawn(move || {
             let mut di = DatastoreWorker::new(responder, legacy_import);
             di.work_loop(method);
         });
-        Datastore { requester }
+        Datastore {
+            requester,
+            worker_thread: std::sync::Arc::new(std::sync::Mutex::new(Some(handle))),
+        }
     }
 
     /// Send a command to the worker thread and wait for its response.
@@ -689,6 +704,19 @@ impl Datastore {
             Ok(_) => panic!("Invalid response"),
             // Worker already gone means there is nothing left to close
             Err(e) => warn!("Error closing database: {e:?}"),
+        }
+        // The ack above only proves the final commit succeeded — the worker
+        // thread still needs to unwind out of `work_loop` and drop its
+        // `Connection`, which is when SQLite actually performs the WAL
+        // checkpoint-on-close write. Join here so a caller that follows
+        // `close()` with `app.exit(0)` can't tear the process down while
+        // that write is still in flight.
+        if let Ok(mut guard) = self.worker_thread.lock() {
+            if let Some(handle) = guard.take() {
+                if let Err(e) = handle.join() {
+                    warn!("Datastore worker thread panicked while closing: {e:?}");
+                }
+            }
         }
     }
 }
