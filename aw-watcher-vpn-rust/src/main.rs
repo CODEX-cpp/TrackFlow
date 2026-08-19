@@ -354,6 +354,60 @@ struct Fonte {
     estrattore: fn(&str) -> Vec<ParsedEvent>,
 }
 
+/// Controlla se un processo con questo nome (case-insensitive) è
+/// attualmente in esecuzione — stessa API ToolHelp32 già usata in
+/// src-tauri/src/lib.rs (`invia_processi_in_esecuzione_a_icone`) per
+/// elencare i processi.
+///
+/// Richiesta esplicita dell'utente: chiude spesso OpenVPN Connect
+/// terminando l'intero programma invece di disconnettersi da dentro —
+/// in quel caso il log non riceve mai la riga "EVENT: DISCONNECTED"
+/// (quella la scrive l'app solo per una disconnessione "pulita" fatta
+/// dalla sua stessa UI), quindi `sessione_aperta` restava valorizzata
+/// per sempre nello stato: gli heartbeat periodici continuavano ad
+/// allungare la sessione all'infinito anche ore dopo la disconnessione
+/// vera, finché non arrivava una nuova connessione (che sovrascriveva lo
+/// stato senza nemmeno chiudere quella vecchia). Vedi
+/// `VpnWatcher::chiudi_se_processo_terminato`.
+#[cfg(windows)]
+fn processo_in_esecuzione(nome_processo_lower: &str) -> bool {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            // Non possiamo verificare — meglio non chiudere una sessione
+            // per sbaglio che potrebbe essere ancora attiva.
+            return true;
+        };
+        let mut voce: PROCESSENTRY32W = std::mem::zeroed();
+        voce.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut trovato = false;
+        if Process32FirstW(snapshot, &mut voce).is_ok() {
+            loop {
+                let fine = voce.szExeFile.iter().position(|&c| c == 0).unwrap_or(voce.szExeFile.len());
+                let nome = String::from_utf16_lossy(&voce.szExeFile[..fine]).to_lowercase();
+                if nome == nome_processo_lower {
+                    trovato = true;
+                    break;
+                }
+                if Process32NextW(snapshot, &mut voce).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snapshot);
+        trovato
+    }
+}
+
+#[cfg(not(windows))]
+fn processo_in_esecuzione(_nome_processo_lower: &str) -> bool {
+    true
+}
+
 struct VpnWatcher {
     heartbeat_pulsetime: f64,
     fonti: Vec<Fonte>,
@@ -514,6 +568,29 @@ impl VpnWatcher {
         }
     }
 
+    /// Chiude subito la sessione OpenVPN se risulta ancora aperta nello
+    /// stato ma il processo di OpenVPN Connect non è più in esecuzione —
+    /// vedi il commento su `processo_in_esecuzione` per il motivo. Solo
+    /// la fonte "openvpn": ZyWALL scrive sempre una riga di chiusura
+    /// affidabile anche quando il servizio si ferma, non ha questo
+    /// problema (segnalato esplicitamente dall'utente come "perfetto,
+    /// non mi lamento").
+    fn chiudi_se_processo_terminato(&mut self) {
+        let aperta = self
+            .stato
+            .get("openvpn")
+            .and_then(|s| s.sessione_aperta.as_ref())
+            .is_some();
+        if !aperta {
+            return;
+        }
+        if processo_in_esecuzione("openvpnconnect.exe") {
+            return;
+        }
+        self.gestisci_disconnected("openvpn", Utc::now());
+        save_state(&self.state_file, &self.stato);
+    }
+
     fn manda_heartbeat(&self, quando: DateTime<Utc>, nome_cliente: &str) {
         let mut data = Map::new();
         data.insert("cliente".to_string(), nome_cliente.into());
@@ -649,6 +726,7 @@ fn main() {
     loop {
         thread::sleep(StdDuration::from_secs(args.poll_interval as u64));
         watcher.controlla_tutte_le_fonti();
+        watcher.chiudi_se_processo_terminato();
         watcher.tieni_vive_le_sessioni_aperte();
         watcher.sincronizza_openvpn_se_serve();
     }
@@ -657,6 +735,25 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn processo_in_esecuzione_trova_se_stesso() {
+        // Il processo di test stesso è sicuramente in esecuzione — verifica
+        // che il confronto case-insensitive con ToolHelp32 funzioni
+        // davvero, non solo che compili.
+        let nome_proprio = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_lowercase()))
+            .expect("nome dell'eseguibile di test");
+        assert!(processo_in_esecuzione(&nome_proprio));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn processo_in_esecuzione_nome_inventato_non_trovato() {
+        assert!(!processo_in_esecuzione("nome-inventato-che-non-esiste-mai.exe"));
+    }
 
     #[test]
     fn load_openvpn_profile_names_reads_real_config_format() {
