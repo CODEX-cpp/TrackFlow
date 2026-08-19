@@ -43,6 +43,17 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.16</h2>
+      <ul>
+        <li>Fixed a bug where import and export depended on the machine's name: a file exported from one computer was never recognized when imported on another, even when the matching watcher existed. Matching no longer looks at the machine name, and exported files no longer reveal it.</li>
+        <li>Fixed a rarer bug in the same import feature that could overwrite an event changed in the meantime with an older version from a re-import.</li>
+        <li>Settings → Integrations → VPN: auto-detected and manually added addresses now live in a single editable table, sorted by client name — previously a manually added entry never showed up alongside the automatic ones.</li>
+        <li>Excel watcher: now tracks a file for as long as it stays open, not only while its window is focused — switching to another window no longer interrupts tracking. Check interval increased from 2 to 20 seconds.</li>
+        <li>VPN watcher: disconnection is now detected even when fully closing OpenVPN Connect from the system tray, not only when disconnecting from within its interface — previously the session stayed marked as "ongoing" forever in that case.</li>
+        <li>Fixed a rare database corruption risk on app shutdown.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.15</h2>
       <ul>
         <li>Fixed a bug where "Import buckets" (Watchers page) never actually worked when dragging or picking a real file — the import silently failed with no message.</li>

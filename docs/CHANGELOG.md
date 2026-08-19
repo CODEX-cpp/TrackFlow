@@ -5,6 +5,24 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.16
+
+### it
+- Corretto un bug per cui import ed export dipendevano dal nome del PC: un file esportato da un computer non veniva mai riconosciuto importandolo su un altro, anche se il watcher corrispondente esisteva eccome. Ora l'abbinamento non guarda più il nome macchina, e i file esportati non lo rivelano più.
+- Corretto un bug più raro nello stesso import, che poteva sovrascrivere un evento cambiato nel frattempo con una versione più vecchia da un reimport.
+- Impostazioni → Integrazioni → VPN: gli indirizzi rilevati automaticamente e quelli aggiunti a mano sono ora in un'unica tabella modificabile, ordinata per nome cliente — prima una voce aggiunta a mano non compariva mai insieme a quelle automatiche.
+- Watcher Excel: ora traccia un file finché resta aperto, non solo mentre la sua finestra è a fuoco — passare ad un'altra finestra non interrompe più la registrazione. Intervallo di controllo aumentato da 2 a 20 secondi.
+- Watcher VPN: la disconnessione viene ora rilevata anche chiudendo del tutto OpenVPN Connect dalla system tray, non solo disconnettendosi dalla sua interfaccia — prima la sessione restava segnata come "in corso" per sempre in quel caso.
+- Corretto un raro rischio di corruzione del database alla chiusura dell'app.
+
+### en
+- Fixed a bug where import and export depended on the machine's name: a file exported from one computer was never recognized when imported on another, even when the matching watcher existed. Matching no longer looks at the machine name, and exported files no longer reveal it.
+- Fixed a rarer bug in the same import feature that could overwrite an event changed in the meantime with an older version from a re-import.
+- Settings → Integrations → VPN: auto-detected and manually added addresses now live in a single editable table, sorted by client name — previously a manually added entry never showed up alongside the automatic ones.
+- Excel watcher: now tracks a file for as long as it stays open, not only while its window is focused — switching to another window no longer interrupts tracking. Check interval increased from 2 to 20 seconds.
+- VPN watcher: disconnection is now detected even when fully closing OpenVPN Connect from the system tray, not only when disconnecting from within its interface — previously the session stayed marked as "ongoing" forever in that case.
+- Fixed a rare database corruption risk on app shutdown.
+
 ## 0.1.15
 
 ### it
