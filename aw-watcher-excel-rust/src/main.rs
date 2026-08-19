@@ -1,8 +1,24 @@
 //! Watcher per l'attività in Excel (file aperto) — stessa tecnica di
-//! aw-watcher-vscode-rust: nessuna API COM/Office, solo la finestra in
-//! primo piano (GetForegroundWindow) e il titolo, perché gira come
-//! processo esterno indipendente (coerente con l'architettura "zero
-//! Python/zero rete" del progetto), non come plugin/add-in Excel.
+//! aw-watcher-vscode-rust: nessuna API COM/Office, solo l'elenco delle
+//! finestre aperte (EnumWindows) e il titolo, perché gira come processo
+//! esterno indipendente (coerente con l'architettura "zero Python/zero
+//! rete" del progetto), non come plugin/add-in Excel.
+//!
+//! Richiesta esplicita dell'utente: non interessa QUALE file abbia il
+//! fuoco in un dato momento, né una precisione al secondo — interessa
+//! solo sapere quando un file è stato aperto, quando è stato chiuso, e
+//! per quanto tempo è rimasto aperto, anche con più file Excel aperti
+//! insieme in parallelo. Per questo il watcher non manda heartbeat
+//! continui (che nel backend si fondono in un unico evento per bucket,
+//! bene per UN file alla volta ma frammenterebbero la durata di ognuno
+//! se più file fossero tracciati in parallelo) — invece tiene lui stesso
+//! il conto di apertura/chiusura per ogni file e, alla chiusura, manda
+//! UN SOLO evento completo (timestamp di apertura + durata reale). Il
+//! prezzo di questo approccio: se l'intera app viene chiusa mentre un
+//! file è ancora aperto, quella sessione non viene registrata affatto
+//! (non c'è mai una chiusura da rilevare) — accettabile per un dato che
+//! non deve essere preciso al secondo, per data una sessione persa è
+//! comunque meno grave di dati frammentati o sbagliati.
 //!
 //! IMPORTANTE (2026-08-12): costruito e compilato su una macchina senza
 //! Excel installato — l'utente lo testerà sul PC di lavoro. Il parsing
@@ -18,11 +34,12 @@
 //! raggruppamento imperfetto che perdere dati. Da rivedere con dati
 //! reali alla prima sessione di test dell'utente.
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::thread;
 use std::time::Duration as StdDuration;
 
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use clap::Parser;
 use serde_json::{json, Map};
 
@@ -64,29 +81,6 @@ fn interpreta_titolo(titolo: &str) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn finestra_in_primo_piano() -> Option<(String, String)> {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
-    };
-
-    let hwnd: HWND = unsafe { GetForegroundWindow() };
-    if hwnd.0.is_null() {
-        return None;
-    }
-
-    let mut title_buf = [0u16; 1024];
-    let len = unsafe { GetWindowTextW(hwnd, &mut title_buf) };
-    let titolo = String::from_utf16_lossy(&title_buf[..len.max(0) as usize]);
-
-    let mut pid: u32 = 0;
-    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-
-    let app = nome_processo(pid)?;
-    Some((app, titolo))
-}
-
-#[cfg(windows)]
 fn nome_processo(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
@@ -107,21 +101,81 @@ fn nome_processo(pid: u32) -> Option<String> {
     }
 }
 
+/// Elenca i nomi file di TUTTE le finestre Excel aperte in questo momento
+/// (indipendentemente da quale abbia il fuoco) — così un file resta
+/// "aperto" agli occhi del watcher finché la sua finestra esiste,
+/// esattamente come lo intende l'utente, non solo mentre lo si guarda.
+#[cfg(windows)]
+fn file_excel_aperti() -> Vec<String> {
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::core::BOOL;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    unsafe extern "system" fn callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        // Continua l'enumerazione anche negli "early return": la firma di
+        // EnumWindows tratta FALSE come "interrompi tutto", non voluto qui.
+        if !unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            return BOOL(1);
+        }
+
+        let mut title_buf = [0u16; 1024];
+        let len = unsafe { GetWindowTextW(hwnd, &mut title_buf) };
+        if len <= 0 {
+            return BOOL(1);
+        }
+        let titolo = String::from_utf16_lossy(&title_buf[..len as usize]);
+
+        let mut pid: u32 = 0;
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        let Some(app) = nome_processo(pid) else {
+            return BOOL(1);
+        };
+        if !is_excel_exe(&app) {
+            return BOOL(1);
+        }
+
+        if let Some(file) = interpreta_titolo(&titolo) {
+            let risultati = unsafe { &mut *(lparam.0 as *mut Vec<String>) };
+            if !risultati.contains(&file) {
+                risultati.push(file);
+            }
+        }
+        BOOL(1)
+    }
+
+    let mut risultati: Vec<String> = Vec::new();
+    let lparam = LPARAM(std::ptr::addr_of_mut!(risultati) as isize);
+    let _ = unsafe { EnumWindows(Some(callback), lparam) };
+    risultati
+}
+
 #[cfg(not(windows))]
-fn finestra_in_primo_piano() -> Option<(String, String)> {
+fn file_excel_aperti() -> Vec<String> {
     compile_error!("aw-watcher-excel supporta solo Windows");
 }
 
-fn emit(bucket_id: &str, pulsetime: f64, data: Map<String, serde_json::Value>) {
+/// Manda UN evento completo (non un heartbeat) per una sessione appena
+/// chiusa: `apertura` è quando il file è comparso per la prima volta tra
+/// le finestre aperte, `chiusura` è adesso (non più trovato). Op
+/// "event", non "heartbeat" — inserisce la riga così com'è, senza
+/// passare dal meccanismo di fusione heartbeat del backend (che tiene un
+/// solo "ultimo evento" per bucket: andrebbe benissimo per un file alla
+/// volta ma frammenterebbe la durata se più file venissero tracciati in
+/// parallelo, vedi commento in cima al file).
+fn emit_sessione_chiusa(bucket_id: &str, file: &str, apertura: DateTime<Utc>, chiusura: DateTime<Utc>) {
+    let mut data = Map::new();
+    data.insert("file".to_string(), file.into());
+    let durata_secondi = (chiusura - apertura).num_milliseconds() as f64 / 1000.0;
     let envelope = json!({
         "bucket_id": bucket_id,
         "bucket_type": BUCKET_TYPE,
         "client": CLIENT_NAME,
-        "op": "heartbeat",
-        "pulsetime": pulsetime,
+        "op": "event",
         "event": {
-            "timestamp": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
-            "duration": 0.0,
+            "timestamp": apertura.to_rfc3339_opts(SecondsFormat::Millis, true),
+            "duration": durata_secondi,
             "data": data,
         },
     });
@@ -139,8 +193,11 @@ struct Args {
     #[arg(long)]
     testing: bool,
 
-    /// Ogni quanti secondi controllare la finestra in primo piano.
-    #[arg(long, default_value_t = 2.0)]
+    /// Ogni quanti secondi controllare quali file Excel sono aperti —
+    /// richiesta esplicita: non serve precisione al secondo, solo sapere
+    /// apertura/chiusura di ogni file, quindi un intervallo più largo
+    /// (di sicuro non 2s) va benissimo e pesa meno sul sistema.
+    #[arg(long, default_value_t = 20.0)]
     poll_interval: f64,
 
     /// Non usato da questo watcher (nessuno stato/file da leggere) —
@@ -153,9 +210,9 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let hostname = gethostname::gethostname().to_string_lossy().to_string();
-    let bucket_id = format!("aw-watcher-excel_{hostname}");
-    let pulsetime = (args.poll_interval * 1.5).max(args.poll_interval + 1.0);
+    // Niente più suffisso "_<hostname>" — vedi lo stesso commento in
+    // aw-watcher-afk-rust/src/main.rs.
+    let bucket_id = "aw-watcher-excel".to_string();
 
     println!(
         "Modalità: {} - poll_interval: {}s",
@@ -164,16 +221,28 @@ fn main() {
     );
     println!("Bucket: {bucket_id}");
 
+    // Indirizzo di apertura di ogni file attualmente aperto — un file
+    // "chiude" (e manda il suo evento) nel primo giro in cui non compare
+    // più tra le finestre trovate.
+    let mut aperti_da: HashMap<String, DateTime<Utc>> = HashMap::new();
+
     loop {
-        if let Some((app, titolo)) = finestra_in_primo_piano() {
-            if is_excel_exe(&app) {
-                if let Some(file) = interpreta_titolo(&titolo) {
-                    let mut data = Map::new();
-                    data.insert("file".to_string(), file.into());
-                    emit(&bucket_id, pulsetime, data);
-                }
-            }
+        let aperti_ora = file_excel_aperti();
+        let ora = Utc::now();
+
+        for file in &aperti_ora {
+            aperti_da.entry(file.clone()).or_insert(ora);
         }
+
+        aperti_da.retain(|file, apertura| {
+            if aperti_ora.contains(file) {
+                true
+            } else {
+                emit_sessione_chiusa(&bucket_id, file, *apertura, ora);
+                false
+            }
+        });
+
         thread::sleep(StdDuration::from_secs_f64(args.poll_interval));
     }
 }
