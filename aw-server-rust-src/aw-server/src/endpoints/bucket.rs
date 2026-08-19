@@ -202,7 +202,8 @@ pub fn bucket_export(
         .get_events(bucket_id, None, None, None)
         .expect("Failed to get events for bucket");
     bucket.events = Some(TryVec::new(events));
-    export.buckets.insert(bucket_id.into(), bucket);
+    let export_id = bucket.redact_hostname_for_export();
+    export.buckets.insert(export_id, bucket);
 
     Ok(export.into())
 }

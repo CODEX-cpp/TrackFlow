@@ -18,7 +18,9 @@ pub fn buckets_export(state: &State<ServerState>) -> Result<BucketsExportRocket,
     for (bid, mut bucket) in buckets.drain() {
         let events = datastore.get_events(&bid, None, None, None)?;
         bucket.events = Some(TryVec::new(events));
-        export.buckets.insert(bid, bucket);
+
+        let export_id = bucket.redact_hostname_for_export();
+        export.buckets.insert(export_id, bucket);
     }
 
     Ok(export.into())

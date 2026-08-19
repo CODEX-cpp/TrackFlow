@@ -217,8 +217,9 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let hostname = gethostname::gethostname().to_string_lossy().to_string();
-    let bucket_id = format!("aw-watcher-vscode_{hostname}");
+    // Niente più suffisso "_<hostname>" — vedi lo stesso commento in
+    // aw-watcher-afk-rust/src/main.rs.
+    let bucket_id = "aw-watcher-vscode".to_string();
     let pulsetime = (args.poll_interval * 1.5).max(args.poll_interval + 1.0);
 
     println!(

@@ -225,8 +225,11 @@ fn main() {
     let poll_time = args.poll_time.unwrap_or(defaults.poll_time);
     assert!(timeout >= poll_time, "timeout deve essere >= poll_time");
 
-    let hostname = gethostname::gethostname().to_string_lossy().to_string();
-    let bucket_name = format!("{}_{}", CLIENT_NAME, hostname);
+    // Niente più suffisso "_<hostname>": l'id del bucket è la sola identità
+    // del watcher, non del PC che lo produce — richiesta esplicita per far
+    // sì che import/export tra macchine diverse dell'utente si fondano
+    // sullo stesso bucket invece di crearne uno per dispositivo.
+    let bucket_name = CLIENT_NAME.to_string();
 
     println!(
         "Modalità: {} - timeout: {timeout}s, poll_time: {poll_time}s",

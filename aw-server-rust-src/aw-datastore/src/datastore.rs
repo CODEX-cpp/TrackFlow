@@ -14,6 +14,7 @@ use aw_models::Event;
 
 use rusqlite::params;
 use rusqlite::types::ToSql;
+use rusqlite::OptionalExtension;
 
 use super::DatastoreError;
 
@@ -30,8 +31,9 @@ fn _get_db_version(conn: &Connection) -> i32 {
  * 3: see: https://github.com/ActivityWatch/aw-server-rust/pull/52
  * 4: Added 'key_value' table for storing key - value pairs
  * 5: Replaced single-column events indexes with a composite index
+ * 6: Dropped the "_<hostname>" suffix from bucket names
  */
-static NEWEST_DB_VERSION: i32 = 5;
+static NEWEST_DB_VERSION: i32 = 6;
 
 fn _create_tables(conn: &Connection, version: i32) -> bool {
     let mut first_init = false;
@@ -55,6 +57,10 @@ fn _create_tables(conn: &Connection, version: i32) -> bool {
 
     if version < 5 {
         _migrate_v4_to_v5(conn);
+    }
+
+    if version < 6 {
+        _migrate_v5_to_v6(conn);
     }
 
     first_init
@@ -205,6 +211,91 @@ fn _migrate_v4_to_v5(conn: &Connection) {
     ",
     )
     .expect("Failed to run v5 migration transaction");
+}
+
+fn _migrate_v5_to_v6(conn: &Connection) {
+    info!("Upgrading database to v6, dropping the \"_<hostname>\" suffix from bucket names");
+    // Bucket names used to end in "_<hostname>" (e.g. "aw-watcher-window_
+    // CODEX") purely to keep per-device buckets apart — but this app has no
+    // real-time sync between installs, only manual export/import, and the
+    // suffix only ever got in the way there (an export from one PC could
+    // never exact-match a bucket on another). Import already stopped caring
+    // about it (matches by `client` instead); this migration removes the
+    // suffix from bucket names still living in the database so newly
+    // hostname-free watchers (see aw-watcher-afk-rust and friends) keep
+    // writing into the SAME bucket instead of creating a second, empty one.
+    //
+    // Each bucket's own `hostname` column (not a fresh `gethostname()` call)
+    // is what it was actually created with, so this is self-contained even
+    // if the machine's hostname changed since, or if the row came from an
+    // import done on another machine.
+    let tx = conn
+        .unchecked_transaction()
+        .expect("Failed to start v6 migration transaction");
+    {
+        let mut stmt = tx
+            .prepare("SELECT id, name, hostname FROM buckets")
+            .expect("Failed to prepare v6 migration bucket scan");
+        let rows: Vec<(i64, String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("Failed to scan buckets for v6 migration")
+            .collect::<Result<_, _>>()
+            .expect("Failed to read bucket row during v6 migration");
+
+        for (bucket_row_id, name, hostname) in rows {
+            if hostname.is_empty() {
+                continue;
+            }
+            let suffix = format!("_{hostname}");
+            let Some(stripped) = name.strip_suffix(suffix.as_str()) else {
+                continue;
+            };
+
+            let existing: Option<i64> = tx
+                .query_row(
+                    "SELECT id FROM buckets WHERE name = ?1 AND id != ?2",
+                    params![stripped, bucket_row_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .expect("Failed to check for bucket name collision during v6 migration");
+
+            match existing {
+                // A hostname-free bucket with this name already exists (e.g.
+                // from a cross-machine import done before this migration
+                // existed) — fold this one's events into it and drop the
+                // now-empty duplicate row instead of failing the UNIQUE
+                // constraint on `name`. Any exact-duplicate events between
+                // the two are left as-is here rather than re-implementing
+                // the dedup already done by the import feature (see
+                // event_identity() in aw-server/src/endpoints/import.rs) —
+                // acceptable since a stray duplicate is far cheaper than
+                // silently dropping data during a migration.
+                Some(target_row_id) => {
+                    tx.execute(
+                        "UPDATE events SET bucketrow = ?1 WHERE bucketrow = ?2",
+                        params![target_row_id, bucket_row_id],
+                    )
+                    .expect("Failed to move events during v6 migration");
+                    tx.execute(
+                        "DELETE FROM buckets WHERE id = ?1",
+                        params![bucket_row_id],
+                    )
+                    .expect("Failed to delete duplicate bucket during v6 migration");
+                }
+                None => {
+                    tx.execute(
+                        "UPDATE buckets SET name = ?1 WHERE id = ?2",
+                        params![stripped, bucket_row_id],
+                    )
+                    .expect("Failed to rename bucket during v6 migration");
+                }
+            }
+        }
+    }
+    tx.pragma_update(None, "user_version", 6)
+        .expect("Failed to update database version!");
+    tx.commit().expect("Failed to commit v6 migration transaction");
 }
 
 pub struct DatastoreInstance {

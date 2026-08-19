@@ -150,12 +150,13 @@ struct WatcherManifest {
     #[serde(default)]
     timeline_lane: bool,
     /// ID completo del bucket scritto da questo watcher — per modalità
-    /// "interval" è sempre `custom-watcher-<id>_<hostname>` (convenzione
-    /// fissa, calcolata alla creazione); per modalità "raw" è quello che
-    /// l'utente ha dichiarato nel proprio script (campo del form
-    /// esperto). Permette al picker di Home (CustomModulePicker.vue) di
-    /// collegare qualunque watcher a un modulo, non solo quelli in
-    /// modalità semplificata.
+    /// "interval" è sempre `custom-watcher-<id>` (convenzione fissa,
+    /// calcolata alla creazione, senza suffisso hostname: import/export
+    /// tra PC diversi dell'utente devono vedere lo stesso bucket, non uno
+    /// per dispositivo); per modalità "raw" è quello che l'utente ha
+    /// dichiarato nel proprio script (campo del form esperto). Permette al
+    /// picker di Home (CustomModulePicker.vue) di collegare qualunque
+    /// watcher a un modulo, non solo quelli in modalità semplificata.
     #[serde(default)]
     bucket_id: Option<String>,
     /// Larghezza (in colonne, 1-4) scelta per il modulo Home alla
@@ -438,7 +439,7 @@ async fn esegui_interval(
         scrivi_log_watcher(&cartella, "DATI", ultima_riga.trim());
 
         let envelope = WatcherEnvelope {
-            bucket_id: format!("custom-watcher-{id}_{hostname}"),
+            bucket_id: format!("custom-watcher-{id}"),
             bucket_type: "custom-watcher".to_string(),
             client: id.clone(),
             op: "heartbeat".to_string(),
@@ -677,7 +678,6 @@ pub fn crea_watcher_personalizzato_semplice(
         format!("[InternetShortcut]\r\nURL={URL_DOCUMENTAZIONE}\r\n"),
     );
 
-    let hostname = gethostname::gethostname().to_string_lossy().to_string();
     let manifest = WatcherManifest {
         name: nome,
         mode: "interval".to_string(),
@@ -685,7 +685,7 @@ pub fn crea_watcher_personalizzato_semplice(
         args: vec!["-NoProfile".to_string(), "-File".to_string(), "watcher.ps1".to_string()],
         interval_seconds: Some(intervallo_secondi.max(5)),
         timeline_lane: mostra_timeline,
-        bucket_id: Some(format!("custom-watcher-{id}_{hostname}")),
+        bucket_id: Some(format!("custom-watcher-{id}")),
         grid_width: Some(larghezza_griglia.clamp(1, 4)),
         template_id: modello_id.filter(|m| !m.trim().is_empty()),
     };

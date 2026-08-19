@@ -30,6 +30,29 @@ pub struct Bucket {
     pub last_updated: Option<DateTime<Utc>>, // TODO: Should probably be moved into metadata field
 }
 
+impl Bucket {
+    /// Strips the machine name from this bucket before it's written to an
+    /// export file — the hostname lives both in the `hostname` field and,
+    /// by convention, as an "_<hostname>" suffix on `id` (e.g.
+    /// "aw-watcher-window_CODEX"). Import already ignores both (it matches
+    /// buckets by `client`, never by exact id or hostname), so this only
+    /// affects what the exported file reveals, not the local bucket's real
+    /// id/hostname in the database.
+    ///
+    /// Returns the sanitized id, which callers also use as the bucket's key
+    /// in `BucketsExport::buckets` so the map key and `bucket.id` field stay
+    /// consistent with each other in the exported file.
+    pub fn redact_hostname_for_export(&mut self) -> String {
+        let export_id = match self.id.strip_suffix(&format!("_{}", self.hostname)) {
+            Some(stripped) if !self.hostname.is_empty() => stripped.to_string(),
+            _ => self.id.clone(),
+        };
+        self.id = export_id.clone();
+        self.hostname = String::new();
+        export_id
+    }
+}
+
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, Default)]
 pub struct BucketMetadata {
     #[serde(default)]

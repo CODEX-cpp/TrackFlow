@@ -1358,24 +1358,16 @@ export default {
       ] = await Promise.all([
         this.fetchEvents('vpn-sessions', this.dayStart, this.dayEnd),
         this.fetchEvents('claude-code-sessions', this.dayStart, this.dayEnd),
-        this.host
-          ? this.fetchEvents(`aw-watcher-window_${this.host}`, this.dayStart, this.dayEnd)
-          : [],
+        this.fetchEvents('aw-watcher-window', this.dayStart, this.dayEnd),
         this.fetchFirstAvailable(
           ['aw-watcher-web-chrome', 'aw-watcher-web-firefox', 'aw-watcher-web-edge'],
           this.dayStart,
           this.dayEnd
         ),
-        this.host
-          ? this.fetchEvents(`aw-watcher-vscode_${this.host}`, this.dayStart, this.dayEnd)
-          : [],
-        this.host
-          ? this.fetchEvents(`aw-watcher-excel_${this.host}`, this.dayStart, this.dayEnd)
-          : [],
-        this.host
-          ? this.fetchEvents(`voispeed-calls_${this.host}`, this.dayStart, this.dayEnd)
-          : [],
-        this.host ? this.fetchEvents(`aw-watcher-afk_${this.host}`, this.dayStart, this.dayEnd) : [],
+        this.fetchEvents('aw-watcher-vscode', this.dayStart, this.dayEnd),
+        this.fetchEvents('aw-watcher-excel', this.dayStart, this.dayEnd),
+        this.fetchEvents('voispeed-calls', this.dayStart, this.dayEnd),
+        this.fetchEvents('aw-watcher-afk', this.dayStart, this.dayEnd),
         // Modalità Background della Topbar (sezione 7 del blueprint) —
         // fetch sempre eseguito, non solo quando quella modalità è
         // attiva: così passare da Normale a Background è istantaneo
@@ -1578,12 +1570,12 @@ export default {
     // separata nella Timeline" attivo (wizard, modalità semplificata —
     // vedi CustomModuleWizard.vue/custom_watchers.rs). Solo i watcher in
     // modalità "interval" possono chiederla: il bucket è sempre
-    // custom-watcher-<id>_<host>, convenzione fissa lato Rust — un
-    // watcher "raw"/esperto sceglie il proprio bucket_id liberamente,
-    // quindi non è collegabile qui in automatico (timeline_lane resta
-    // false per quelli, impostato lato backend).
+    // custom-watcher-<id> (nessun suffisso host — vedi il commento in
+    // aw-watcher-afk-rust/src/main.rs), un watcher "raw"/esperto sceglie
+    // il proprio bucket_id liberamente, quindi non è collegabile qui in
+    // automatico (timeline_lane resta false per quelli, impostato lato
+    // backend).
     async loadCustomLanes(): Promise<{ id: string; name: string; events: any[] }[]> {
-      if (!this.host) return [];
       let watchers: { id: string; name: string; timeline_lane: boolean }[] = [];
       try {
         watchers = await invoke('elenca_watcher_personalizzati');
@@ -1595,11 +1587,7 @@ export default {
         conLinea.map(async w => ({
           id: w.id,
           name: w.name,
-          events: await this.fetchEvents(
-            `custom-watcher-${w.id}_${this.host}`,
-            this.dayStart,
-            this.dayEnd
-          ),
+          events: await this.fetchEvents(`custom-watcher-${w.id}`, this.dayStart, this.dayEnd),
         }))
       );
     },

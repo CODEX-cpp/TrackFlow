@@ -22,7 +22,7 @@ export default {
   name: 'aw-custom-watcher-view',
   props: {
     // ID completo del bucket da mostrare — in modalità semplificata è
-    // TrackFlow stesso a costruirlo (custom-watcher-<slug>_<host>, vedi
+    // TrackFlow stesso a costruirlo (custom-watcher-<slug>, vedi
     // CustomModuleWizard.vue), in modalità esperta è quello scelto
     // liberamente dall'utente nel proprio script.
     bucketId: String,

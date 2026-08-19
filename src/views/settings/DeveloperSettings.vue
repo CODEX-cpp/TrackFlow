@@ -158,7 +158,7 @@ import { KNOWN_WATCHER_CLIENTS } from '~/util/knownWatchers';
 import { querystr_to_array } from '~/queries';
 import { getClient } from '~/util/awclient';
 
-const DEFAULT_AQL_QUERY = `events = query_bucket(find_bucket("aw-watcher-window_"));
+const DEFAULT_AQL_QUERY = `events = query_bucket(find_bucket("aw-watcher-window"));
 events = sort_by_timestamp(events);
 events = limit_events(events, 20);
 RETURN = events;`;

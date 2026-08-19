@@ -13,7 +13,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import moment from 'moment';
 import { useSettingsStore } from '~/stores/settings';
-import { useBucketsStore } from '~/stores/buckets';
 import { useAppCategoriesStore } from '~/stores/appCategories';
 import { useProjectsStore } from '~/stores/projects';
 import { getHomeClient } from '~/util/awclient';
@@ -49,12 +48,11 @@ function oggiRange() {
   return { start, end };
 }
 
-async function minutiOggiPerApp(host: string): Promise<Map<string, number>> {
+async function minutiOggiPerApp(): Promise<Map<string, number>> {
   const { start, end } = oggiRange();
   const mappa = new Map<string, number>();
-  if (!host) return mappa;
   try {
-    const eventi = await getHomeClient().getEvents(`aw-watcher-window_${host}`, {
+    const eventi = await getHomeClient().getEvents('aw-watcher-window', {
       start: start.toDate(),
       end: end.toDate(),
       limit: -1,
@@ -65,7 +63,7 @@ async function minutiOggiPerApp(host: string): Promise<Map<string, number>> {
       mappa.set(app, (mappa.get(app) || 0) + (e.duration || 0));
     }
   } catch {
-    // Bucket assente (host non ancora noto, watcher mai partito) — nessun dato, non un errore.
+    // Bucket assente (watcher mai partito) — nessun dato, non un errore.
   }
   return mappa;
 }
@@ -81,10 +79,9 @@ function minutiPerCategoria(minutiApp: Map<string, number>): Map<string, number>
   return mappa;
 }
 
-async function isAfkAdesso(host: string): Promise<boolean> {
-  if (!host) return false;
+async function isAfkAdesso(): Promise<boolean> {
   try {
-    const eventi = await getHomeClient().getEvents(`aw-watcher-afk_${host}`, { limit: 1 });
+    const eventi = await getHomeClient().getEvents('aw-watcher-afk', { limit: 1 });
     const ultimo = eventi[0] as any;
     if (!ultimo) return false;
     const fine = moment(ultimo.timestamp).add(ultimo.duration || 0, 'seconds');
@@ -150,7 +147,6 @@ export async function valutaRegoleNotifica(): Promise<void> {
   const regole = settingsStore.notifyRules.filter(r => r.enabled && r.type !== 'vpn');
   if (regole.length === 0) return;
 
-  const host = useBucketsStore().host;
   const haCategoriaOApp = regole.some(r => r.type === 'category' || r.type === 'app');
   const haAfk = regole.some(r => r.type === 'afk' || r.type === 'afkProject');
   const haAfkProgetto = regole.some(r => r.type === 'afkProject');
@@ -158,8 +154,8 @@ export async function valutaRegoleNotifica(): Promise<void> {
   const haNonCategorizzato = regole.some(r => r.type === 'uncategorized');
 
   const [minutiApp, afkAdesso, progettoAttivo] = await Promise.all([
-    haCategoriaOApp || haNonCategorizzato ? minutiOggiPerApp(host) : Promise.resolve(new Map<string, number>()),
-    haAfk ? isAfkAdesso(host) : Promise.resolve(false),
+    haCategoriaOApp || haNonCategorizzato ? minutiOggiPerApp() : Promise.resolve(new Map<string, number>()),
+    haAfk ? isAfkAdesso() : Promise.resolve(false),
     haAfkProgetto ? progettoInCorso() : Promise.resolve(false),
   ]);
   const minutiCategoria = haCategoriaOApp ? minutiPerCategoria(minutiApp) : new Map<string, number>();
@@ -208,7 +204,7 @@ export async function valutaRegoleNotifica(): Promise<void> {
         // in corso — l'ultimo evento AFK letto da isAfkAdesso() copre
         // già questo: se è ancora fresco ma la sua durata supera la
         // soglia, l'inattività dura almeno quanto la soglia.
-        const eventi = await getHomeClient().getEvents(`aw-watcher-afk_${host}`, { limit: 1 });
+        const eventi = await getHomeClient().getEvents('aw-watcher-afk', { limit: 1 });
         const ultimo = eventi[0] as any;
         const minutiInattivo = ultimo ? (ultimo.duration || 0) / 60 : 0;
         if (minutiInattivo < (rule.amount || 0)) continue;

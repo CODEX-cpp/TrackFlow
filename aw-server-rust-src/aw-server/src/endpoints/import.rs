@@ -66,23 +66,61 @@ fn import(datastore: &Datastore, import: BucketsExport) -> Result<ImportStats, H
     let mut added: usize = 0;
     let mut skipped: usize = 0;
 
-    // Richiesta esplicita: "Importa bucket" serve solo ad aggiungere dati
-    // a bucket che esistono già su questo dispositivo, mai a crearne di
-    // nuovi "al buio" da un file — un file che referenzia anche un solo
-    // bucket sconosciuto viene rifiutato per intero, prima di toccare
-    // qualunque dato (nessuna importazione parziale silenziosa).
-    for bucket_id in import.buckets.keys() {
-        if datastore.get_bucket(bucket_id).is_err() {
-            return Err(HttpErrorJson::new(
-                Status::BadRequest,
-                format!(
-                    "Il bucket '{bucket_id}' non esiste su questo dispositivo — l'importazione può solo aggiungere dati a bucket già esistenti, non crearne di nuovi."
-                ),
-            ));
+    let local_buckets = datastore.get_buckets().map_err(|e| {
+        HttpErrorJson::new(
+            Status::InternalServerError,
+            format!("Failed to list local buckets: {e:?}"),
+        )
+    })?;
+
+    // Richiesta esplicita: "Importa bucket" serve solo ad aggiungere dati a
+    // bucket che esistono già su questo dispositivo, mai a crearne di nuovi
+    // "al buio" da un file — ma l'hostname non deve contare per decidere se
+    // un bucket "esiste già". Un bucket per-dispositivo esportato da un
+    // ALTRO computer (es. "aw-watcher-window_PC10", da un file esportato
+    // sul PC di lavoro e portato su quello di casa per debug) non trova mai
+    // corrispondenza esatta per id — prima veniva rifiutato per intero
+    // anche se il watcher corrispondente ("aw-watcher-window") esiste
+    // eccome, solo con un hostname diverso nel nome
+    // ("aw-watcher-window_CODEX"). Ora, quando l'id esatto non combacia, si
+    // cerca un bucket locale con lo stesso `client` (identifica il
+    // watcher, non il dispositivo) e si importa lì. Un file che referenzia
+    // un bucket senza NESSUNA corrispondenza (né per id né per client)
+    // viene comunque rifiutato per intero, prima di toccare qualunque dato
+    // (nessuna importazione parziale silenziosa) — così come un client con
+    // più di un bucket locale corrispondente, dove non c'è un abbinamento
+    // ovvio a cui indirizzare i dati.
+    let mut resolved: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for (bucket_id, bucket) in &import.buckets {
+        if local_buckets.contains_key(bucket_id) {
+            resolved.insert(bucket_id.clone(), bucket_id.clone());
+            continue;
+        }
+        let matches: Vec<&str> = local_buckets
+            .values()
+            .filter(|b| b.client == bucket.client)
+            .map(|b| b.id.as_str())
+            .collect();
+        match matches.as_slice() {
+            [unico] => {
+                resolved.insert(bucket_id.clone(), unico.to_string());
+            }
+            _ => {
+                return Err(HttpErrorJson::new(
+                    Status::BadRequest,
+                    format!(
+                        "Il bucket '{bucket_id}' non esiste su questo dispositivo — l'importazione può solo aggiungere dati a bucket già esistenti, non crearne di nuovi."
+                    ),
+                ));
+            }
         }
     }
 
-    for (_bucketname, mut bucket) in import.buckets {
+    for (file_bucket_id, mut bucket) in import.buckets {
+        bucket.id = resolved
+            .get(&file_bucket_id)
+            .expect("ogni bucket del file ha già una corrispondenza risolta sopra")
+            .clone();
         match datastore.create_bucket(&bucket) {
             Ok(_) => (),
             Err(DatastoreError::BucketAlreadyExists(_)) => {

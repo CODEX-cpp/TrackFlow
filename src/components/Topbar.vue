@@ -617,10 +617,9 @@ export default {
       return this.daysWithData !== null && !this.daysWithData.has(dateStr);
     },
     async loadDaysWithData() {
-      if (!this.host) return;
       this.daysWithData = null;
 
-      const bucketId = `aw-watcher-window_${this.host}`;
+      const bucketId = 'aw-watcher-window';
       const inizioGriglia = this.calendarViewMonth.clone().startOf('month').startOf('isoWeek');
       const fineGriglia = inizioGriglia.clone().add(42, 'days');
 

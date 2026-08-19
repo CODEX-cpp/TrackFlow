@@ -534,20 +534,19 @@ fn timeperiod_stringa(data_inizio: &str, data_fine: &str) -> Result<String, Stri
 /// query diretta — "categoria" non c'è: non è un campo del bucket ma
 /// una mappatura app→categoria mantenuta a parte (vedi
 /// `esegui_interroga_periodo_categoria`), gestita a monte in
-/// `esegui_interroga_periodo` prima di arrivare qui. `vpn-sessions` non
-/// ha suffisso host (bucket fisso, stessa convenzione già usata da
-/// `HomeTimelineSection.vue`); finestra/VoiSpeed sì.
-fn bucket_e_chiave_per(raggruppa_per: &str, hostname: &str) -> Result<(String, &'static str), String> {
+/// `esegui_interroga_periodo` prima di arrivare qui. Nessun bucket qui ha
+/// più suffisso host — vedi il commento in aw-watcher-afk-rust/src/main.rs.
+fn bucket_e_chiave_per(raggruppa_per: &str) -> Result<(String, &'static str), String> {
     match raggruppa_per {
-        "app" => Ok((format!("aw-watcher-window_{hostname}"), "app")),
+        "app" => Ok(("aw-watcher-window".to_string(), "app")),
         "cliente_vpn" => Ok(("vpn-sessions".to_string(), "cliente")),
-        "cliente_voispeed" => Ok((format!("voispeed-calls_{hostname}"), "cliente")),
+        "cliente_voispeed" => Ok(("voispeed-calls".to_string(), "cliente")),
         // Stesso bucket VS Code, tre chiavi diverse — l'evento porta
         // sempre tutti e tre i campi insieme, quindi il raggruppamento
         // decide solo su quale sommare (vedi aw-watcher-vscode-rust).
-        "progetto_editor" => Ok((format!("aw-watcher-vscode_{hostname}"), "project")),
-        "file_editor" => Ok((format!("aw-watcher-vscode_{hostname}"), "file")),
-        "linguaggio_editor" => Ok((format!("aw-watcher-vscode_{hostname}"), "language")),
+        "progetto_editor" => Ok(("aw-watcher-vscode".to_string(), "project")),
+        "file_editor" => Ok(("aw-watcher-vscode".to_string(), "file")),
+        "linguaggio_editor" => Ok(("aw-watcher-vscode".to_string(), "language")),
         // Bucket fisso, nessun suffisso host (stessa convenzione di
         // vpn-sessions) — la "chiave" qui non è un nome cliente ma
         // un'etichetta progetto/sessione già pronta lato watcher (vedi
@@ -593,7 +592,7 @@ async fn esegui_interroga_periodo(
     if raggruppa_per == "cliente_totale" {
         return esegui_interroga_periodo_cliente_totale(server, hostname, data_inizio, data_fine).await;
     }
-    let (bucket, chiave) = bucket_e_chiave_per(raggruppa_per, hostname)?;
+    let (bucket, chiave) = bucket_e_chiave_per(raggruppa_per)?;
     let timeperiod = timeperiod_stringa(data_inizio, data_fine)?;
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
@@ -617,12 +616,12 @@ async fn esegui_interroga_periodo(
 /// finiscono in "Non categorizzato" invece di sparire dal risultato.
 async fn esegui_interroga_periodo_categoria(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     data_inizio: &str,
     data_fine: &str,
 ) -> Result<Value, String> {
     let timeperiod = timeperiod_stringa(data_inizio, data_fine)?;
-    let bucket = format!("aw-watcher-window_{hostname}");
+    let bucket = "aw-watcher-window".to_string();
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
         "top = sort_by_duration(merge_events_by_keys(events, [\"app\"]));".to_string(),
@@ -695,13 +694,13 @@ async fn interroga_voci_cliente(
 /// l'etichetta mostrata è la prima grafia incontrata tra le due fonti.
 async fn esegui_interroga_periodo_cliente_totale(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     data_inizio: &str,
     data_fine: &str,
 ) -> Result<Value, String> {
     let timeperiod = timeperiod_stringa(data_inizio, data_fine)?;
     let voci_vpn = interroga_voci_cliente(server, "vpn-sessions", timeperiod.clone()).await?;
-    let bucket_voispeed = format!("voispeed-calls_{hostname}");
+    let bucket_voispeed = "voispeed-calls".to_string();
     let voci_voispeed = interroga_voci_cliente(server, &bucket_voispeed, timeperiod).await?;
 
     // (nome_visualizzato, secondi_vpn, secondi_voispeed) — chiave interna
@@ -844,7 +843,7 @@ fn somma_per_periodo_multi(risposta_query: &Value, chiave: &str) -> HashMap<Stri
 /// già la risposta).
 async fn esegui_copertura_giorni(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     data_inizio: &str,
     data_fine: &str,
     soglia_ore: Option<f64>,
@@ -856,7 +855,7 @@ async fn esegui_copertura_giorni(
         let giorno_str = giorno.format("%Y-%m-%d").to_string();
         periodi.push(timeperiod_stringa(&giorno_str, &giorno_str)?);
     }
-    let bucket = format!("aw-watcher-window_{hostname}");
+    let bucket = "aw-watcher-window".to_string();
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
         "duration = sum_durations(events);".to_string(),
@@ -919,7 +918,7 @@ fn voci_da_somme(somme: HashMap<String, f64>, limite: usize) -> (Vec<Value>, f64
 #[allow(clippy::too_many_arguments)]
 async fn esegui_interroga_fascia_oraria_periodo(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     data_inizio: &str,
     data_fine: &str,
     ora_inizio: &str,
@@ -933,7 +932,7 @@ async fn esegui_interroga_fascia_oraria_periodo(
     }
 
     if raggruppa_per == "categoria" {
-        let bucket = format!("aw-watcher-window_{hostname}");
+        let bucket = "aw-watcher-window".to_string();
         let query_lines = vec![
             format!("events = flood(query_bucket(\"{bucket}\"));"),
             "top = sort_by_duration(merge_events_by_keys(events, [\"app\"]));".to_string(),
@@ -962,7 +961,7 @@ async fn esegui_interroga_fascia_oraria_periodo(
         return Ok(json!({ "voci": voci, "ore_totali": arrotonda_ore(totale) }));
     }
 
-    let (bucket, chiave) = bucket_e_chiave_per(raggruppa_per, hostname)?;
+    let (bucket, chiave) = bucket_e_chiave_per(raggruppa_per)?;
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
         format!("top = sort_by_duration(merge_events_by_keys(events, [\"{chiave}\"]));"),
@@ -1004,7 +1003,7 @@ async fn esegui_lista_app(server: &crate::AppServer, app_data_dir: &Path, hostna
 /// pochi minuti in tutto il periodo.
 async fn esegui_interroga_app_specifica(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     app: &str,
     data_inizio: &str,
     data_fine: &str,
@@ -1014,7 +1013,7 @@ async fn esegui_interroga_app_specifica(
         return Err("nome app mancante o vuoto".to_string());
     }
     let timeperiod = timeperiod_stringa(data_inizio, data_fine)?;
-    let bucket = format!("aw-watcher-window_{hostname}");
+    let bucket = "aw-watcher-window".to_string();
     // Il filtro per nome app avviene QUI in Rust (eq_ignore_ascii_case), non
     // con filter_keyvals lato AQL — bug reale trovato verificando dal vivo:
     // filter_keyvals confronta i valori con un'uguaglianza esatta
@@ -1107,13 +1106,13 @@ fn formatta_fascia_oraria(risposta_query: &Value) -> Value {
 
 async fn esegui_interroga_fascia_oraria(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     data: &str,
     ora_inizio: &str,
     ora_fine: &str,
 ) -> Result<Value, String> {
     let timeperiod = timeperiod_fascia_oraria(data, ora_inizio, ora_fine)?;
-    let bucket = format!("aw-watcher-window_{hostname}");
+    let bucket = "aw-watcher-window".to_string();
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
         "events = sort_by_timestamp(events);".to_string(),
@@ -1179,7 +1178,7 @@ fn formatta_ricerca_titolo(risposta_query: &Value, testo_cercato: &str) -> Value
 
 async fn esegui_cerca_titolo_finestra(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     testo: &str,
     data_inizio: &str,
     data_fine: &str,
@@ -1189,7 +1188,7 @@ async fn esegui_cerca_titolo_finestra(
         return Err("testo di ricerca mancante o vuoto".to_string());
     }
     let timeperiod = timeperiod_stringa(data_inizio, data_fine)?;
-    let bucket = format!("aw-watcher-window_{hostname}");
+    let bucket = "aw-watcher-window".to_string();
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
         "events = sort_by_timestamp(events);".to_string(),
@@ -1234,13 +1233,13 @@ fn formatta_pause(risposta_query: &Value, soglia_minuti: f64) -> Value {
 
 async fn esegui_rileva_pause(
     server: &crate::AppServer,
-    hostname: &str,
+    _hostname: &str,
     data_inizio: &str,
     data_fine: &str,
     soglia_minuti: f64,
 ) -> Result<Value, String> {
     let timeperiod = timeperiod_stringa(data_inizio, data_fine)?;
-    let bucket = format!("aw-watcher-afk_{hostname}");
+    let bucket = "aw-watcher-afk".to_string();
     let query_lines = vec![
         format!("events = query_bucket(\"{bucket}\");"),
         "events = filter_keyvals(events, \"status\", [\"afk\"]);".to_string(),

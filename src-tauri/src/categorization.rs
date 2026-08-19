@@ -243,8 +243,11 @@ pub fn registra_app_se_nuova(app_data_dir: &Path, app: &str) {
 /// manda all'estrattore icone OGNI processo in esecuzione sul sistema, non
 /// solo quelli mostrati a schermo) — le due cose erano collegate solo per
 /// riuso di comodo, non per un legame logico vero.
-async fn ricostruisci_app_conosciute_da_timeline(server: &AppServer, hostname: &str) -> Vec<String> {
-    let bucket = format!("aw-watcher-window_{hostname}");
+async fn ricostruisci_app_conosciute_da_timeline(server: &AppServer, _hostname: &str) -> Vec<String> {
+    // Niente più suffisso "_<hostname>" — vedi il commento in
+    // aw-watcher-afk-rust/src/main.rs. Il parametro resta per non
+    // scombinare i chiamanti, che lo passano già per altre ragioni.
+    let bucket = "aw-watcher-window".to_string();
     let query_lines = vec![
         format!("events = flood(query_bucket(\"{bucket}\"));"),
         "apps = merge_events_by_keys(events, [\"app\"]);".to_string(),

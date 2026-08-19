@@ -392,7 +392,9 @@ async fn esegui_un_giro(app_handle: &AppHandle, server: &Arc<AppServer>, hostnam
         Ok((identity_fresca, risposta)) => {
             save_identity_from_state(app_handle, &identity_fresca);
 
-            let bucket_id = format!("voispeed-calls_{hostname}");
+            // Niente più suffisso "_<hostname>" — vedi il commento in
+            // aw-watcher-afk-rust/src/main.rs.
+            let bucket_id = "voispeed-calls".to_string();
             server.ensure_bucket(&bucket_id, BUCKET_TYPE, CLIENT_NAME, hostname).await;
 
             if let Some(chiamate) = risposta.get("calls").and_then(Value::as_array) {

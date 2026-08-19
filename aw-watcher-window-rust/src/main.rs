@@ -219,8 +219,9 @@ fn main() {
 
     const CLIENT_NAME: &str = "aw-watcher-window";
     const BUCKET_TYPE: &str = "currentwindow";
-    let hostname = gethostname::gethostname().to_string_lossy().to_string();
-    let bucket_id = format!("{CLIENT_NAME}_{hostname}");
+    // Niente più suffisso "_<hostname>" — vedi lo stesso commento in
+    // aw-watcher-afk-rust/src/main.rs.
+    let bucket_id = CLIENT_NAME.to_string();
 
     println!(
         "Modalità: {} - poll_time: {poll_time}s, exclude_title: {exclude_title}",
