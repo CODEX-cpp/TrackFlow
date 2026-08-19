@@ -16,29 +16,33 @@ div
 
   div(v-if="caricando") {{ $t('settings.vpnMapping.loading') }}
   template(v-else)
-    div.vpn-section
-      div.settings-row-title.vpn-subtitle {{ $t('settings.vpnMapping.autoTitle') }}
-      div.settings-row-help {{ $t('settings.vpnMapping.autoHelp') }}
-      div.settings-row-help(v-if="vociAuto.length === 0") {{ $t('settings.vpnMapping.autoEmpty') }}
-      div.vpn-list(v-else)
-        div.vpn-row(v-for="v in vociAuto" :key="v.indirizzo")
-          span.vpn-row-address {{ v.indirizzo }}
-          span.vpn-row-arrow →
-          span.vpn-row-client {{ v.cliente }}
-
-    div.vpn-section
-      div.settings-row-title.vpn-subtitle {{ $t('settings.vpnMapping.manualTitle') }}
-      div.settings-row-help {{ $t('settings.vpnMapping.manualHelp') }}
-
-      div.vpn-manual-row(v-for="(riga, i) in righeManuali" :key="riga.id")
-        input.settings-field.vpn-input-address(v-model="riga.indirizzo" :placeholder="$t('settings.vpnMapping.addressPlaceholder')")
-        input.settings-field.vpn-input-client(v-model="riga.cliente" :placeholder="$t('settings.vpnMapping.clientPlaceholder')")
-        div.pill-btn-ghost.vpn-remove-btn(@click="rimuoviRiga(i)" :title="$t('settings.vpnMapping.removeRow')")
+    div.settings-row-help {{ $t('settings.vpnMapping.tableHelp') }}
+    div.settings-row-help(v-if="righe.length === 0") {{ $t('settings.vpnMapping.allEmpty') }}
+    div.vpn-list(v-else)
+      div.vpn-row(v-for="riga in righe" :key="riga.id")
+        input.settings-field.vpn-input-client(
+          v-model="riga.cliente"
+          @input="riga.sovrascritta = true"
+          :placeholder="$t('settings.vpnMapping.clientPlaceholder')"
+        )
+        input.settings-field.vpn-input-address(
+          v-model="riga.indirizzo"
+          :disabled="riga.origineAuto"
+          :placeholder="$t('settings.vpnMapping.addressPlaceholder')"
+        )
+        span.vpn-row-origin(:class="{ 'vpn-row-origin-manual': !riga.origineAuto }")
+          | {{ riga.origineAuto ? $t('settings.vpnMapping.originAuto') : $t('settings.vpnMapping.originManual') }}
+        div.pill-btn-ghost.vpn-remove-btn(
+          v-if="!riga.origineAuto"
+          @click="rimuoviRiga(riga.id)"
+          :title="$t('settings.vpnMapping.removeRow')"
+        )
           icon(name="trash")
+        div.vpn-remove-btn-spacer(v-else)
 
-      div.pill-btn-ghost.vpn-add-btn(@click="aggiungiRiga")
-        icon(name="plus")
-        | {{ $t('settings.vpnMapping.addRow') }}
+    div.pill-btn-ghost.vpn-add-btn(@click="aggiungiRiga")
+      icon(name="plus")
+      | {{ $t('settings.vpnMapping.addRow') }}
 </template>
 
 <script lang="ts">
@@ -52,10 +56,24 @@ interface VoceMappingVpn {
   origine: 'openvpn' | 'manuale';
 }
 
-interface RigaManuale {
+interface RigaTabella {
   id: number;
   indirizzo: string;
   cliente: string;
+  // true = indirizzo noto da un profilo OpenVPN Connect reale — il campo
+  // indirizzo resta non modificabile (non è TrackFlow a deciderlo), ma il
+  // nome sì: digitarne uno diverso e salvare crea una sovrascrittura
+  // "solo per TrackFlow", senza toccare il profilo OpenVPN vero — da quel
+  // momento in poi questo indirizzo diventa a tutti gli effetti una riga
+  // manuale (modificabile, rimovibile). false = riga già manuale (nuova
+  // o già una sovrascrittura), sia indirizzo che nome modificabili e
+  // rimovibile.
+  origineAuto: boolean;
+  // true solo dopo che l'utente ha effettivamente digitato nel campo
+  // nome di una riga origineAuto — decide se salvare una sovrascrittura;
+  // niente valore originale da confrontare, il nome digitato sostituisce
+  // e basta.
+  sovrascritta: boolean;
 }
 
 let contatoreId = 0;
@@ -68,14 +86,13 @@ export default {
       salvando: false,
       errore: '',
       successo: false,
-      vociAuto: [] as VoceMappingVpn[],
-      righeManuali: [] as RigaManuale[],
-      righeManualiSalvate: '',
+      righe: [] as RigaTabella[],
+      righeSalvate: '',
     };
   },
   computed: {
     modificato(): boolean {
-      return JSON.stringify(this.righeManuali.map(r => [r.indirizzo, r.cliente])) !== this.righeManualiSalvate;
+      return JSON.stringify(this.righe.map(r => [r.indirizzo, r.cliente])) !== this.righeSalvate;
     },
   },
   async mounted() {
@@ -87,10 +104,19 @@ export default {
       this.errore = '';
       try {
         const voci = await invoke<VoceMappingVpn[]>('leggi_mapping_vpn');
-        this.vociAuto = voci.filter(v => v.origine === 'openvpn');
-        this.righeManuali = voci
-          .filter(v => v.origine === 'manuale')
-          .map(v => ({ id: contatoreId++, indirizzo: v.indirizzo, cliente: v.cliente }));
+        this.righe = voci
+          .map(v => ({
+            id: contatoreId++,
+            indirizzo: v.indirizzo,
+            cliente: v.cliente,
+            origineAuto: v.origine === 'openvpn',
+            sovrascritta: false,
+          }))
+          // Richiesta esplicita: ordine alfabetico per nome cliente, non
+          // per indirizzo — calcolato solo qui (al caricamento), non come
+          // computed reattivo: riordinare dal vivo mentre l'utente digita
+          // un nome farebbe "saltare" la riga sotto al cursore.
+          .sort((a, b) => a.cliente.localeCompare(b.cliente));
         this.sincronizzaSalvate();
       } catch (e: any) {
         // Fuori da Tauri (dev server puro nel browser) invoke() non
@@ -100,13 +126,13 @@ export default {
       }
     },
     sincronizzaSalvate() {
-      this.righeManualiSalvate = JSON.stringify(this.righeManuali.map(r => [r.indirizzo, r.cliente]));
+      this.righeSalvate = JSON.stringify(this.righe.map(r => [r.indirizzo, r.cliente]));
     },
     aggiungiRiga() {
-      this.righeManuali.push({ id: contatoreId++, indirizzo: '', cliente: '' });
+      this.righe.push({ id: contatoreId++, indirizzo: '', cliente: '', origineAuto: false, sovrascritta: false });
     },
-    rimuoviRiga(i: number) {
-      this.righeManuali.splice(i, 1);
+    rimuoviRiga(id: number) {
+      this.righe = this.righe.filter(r => r.id !== id);
     },
     scarta() {
       this.carica();
@@ -115,9 +141,17 @@ export default {
       this.errore = '';
       this.successo = false;
 
-      const righeValide = this.righeManuali
-        .map(r => ({ indirizzo: r.indirizzo.trim(), cliente: r.cliente.trim() }))
-        .filter(r => r.indirizzo !== '' && r.cliente !== '');
+      const righeValide = this.righe
+        .filter(r => {
+          // Una riga "auto" genera una sovrascrittura solo se l'utente
+          // ci ha davvero digitato dentro — altrimenti resta quella
+          // letta dal profilo OpenVPN, senza scrivere nulla nel file.
+          if (r.origineAuto) {
+            return r.sovrascritta && r.cliente.trim() !== '';
+          }
+          return r.indirizzo.trim() !== '' && r.cliente.trim() !== '';
+        })
+        .map(r => ({ indirizzo: r.indirizzo.trim(), cliente: r.cliente.trim() }));
 
       const indirizziVisti = new Set<string>();
       for (const riga of righeValide) {
@@ -177,16 +211,8 @@ export default {
   color: var(--color-text-faint);
 }
 
-.vpn-section {
-  margin-top: 20px;
-}
-
-.vpn-subtitle {
-  margin-bottom: 2px;
-}
-
 .vpn-list {
-  margin-top: 10px;
+  margin-top: 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -206,37 +232,48 @@ export default {
   border-bottom: none;
 }
 
-.vpn-row-address {
-  color: var(--color-text);
-  min-width: 180px;
-}
-
-.vpn-row-arrow {
-  color: var(--color-text-faint);
-}
-
-.vpn-row-client {
-  color: var(--color-text-dim);
-}
-
-.vpn-manual-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-
+.vpn-input-client,
 .vpn-input-address {
-  flex: 1 1 45%;
+  /* Larghezza fissa invece che percentuale: con `flex-grow` i due campi
+     si dividevano lo spazio rimasto DOPO badge e pulsante rimuovi, che
+     non hanno tutti la stessa larghezza ("auto" è più corto di
+     "manuale", e le righe automatiche non hanno il pulsante rimuovi) —
+     risultato, form di larghezza diversa da riga a riga. Segnalato
+     dall'utente. */
+  flex: 0 0 260px;
 }
 
-.vpn-input-client {
-  flex: 1 1 35%;
+.vpn-input-address:disabled {
+  color: var(--color-text-dim);
+  background-color: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.vpn-row-origin {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.vpn-row-origin-manual {
+  color: var(--color-accent1);
+  border-color: var(--color-accent1);
 }
 
 .vpn-remove-btn {
   flex-shrink: 0;
   padding: 6px 10px;
+}
+
+.vpn-remove-btn-spacer {
+  flex-shrink: 0;
+  width: 33px;
 }
 
 .vpn-add-btn {

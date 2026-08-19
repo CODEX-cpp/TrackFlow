@@ -28,9 +28,13 @@ const SEZIONE_AUTO_FINE: &str = "# === FINE SEZIONE AUTOMATICA ===";
 pub struct VoceMappingVpn {
     pub indirizzo: String,
     pub cliente: String,
-    /// "openvpn" = letto in automatico dai profili OpenVPN Connect
-    /// (sola lettura qui); "manuale" = scritto a mano (es. ZyWALL),
-    /// modificabile.
+    /// "openvpn" = letto in automatico dai profili OpenVPN Connect —
+    /// l'indirizzo non è modificabile qui, ma il nome sì: digitarne uno
+    /// diverso e salvare crea una sovrascrittura manuale "solo per
+    /// TrackFlow" (il profilo OpenVPN vero non viene toccato). "manuale"
+    /// = voce scritta a mano (nuova, es. ZyWALL, oppure una
+    /// sovrascrittura di un nome automatico) — sia indirizzo che nome
+    /// modificabili, rimovibile.
     pub origine: String,
 }
 
