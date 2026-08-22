@@ -36,6 +36,11 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntryDef[] = [
   { groupId: 'home', titleKey: 'settings.lunchBreak.title', helpKey: 'settings.lunchBreak.help' },
   {
     groupId: 'home',
+    titleKey: 'settings.lunchBreak.dailyBudgetTitle',
+    helpKey: 'settings.lunchBreak.dailyBudgetHelp',
+  },
+  {
+    groupId: 'home',
     titleKey: 'settings.screenshot.intervalTitle',
     helpKey: 'settings.screenshot.intervalHelp',
   },

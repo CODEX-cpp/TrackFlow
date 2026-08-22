@@ -281,6 +281,10 @@ Clear all rules from the editor, leaving it as \`[]\` (or empty), and save.`,
     lunchBreak: {
       title: 'Lunch break',
       help: 'The decorative striped band drawn over this range on the Home Timeline (default 13:00–14:00).',
+      dailyBudgetTitle: 'Estimated work hours per day',
+      dailyBudgetHelp:
+        'Used to color the "Activity (calendar)" module by how close you get to this daily target.',
+      hoursUnit: 'hours',
     },
     screenshot: {
       intervalTitle: 'Screenshot interval',
@@ -727,6 +731,16 @@ Clear all rules from the editor, leaving it as \`[]\` (or empty), and save.`,
     topExcelFiles: 'Top Excel Files',
     topVoispeedContacts: 'Top VoiSpeed Contacts',
     topCategories: 'Categories',
+    activityHeatmap: {
+      title: 'Hours worked (calendar)',
+      noData: 'No activity recorded in the last 6 months.',
+      less: 'Less',
+      more: 'More',
+    },
+    categoryTreemap: {
+      title: 'Categories (treemap)',
+      empty: 'No categorized apps today — assign a category to apps in Settings → Categorization.',
+    },
     customWatcherView: 'Custom watcher data',
     customHtmlModule: 'Custom HTML module',
     topVpnClients: 'Top VPN Clients',

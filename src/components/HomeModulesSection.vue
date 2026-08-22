@@ -24,10 +24,24 @@ div.modules-section(v-if="view")
   // stessa lezione appresa poco fa: il drag nativo è inaffidabile
   // dentro un webview embedded come questo.
   div.modules-masonry(ref="masonryEl" :style="{ height: packed.totalHeight + 'px' }")
+    // Riquadro tratteggiato che mostra dove il modulo trascinato
+    // atterrerebbe se rilasciato ora — riusa esattamente la posizione già
+    // calcolata da packed.layout per l'elemento in trascinamento (con
+    // colOverride, vedi script), quindi resta sempre sincronizzato col
+    // vero risultato dell'impaccamento invece di essere una stima a parte.
+    div.modules-drop-placeholder(v-if="dropPlaceholder" :style="dropPlaceholderStyle")
+    // :key su el.id (stabile per card, vedi IElement in stores/views.ts),
+    // NON su el.__idx (posizione nell'array, cambia ad ogni riordino) —
+    // altrimenti Vue riusa il nodo DOM sbagliato dopo un trascinamento,
+    // portandosi dietro la posizione CSS di un'ALTRA card come punto di
+    // partenza della transizione. __idx resta usato solo internamente
+    // (itemStyle/ResizeObserver/dragging), sempre coerente con se stesso
+    // ad ogni singolo render.
     div.modules-grid-item(
       v-for="el in renderOrder"
-      :key="el.__idx"
+      :key="el.id || el.__idx"
       :data-idx="el.__idx"
+      :data-height-key="el.id || el.__idx"
       :ref="'card-' + el.__idx"
       :class="{ 'modules-grid-item-dragging': dragging && dragging.idx === el.__idx }"
       :style="itemStyle(el.__idx)"
@@ -117,6 +131,16 @@ div.modules-section(v-if="view")
   pointer-events: none;
   box-shadow: var(--shadow-elevated);
 }
+
+.modules-drop-placeholder {
+  position: absolute;
+  border: 1.5px dashed color-mix(in srgb, var(--color-accent1) 45%, transparent);
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--color-accent1) 6%, transparent);
+  pointer-events: none;
+  z-index: 1;
+  transition: transform 0.15s ease, width 0.15s ease, height 0.15s ease;
+}
 </style>
 
 <script lang="ts">
@@ -150,13 +174,23 @@ import { getHomeClient } from '~/util/awclient';
 
 // Moduli a piena larghezza (span = tutte le colonne) — nessun tipo la
 // usa più oggi (i due che la popolavano, sunburst_clock e vis_timeline,
-// sono stati rimossi — vedi BLUEPRINT.md sezione 16), lasciata pronta
+// sono stati rimossi, vedi BLUEPRINT.md sezione 16), lasciata pronta
 // per un futuro modulo "large".
 const LARGE_TYPES: string[] = [];
 // Moduli larghi 2 colonne (es. Categorie) — vedi BLUEPRINT.md sezione
 // 17/18 per la storia completa di come si è arrivati a un vero motore
-// di impaccamento invece di una banda a parte.
-const DOUBLE_TYPES = ['top_categories'];
+// di impaccamento invece di una banda a parte. activity_heatmap
+// (calendario stile "contributi GitHub") ci si è spostato qui da
+// TRIPLE_TYPES su richiesta esplicita, in coppia con la finestra
+// temporale portata a 6 mesi (vedi GIORNI_FINESTRA in
+// ActivityHeatmap.vue) — è la combinazione larghezza/durata che riempie
+// la card senza lasciarla vuota a destra né farla traboccare.
+const DOUBLE_TYPES = ['top_categories', 'activity_heatmap'];
+// Moduli larghi 3 colonne — category_treemap (treemap categorie→app)
+// richiede esplicitamente questa larghezza (richiesta dell'utente: "x3,
+// non x2 come Categorie/Calendario") per avere spazio sufficiente a
+// mostrare più categorie fianco a fianco senza schiacciarle.
+const TRIPLE_TYPES: string[] = ['category_treemap'];
 const COLUMN_MIN_WIDTH = 280;
 const COLUMN_GAP = 14;
 // Altezza di riserva per una card non ancora misurata dal
@@ -212,9 +246,18 @@ export default {
       // Set/Map) aggiornato con $set/$delete.
       nascostiPerAssenzaDati: {} as Record<number, boolean>,
       // Altezza reale misurata di ciascuna card (via ResizeObserver,
-      // vedi observeItems) — chiave __idx. Finché una card non è stata
-      // misurata almeno una volta si usa FALLBACK_ITEM_HEIGHT.
-      itemHeights: {} as Record<number, number>,
+      // vedi observeItems) — chiave el.id (stabile), NON __idx. Bug
+      // reale segnalato dall'utente dopo l'introduzione della colonna
+      // fissa: __idx è la posizione nell'array, cambia ad ogni
+      // riordino (stesso identico problema già risolto per :key sopra,
+      // qui non ancora applicato) — dopo un trascinamento, l'altezza
+      // registrata per una posizione poteva restare quella del modulo
+      // che stava lì PRIMA, finché il ResizeObserver non la
+      // ricorreggeva un istante dopo. computePacking usava quel valore
+      // sbagliato nel frattempo, producendo sovrapposizioni/spazi
+      // vuoti. Finché una card non è stata misurata almeno una volta
+      // si usa FALLBACK_ITEM_HEIGHT.
+      itemHeights: {} as Record<string, number>,
       ro: null as ResizeObserver | null,
       // Stato del trascinamento in corso, null quando non si sta
       // trascinando nulla — vedi onWrapperMouseDown/onDragMouseMove/
@@ -322,9 +365,34 @@ export default {
       return this.dragging ? this.previewOrder : this.baseOrder;
     },
     // Layout impaccato (posizione/larghezza in px per ogni __idx) per
-    // l'ordine attualmente da mostrare — vedi computePacking.
+    // l'ordine attualmente da mostrare — vedi computePacking. Durante un
+    // trascinamento, la colonna dell'elemento trascinato viene forzata a
+    // quella sotto il cursore (invece della sua vecchia col, o
+    // dell'euristica "colonna più corta") — così l'intera griglia si
+    // ridispone dal vivo mostrando dove finirebbe davvero se rilasciato
+    // ora, non solo dopo il rilascio.
     packed(): PackedLayout {
-      return this.computePacking(this.renderOrder);
+      const override = this.dragging
+        ? { [(this.dragging as DragState).idx]: this.columnFromX((this.dragging as DragState).mouseX) }
+        : undefined;
+      return this.computePacking(this.renderOrder, override);
+    },
+    // Riquadro tratteggiato mostrato durante il trascinamento, nella
+    // stessa identica posizione/dimensione che packed.layout ha già
+    // calcolato per l'elemento trascinato (grazie all'override sopra) —
+    // richiesta esplicita: rendere visibile dove il modulo atterrerebbe.
+    dropPlaceholder(): { x: number; y: number; width: number; height: number } | null {
+      if (!this.dragging) return null;
+      return this.packed.layout[(this.dragging as DragState).idx] || null;
+    },
+    dropPlaceholderStyle(): Record<string, string> {
+      const pos = this.dropPlaceholder;
+      if (!pos) return {};
+      return {
+        transform: `translate(${pos.x}px, ${pos.y}px)`,
+        width: pos.width + 'px',
+        height: pos.height + 'px',
+      };
     },
   },
   watch: {
@@ -338,12 +406,11 @@ export default {
   async mounted() {
     this.ro = new ResizeObserver((entries: ResizeObserverEntry[]) => {
       for (const entry of entries) {
-        const idxAttr = (entry.target as HTMLElement).dataset.idx;
-        if (idxAttr === undefined) continue;
-        const idx = parseInt(idxAttr, 10);
+        const key = (entry.target as HTMLElement).dataset.heightKey;
+        if (key === undefined) continue;
         const h = entry.contentRect.height;
-        if (Math.abs((this.itemHeights[idx] || 0) - h) > 0.5) {
-          this.$set(this.itemHeights, idx, h);
+        if (Math.abs((this.itemHeights[key] || 0) - h) > 0.5) {
+          this.$set(this.itemHeights, key, h);
         }
       }
     });
@@ -412,6 +479,9 @@ export default {
     isLarge(type: string): boolean {
       return LARGE_TYPES.includes(type);
     },
+    isTriple(type: string): boolean {
+      return TRIPLE_TYPES.includes(type);
+    },
     isDouble(type: string): boolean {
       return DOUBLE_TYPES.includes(type);
     },
@@ -438,14 +508,28 @@ export default {
         if (node) (this.ro as ResizeObserver).observe(node);
       }
     },
+    // Colonna (indice 0-based, entro i limiti correnti) sotto una
+    // coordinata X del contenitore — condivisa da packed (override live
+    // durante il trascinamento), computeInsertionIndex e onDragMouseUp
+    // (assegnazione finale al rilascio), così i tre punti concordano
+    // sempre sulla stessa identica colonna per lo stesso cursore.
+    columnFromX(x: number): number {
+      const colW = this.columnWidthPx > 0 ? this.columnWidthPx : COLUMN_MIN_WIDTH;
+      const colUnit = colW + COLUMN_GAP;
+      return Math.min(this.columnCount - 1, Math.max(0, Math.floor(x / colUnit)));
+    },
     // Motore di impaccamento: scorre `order` e per ciascun elemento
-    // trova la posizione (colonna di partenza) che minimizza l'altezza
-    // a cui finirebbe — esattamente l'euristica "colonna più corta"
-    // già usata dal vecchio sistema round-robin, generalizzata per
-    // supportare elementi larghi più di 1 colonna (che occupano lo
-    // start più corto tra quelli disponibili per il loro span,
-    // considerando il MASSIMO delle colonne coinvolte, non la somma).
-    computePacking(order: any[]): PackedLayout {
+    // determina la colonna di partenza. Se l'elemento ha una `col`
+    // esplicita (impostata trascinandolo — vedi onDragMouseUp — oppure
+    // forzata da `colOverride` durante un trascinamento live, vedi
+    // `packed`), quella colonna è FISSA: l'elemento si impila lì anche
+    // se ne risulta una colonna più alta delle altre — richiesta
+    // esplicita dell'utente, per poter mettere un modulo sotto un altro
+    // più alto invece di essere sempre ribilanciato altrove. Solo gli
+    // elementi MAI spostati manualmente (nessuna `col`) continuano a
+    // usare la vecchia euristica "colonna più corta", riorganizzandosi
+    // da soli intorno a quelli ormai fissi.
+    computePacking(order: any[], colOverride?: Record<number, number>): PackedLayout {
       const colHeights = new Array(this.columnCount).fill(0);
       const layout: Record<number, { x: number; y: number; width: number; height: number }> = {};
       const colW = this.columnWidthPx > 0 ? this.columnWidthPx : COLUMN_MIN_WIDTH;
@@ -459,24 +543,39 @@ export default {
           ? Math.min(this.columnCount, Math.max(1, Math.round(gridWidth)))
           : this.isLarge(el.type)
           ? this.columnCount
+          : this.isTriple(el.type)
+          ? Math.min(3, this.columnCount)
           : this.isDouble(el.type)
           ? Math.min(2, this.columnCount)
           : 1;
-        const h = this.itemHeights[el.__idx] || FALLBACK_ITEM_HEIGHT;
-        let bestStart = 0;
-        let bestTop = Infinity;
-        for (let start = 0; start <= this.columnCount - span; start++) {
-          let top = 0;
-          for (let c = start; c < start + span; c++) top = Math.max(top, colHeights[c]);
-          if (top < bestTop) {
-            bestTop = top;
-            bestStart = start;
+        const h = this.itemHeights[el.id || el.__idx] || FALLBACK_ITEM_HEIGHT;
+        const maxStart = this.columnCount - span;
+
+        const pinned =
+          colOverride && colOverride[el.__idx] !== undefined ? colOverride[el.__idx] : el.col;
+        let start: number;
+        if (typeof pinned === 'number' && Number.isFinite(pinned)) {
+          start = Math.min(maxStart, Math.max(0, Math.round(pinned)));
+        } else {
+          let bestStart = 0;
+          let bestTop = Infinity;
+          for (let s = 0; s <= maxStart; s++) {
+            let top = 0;
+            for (let c = s; c < s + span; c++) top = Math.max(top, colHeights[c]);
+            if (top < bestTop) {
+              bestTop = top;
+              bestStart = s;
+            }
           }
+          start = bestStart;
         }
-        const x = bestStart * (colW + COLUMN_GAP);
+
+        let top = 0;
+        for (let c = start; c < start + span; c++) top = Math.max(top, colHeights[c]);
+        const x = start * (colW + COLUMN_GAP);
         const width = span * colW + (span - 1) * COLUMN_GAP;
-        layout[el.__idx] = { x, y: bestTop, width, height: h };
-        for (let c = bestStart; c < bestStart + span; c++) colHeights[c] = bestTop + h + COLUMN_GAP;
+        layout[el.__idx] = { x, y: top, width, height: h };
+        for (let c = start; c < start + span; c++) colHeights[c] = top + h + COLUMN_GAP;
       }
       const totalHeight = Math.max(0, ...colHeights, COLUMN_GAP) - COLUMN_GAP;
       return { layout, totalHeight };
@@ -499,7 +598,7 @@ export default {
       const packing = this.computePacking(order);
       const colW = this.columnWidthPx > 0 ? this.columnWidthPx : COLUMN_MIN_WIDTH;
       const colUnit = colW + COLUMN_GAP;
-      const targetCol = Math.min(this.columnCount - 1, Math.max(0, Math.floor(cursorX / colUnit)));
+      const targetCol = this.columnFromX(cursorX);
 
       // Moduli il cui span orizzontale copre la colonna bersaglio,
       // ordinati dall'alto in basso — sono i soli candidati per
@@ -543,12 +642,20 @@ export default {
       return order.indexOf(last) + 1;
     },
     itemStyle(idx: number) {
+      // Sempre position+transform, mai left/top — bug reale segnalato
+      // dall'utente: usare left/top qui durante il trascinamento e
+      // transform nello stato fermo faceva "saltare" la card al
+      // rilascio (left/top azzerati di scatto passando da un ramo
+      // all'altro, poi la transizione su transform partiva da quella
+      // base sbagliata invece che dal vero punto di rilascio). Stessa
+      // proprietà in entrambi i rami: il rilascio è solo un cambio di
+      // valore di transform, quindi la transizione parte sempre dal
+      // punto corretto.
       if (this.dragging && this.dragging.idx === idx) {
         const d = this.dragging;
         return {
           position: 'absolute',
-          left: d.cursorX + 'px',
-          top: d.cursorY + 'px',
+          transform: `translate(${d.cursorX}px, ${d.cursorY}px)`,
           width: d.width + 'px',
           transition: 'none',
         };
@@ -601,7 +708,15 @@ export default {
     },
     onDragMouseUp() {
       if (!this.dragging) return;
-      const finalOrder = this.previewOrder;
+      const draggedIdx = this.dragging.idx;
+      // Colonna sotto il cursore al momento del rilascio — diventa la
+      // `col` fissa del modulo, stessa colonna già mostrata dal
+      // placeholder tratteggiato durante il trascinamento (packed usa lo
+      // stesso columnFromX come override live, vedi computed `packed`).
+      const targetCol = this.columnFromX(this.dragging.mouseX);
+      const finalOrder = this.previewOrder.map((el: any) =>
+        el.__idx === draggedIdx ? { ...el, col: targetCol } : el
+      );
       window.removeEventListener('mousemove', this.onDragMouseMove);
       window.removeEventListener('mouseup', this.onDragMouseUp);
       this.dragging = null;
@@ -609,7 +724,15 @@ export default {
     },
     commitOrder(order: any[]) {
       if (!this.view) return;
-      this.elements = order.map((el: any) => ({ type: el.type, props: el.props }));
+      // id preservato — vedi il commento su :key nel template: se qui
+      // andasse perso, ogni riordino ripartirebbe da zero identità per
+      // TUTTE le card, non solo quella appena spostata.
+      this.elements = order.map((el: any) => ({
+        type: el.type,
+        props: el.props,
+        col: el.col,
+        id: el.id,
+      }));
     },
     saveEdit() {
       useViewsStore().save();

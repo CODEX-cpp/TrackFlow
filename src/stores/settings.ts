@@ -27,6 +27,12 @@ interface State {
   // instead of a hardcoded 13:00–14:00.
   lunchBreakStart: string;
   lunchBreakEnd: string;
+  // Ore di lavoro attese in una giornata — l'unico input dell'utente per
+  // colorare il modulo Home "Attività (calendario)"
+  // (visualizations/ActivityHeatmap.vue): ogni giorno viene colorato in
+  // base a quanto il tempo non-AFK di quel giorno si avvicina a questo
+  // obiettivo, non più relativo al giorno più attivo del semestre.
+  dailyWorkHoursBudget: number;
   // Ogni quanti secondi aw-watcher-screenshot cattura il desktop — letta
   // direttamente dal watcher Python tramite le impostazioni di
   // aw-server (client.get_setting), non solo dalla webui. Nessuna UI in
@@ -126,6 +132,7 @@ export const useSettingsStore = defineStore('settings', {
     startOfWeek: 'Monday',
     lunchBreakStart: '13:00',
     lunchBreakEnd: '14:00',
+    dailyWorkHoursBudget: 8,
     screenshotIntervalSeconds: 30,
     screenshotRetentionDays: 14,
 

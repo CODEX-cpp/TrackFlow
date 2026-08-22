@@ -283,6 +283,10 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     lunchBreak: {
       title: 'Pausa pranzo',
       help: 'La fascia tratteggiata decorativa disegnata su questo intervallo nella Timeline della Home (default 13:00–14:00).',
+      dailyBudgetTitle: 'Ore di lavoro stimate al giorno',
+      dailyBudgetHelp:
+        'Usato per colorare il modulo "Attività (calendario)" in base a quanto ti avvicini a questo obiettivo giornaliero.',
+      hoursUnit: 'ore',
     },
     screenshot: {
       intervalTitle: 'Intervallo screenshot',
@@ -732,6 +736,16 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     topExcelFiles: 'File Excel principali',
     topVoispeedContacts: 'Contatti VoiSpeed principali',
     topCategories: 'Categorie',
+    activityHeatmap: {
+      title: 'Ore lavorate (calendario)',
+      noData: 'Nessuna attività registrata negli ultimi 6 mesi.',
+      less: 'Meno',
+      more: 'Più',
+    },
+    categoryTreemap: {
+      title: 'Categorie (treemap)',
+      empty: 'Nessuna app categorizzata oggi — assegna una categoria alle app in Impostazioni → Categorizzazione.',
+    },
     customWatcherView: 'Dati di un watcher personalizzato',
     customHtmlModule: 'Modulo HTML personalizzato',
     topVpnClients: 'Top Clienti VPN',

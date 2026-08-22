@@ -57,6 +57,25 @@ div.timeline-section
               @mousemove="moveTooltip($event)"
               @mouseleave="hoveredBlock = null"
             )
+              // Nome + icona dentro il blocco stesso, ma solo quando ci
+              // stanno per davvero — richiesta esplicita dell'utente:
+              // niente troncamento a metà parola, un blocco troppo
+              // stretto resta un semplice rettangolo colorato (il
+              // tooltip al passaggio del mouse mostra comunque nome e
+              // orario). blockLabelFits() confronta la larghezza VERA
+              // del testo (misurata via canvas, non stimata) con
+              // block.width, quindi si ricalcola da sé ad ogni tick di
+              // zoom — block.width è già reattivo (vedi pxPerMinute),
+              // niente da agganciare a parte.
+              template(v-if="blockLabelFits(block)")
+                img.lane-block-icon(
+                  v-if="!failedIcons[block.key]"
+                  :src="iconUrlForApp(block.key)"
+                  @error="markIconFailed(block.key)"
+                  alt=""
+                )
+                span.lane-block-icon-fallback(v-else) {{ fallbackIconForApp(block.key) }}
+                span.lane-block-label(:class="{ 'lane-block-label-dark': isLightColor(block.color) }") {{ displayForKey(block.key) }}
             // Only for the Generale lane, only when the current
             // highlight came from a Top Window Titles row (not a plain
             // app selection) — see titleHighlightRanges(). Drawn above
@@ -318,6 +337,64 @@ div.timeline-section
   // a block moving between row 0/1 glides instead of jumping.
   transition: left 0.3s ease, width 0.3s ease, top 0.2s ease, background-color 0.3s ease,
     opacity 0.2s ease;
+  // Icona+nome (vedi blockLabelFits() nello script) — flex invece di
+  // absolute per il contenuto interno, il blocco stesso resta
+  // posizionato in absolute com'era. overflow:hidden come rete di
+  // sicurezza: blockLabelFits() dovrebbe già escludere ogni caso in cui
+  // il contenuto non entra, ma un font leggermente diverso da quello
+  // usato in blockLabelFits() (fallback prima che il font della pagina
+  // sia caricato) non deve mai far sforare il testo fuori dal blocco.
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  overflow: hidden;
+}
+
+.lane-block-icon,
+.lane-block-icon-fallback {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lane-block-icon {
+  object-fit: contain;
+  border-radius: 3px;
+}
+
+.lane-block-icon-fallback {
+  font-size: 11px;
+  line-height: 1;
+}
+
+// Colore fisso bianco con leggera ombra invece di un contrasto
+// calcolato per-colore — la palette --client-color-1..8 (vedi
+// util/hashColor.ts) è già tutta scura/terrosa apposta per i blocchi
+// colorati della Timeline, il bianco ci si legge sempre sopra.
+.lane-block-label {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Applicata quando il colore di sfondo del blocco è troppo chiaro per
+// il bianco di default (vedi isLightColor() in util/hashColor.ts) —
+// richiesta esplicita dell'utente: alcuni colori icona estratti
+// automaticamente sono chiari abbastanza da rendere il nome illeggibile
+// in bianco. Ombra chiara invece di quella scura sopra, stesso motivo
+// (leggibilità) ma speculare: un alone scuro renderebbe il testo nero
+// ancora più scuro/pesante invece di aiutarlo a staccarsi dallo sfondo.
+.lane-block-label-dark {
+  color: rgba(0, 0, 0, 0.82);
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
 }
 
 // Applied to every block that doesn't match the key selected from a
@@ -445,7 +522,7 @@ div.timeline-section
 import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '~/util/projectTime';
-import { colorVarForName } from '~/util/hashColor';
+import { colorVarForName, isLightColor } from '~/util/hashColor';
 import { domainForEvent } from '~/util/browserDomain';
 import {
   displayNameForApp,
@@ -455,7 +532,10 @@ import {
   isExcelApp,
   isBrowserApp,
   vscodeTitleDisplayName,
+  iconUrlForApp,
+  fallbackIconForApp,
 } from '~/util/appNames';
+import { measureTextWidth } from '~/util/textMeasure';
 import { projectDisplayName, fileDisplayName, isKnownEditorValue } from '~/util/editorNames';
 import homeActivityRangeMixin from '~/mixins/homeActivityRangeMixin';
 import { useTimelineHighlightStore } from '~/stores/timelineHighlight';
@@ -517,6 +597,19 @@ const TRACK_PADDING = 2;
 // drawn — see util/timelineBlocks.ts's dropShortOverlappingRanges().
 const MIN_OVERLAPPING_BLOCK_SECONDS = 120;
 
+// Deve combaciare con .lane-block-label nel CSS (font-size 11px,
+// font-weight semibold) — serve a blockLabelFits() per misurare la
+// larghezza VERA del nome via canvas, non una stima. weight/size scritti
+// a mano invece di leggerli da --font-weight-semibold/getComputedStyle:
+// sarebbe un giro (creare un nodo, leggerne lo stile calcolato) solo per
+// un valore che nel tema non cambia mai.
+const BLOCK_LABEL_FONT = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const BLOCK_ICON_WIDTH = 14;
+const BLOCK_ICON_GAP = 4;
+// Padding orizzontale del blocco (0 4px nel CSS, quindi 4px per lato) —
+// deve combaciare con quello.
+const BLOCK_PADDING_H = 8;
+
 interface Lane {
   key: string;
   name: string;
@@ -566,6 +659,11 @@ export default {
         // CustomModuleWizard.vue) — vedi loadCustomLanes()/rebuildLanes().
         customLanes: { id: string; name: string; events: any[] }[];
       },
+      // Icone app fallite (404 — l'app non ha un'icona estratta) per
+      // nome normalizzato, stesso pattern di TopSummary.vue — evita di
+      // ritentare la stessa immagine rotta ad ogni re-render mostrando
+      // invece l'emoji di fallback (vedi fallbackIconForApp).
+      failedIcons: {} as Record<string, boolean>,
       hoveredBlock: null as (Block & { laneName?: string }) | null,
       tooltipX: 0,
       tooltipY: 0,
@@ -1124,6 +1222,27 @@ export default {
   methods: {
     formatDuration,
     displayForKey: displayNameForApp,
+    iconUrlForApp,
+    fallbackIconForApp,
+    isLightColor,
+    markIconFailed(key: string) {
+      this.$set(this.failedIcons, key, true);
+    },
+    // true se nome+icona entrano DAVVERO nella larghezza attuale del
+    // blocco — richiesta esplicita dell'utente: icona+nome dentro la
+    // barra della Timeline solo quando ci stanno, ricalcolato dal vivo
+    // durante lo zoom (block.width cambia in tempo reale, vedi
+    // pxPerMinute/recomputeLayout). Confronta la larghezza VERA del
+    // testo (measureTextWidth, via canvas) contro lo spazio reale
+    // rimasto dopo icona+gap+padding — non una stima a percentuale come
+    // nel treemap (lì l'area conta, qui conta solo se il testo entra in
+    // una riga).
+    blockLabelFits(block: Block): boolean {
+      const text = this.displayForKey(block.key);
+      const textWidth = measureTextWidth(text, BLOCK_LABEL_FONT);
+      const needed = BLOCK_ICON_WIDTH + BLOCK_ICON_GAP + textWidth + BLOCK_PADDING_H;
+      return block.width >= needed;
+    },
     // .timeline-scroll only exists in the DOM once there's data to show
     // (the empty state renders a different element entirely — see the
     // v-if/v-else in the template), so this has to run after the DOM

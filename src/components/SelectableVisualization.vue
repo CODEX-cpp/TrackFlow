@@ -127,6 +127,10 @@ div.vis-card(v-if="visibile")
                  with_limit)
     div(v-if="type == 'top_categories'")
       aw-category-bar(:apps="top_apps_filtered")
+    div(v-if="type == 'category_treemap'")
+      aw-category-treemap(:apps="top_apps_filtered")
+    div(v-if="type == 'activity_heatmap'")
+      aw-activity-heatmap
     div(v-if="type == 'custom_watcher_view' && !props.templateId")
       aw-custom-watcher-view(:bucket-id="props.bucketId" :title="props.title")
     div(v-if="type == 'custom_watcher_view' && props.templateId")
@@ -305,6 +309,7 @@ import { useActivityStore } from '~/stores/activity';
 import { useViewsStore } from '~/stores/views';
 import { useSettingsStore } from '~/stores/settings';
 import { useTimelineHighlightStore } from '~/stores/timelineHighlight';
+import { useAppCategoriesStore } from '~/stores/appCategories';
 
 import moment from 'moment';
 
@@ -322,6 +327,7 @@ export default {
       activityStore: useActivityStore(),
       settingsStore: useSettingsStore(),
       highlightStore: useTimelineHighlightStore(),
+      appCategoriesStore: useAppCategoriesStore(),
 
       types: [
         'top_apps',
@@ -334,6 +340,8 @@ export default {
         'top_excel_files',
         'top_voispeed_contacts',
         'top_categories',
+        'category_treemap',
+        'activity_heatmap',
         'custom_watcher_view',
         'custom_html_module',
         'top_vpn_clients',
@@ -438,6 +446,20 @@ export default {
           // "watcher mancante" per questo tipo.
           available: true,
         },
+        activity_heatmap: {
+          title: this.$t('visualizations.activityHeatmap.title'),
+          // Sempre "disponibile" come top_categories sopra — usa gli
+          // eventi AFK direttamente, un bucket assente mostra solo lo
+          // stato vuoto onesto del componente invece di questo banner.
+          available: true,
+        },
+        category_treemap: {
+          title: this.$t('visualizations.categoryTreemap.title'),
+          // Stesso ragionamento di top_categories — usa gli stessi
+          // eventi finestra di Top Applications, nessun bucket/watcher
+          // dedicato.
+          available: true,
+        },
         custom_watcher_view: {
           title: this.$t('visualizations.customWatcherView'),
           available: true,
@@ -537,6 +559,17 @@ export default {
       }
       if (this.type === 'top_categories') {
         return this.top_apps_filtered.length === 0;
+      }
+      if (this.type === 'category_treemap') {
+        // A differenza di top_categories (che mostra comunque una riga
+        // "Non categorizzato"), questo modulo ha senso solo se ALMENO
+        // un'app ha davvero una categoria assegnata — richiesta
+        // esplicita dell'utente: "funzionerà solo se ci sono app
+        // categorizzate". Un treemap con una sola categoria enorme
+        // "Non categorizzato" non aggiungerebbe nulla a Top Applications.
+        return !this.top_apps_filtered.some(
+          (e: any) => e.data.app && this.appCategoriesStore.categoryForApp(e.data.app)
+        );
       }
       return false;
     },

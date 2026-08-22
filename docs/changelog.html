@@ -43,6 +43,17 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.17</h2>
+      <ul>
+        <li>Fixed a bug where the window was invisible on restart if it had been closed while minimized: Windows saved a fake off-screen position/size, and the window came back tiny and off-screen.</li>
+        <li>Removed the console window that used to open on every app launch.</li>
+        <li>New Home module "Hours worked (calendar)": a GitHub-contributions-style grid of the last 6 months, colored by actual hours worked against a configurable daily budget (Settings → working hours).</li>
+        <li>New Home module "Categories (treemap)": a proportional treemap showing time per category, with each category's most-used apps nested inside — entries too small to read merge automatically into "Other" or are hidden.</li>
+        <li>Home "Edit modules" mode: dragging a module now pins it to the chosen column instead of always falling back to the shortest one, with a dashed preview of where it will land. Also fixed an animation bug where releasing a module could make the ones below overlap or leave an empty gap.</li>
+        <li>Timeline: bars now show the app's icon and name when there's enough room, updating live while zooming; the text automatically switches to black on lighter colors to stay readable.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.16</h2>
       <ul>
         <li>Fixed a bug where import and export depended on the machine's name: a file exported from one computer was never recognized when imported on another, even when the matching watcher existed. Matching no longer looks at the machine name, and exported files no longer reveal it.</li>

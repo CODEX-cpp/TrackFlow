@@ -5,6 +5,34 @@ interface IElement {
   type: string;
   size?: number;
   props?: Record<string, unknown>;
+  // Colonna (indice 0-based) scelta esplicitamente dall'utente
+  // trascinando il modulo lì in "Modifica moduli" — vedi
+  // HomeModulesSection.vue's computePacking(). undefined = non ancora
+  // spostato manualmente: l'algoritmo lo piazza da solo nella colonna
+  // più corta disponibile (comportamento identico a prima di questo
+  // campo). Una volta impostata resta fissa anche se ne risulta una
+  // colonna più alta delle altre — richiesta esplicita dell'utente:
+  // poter impilare un modulo sotto un altro più alto invece di essere
+  // sempre ribilanciato altrove dall'euristica "colonna più corta".
+  col?: number;
+  // Identificatore stabile per card — NON la posizione nell'array
+  // (quella cambia ad ogni riordino). Serve come :key in
+  // HomeModulesSection.vue: senza un id stabile, trascinando un modulo
+  // Vue riassegna le chiavi per posizione e finisce per riusare il nodo
+  // DOM di un'ALTRA card per quella spostata, portandosi dietro la sua
+  // vecchia posizione come punto di partenza della transizione CSS —
+  // bug reale segnalato dall'utente (l'animazione al rilascio "parte
+  // dall'alto della colonna" invece che dal punto di rilascio).
+  // Assegnato una volta alla creazione (vedi generateElementId) e da lì
+  // in poi preservato attraverso ogni riordino/modifica.
+  id?: string;
+}
+
+function generateElementId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'el-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
 export interface View {
@@ -23,21 +51,22 @@ export interface View {
 // request to not carry that over.
 // Ordine e selezione di default al primo avvio (nessun'impostazione
 // salvata ancora) — richiesta esplicita: Top Applications, Top Window
-// Titles, Top Editor Projects, Top Editor Files, Categorie, in
-// quest'ordine (Uso Claude e Top Clienti VPN tolti, richiesta
-// esplicita). L'utente può comunque personalizzare da "Modifica
-// moduli" in qualunque momento — questo è solo il punto di partenza,
-// non un vincolo permanente.
+// Titles, Top Editor Projects, Top Editor Files, Categorie, Ore
+// lavorate (calendario), in quest'ordine (Uso Claude e Top Clienti VPN
+// tolti, richiesta esplicita). L'utente può comunque personalizzare da
+// "Modifica moduli" in qualunque momento — questo è solo il punto di
+// partenza, non un vincolo permanente.
 const desktopViews: View[] = [
   {
     id: 'summary',
     name: 'Summary',
     elements: [
-      { type: 'top_apps', size: 3 },
-      { type: 'top_titles', size: 3 },
-      { type: 'top_editor_projects', size: 3 },
-      { type: 'top_editor_files', size: 3 },
-      { type: 'top_categories', size: 3 },
+      { type: 'top_apps', size: 3, id: 'default-top-apps' },
+      { type: 'top_titles', size: 3, id: 'default-top-titles' },
+      { type: 'top_editor_projects', size: 3, id: 'default-top-editor-projects' },
+      { type: 'top_editor_files', size: 3, id: 'default-top-editor-files' },
+      { type: 'top_categories', size: 3, id: 'default-top-categories' },
+      { type: 'activity_heatmap', id: 'default-activity-heatmap' },
     ],
   },
 ];
@@ -81,7 +110,17 @@ export const useViewsStore = defineStore('views', {
       // tornare all'ultimo stato salvato, ma quello stato era già
       // stato modificato a sua insaputa — Annulla non annullava
       // davvero niente.
-      this.$patch({ views: JSON.parse(JSON.stringify(views)) });
+      const copia: View[] = JSON.parse(JSON.stringify(views));
+      // Retrocompatibilità: dati salvati prima dell'introduzione di
+      // `id` (vedi IElement sopra) non ce l'hanno ancora — assegnato
+      // qui una volta sola, poi preservato da setElements/editView/
+      // addVisualization attraverso ogni modifica successiva.
+      for (const view of copia) {
+        for (const el of view.elements) {
+          if (!el.id) el.id = generateElementId();
+        }
+      }
+      this.$patch({ views: copia });
       console.log('Loaded views:', this.views);
     },
     clearViews(this: State) {
@@ -106,7 +145,7 @@ export const useViewsStore = defineStore('views', {
       element.props = props;
     },
     addVisualization(this: State, { view_id, type }) {
-      this.views.find(v => v.id == view_id).elements.push({ type: type });
+      this.views.find(v => v.id == view_id).elements.push({ type: type, id: generateElementId() });
     },
     // Come addVisualization, ma con props già pronti — usato dalla
     // creazione di un watcher personalizzato per aggiungere subito il
@@ -116,7 +155,7 @@ export const useViewsStore = defineStore('views', {
       this: State,
       { view_id, type, props }: { view_id: string; type: string; props: Record<string, unknown> }
     ) {
-      this.views.find(v => v.id == view_id).elements.push({ type, props });
+      this.views.find(v => v.id == view_id).elements.push({ type, props, id: generateElementId() });
     },
     removeVisualization(this: State, { view_id, el_id }) {
       this.views.find(v => v.id == view_id).elements.splice(el_id, 1);

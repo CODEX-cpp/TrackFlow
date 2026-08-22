@@ -1323,12 +1323,44 @@ pub fn run() {
                                 // sessione lascerebbe altrimenti la finestra
                                 // fuori da qualunque schermo visibile — corretto
                                 // PRIMA di un eventuale show(), mai visibile
-                                // all'utente.
-                                if let Some(stato) = stato_salvato {
+                                // all'utente. Il risultato (posizione ed
+                                // eventuale dimensione corrette) viene tenuto in
+                                // `stato_effettivo`, non ricalcolato dal grezzo
+                                // `stato_salvato` più sotto — altrimenti il
+                                // thread di riaffermazione a 2s (vedi sotto)
+                                // rimetterebbe la finestra esattamente nello
+                                // stato rotto da cui l'abbiamo appena corretta.
+                                let stato_effettivo = stato_salvato.map(|stato| {
+                                    let mut corretto = stato;
                                     if !window_state::dentro_uno_schermo(&window, &stato) {
                                         let _ = window.center();
+                                        // Legge la posizione VERA dopo center()
+                                        // invece di ricalcolarla — più semplice e
+                                        // meno soggetto a errori che duplicare la
+                                        // logica di centratura di Tauri qui.
+                                        if let Ok(pos) = window.outer_position() {
+                                            corretto.x = pos.x;
+                                            corretto.y = pos.y;
+                                        }
                                     }
-                                }
+                                    // Un file window-state.json già scritto da una
+                                    // build precedente (prima del fix sul lato
+                                    // salvataggio, vedi il commento sull'handler
+                                    // Moved/Resized più sotto) può ancora contenere
+                                    // una dimensione minuscola catturata mentre la
+                                    // finestra era ridotta a icona — center() sopra
+                                    // sposta solo la posizione, non la dimensione,
+                                    // quindi da sola non basta: senza questo, la
+                                    // finestra finirebbe ricentrata ma restando
+                                    // comunque una fessura pressoché invisibile.
+                                    if corretto.width < 200 || corretto.height < 200 {
+                                        let _ = window
+                                            .set_size(tauri::PhysicalSize::new(1400u32, 900u32));
+                                        corretto.width = 1400;
+                                        corretto.height = 900;
+                                    }
+                                    corretto
+                                });
                                 // Richiesta esplicita: avviato dalla voce di
                                 // avvio automatico di Windows (vedi
                                 // autostart.rs, che passa questo argomento
@@ -1353,7 +1385,7 @@ pub fn run() {
                                 // dimensione salvata un attimo più tardi, così ha
                                 // sempre l'ultima parola invece di essere
                                 // silenziosamente sovrascritta.
-                                if let Some(stato) = stato_salvato {
+                                if let Some(stato) = stato_effettivo {
                                     let window_per_riaffermazione = window.clone();
                                     std::thread::spawn(move || {
                                         std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -1425,10 +1457,31 @@ pub fn run() {
                                             {
                                                 return;
                                             }
+                                            // Bug reale segnalato dall'utente: ridurre la
+                                            // finestra a icona fa arrivare qui un evento
+                                            // Moved/Resized con Windows che riporta la
+                                            // posizione come (-32000, -32000) — un valore
+                                            // sentinella del sistema operativo per "finestra
+                                            // minimizzata", non una coordinata vera — insieme
+                                            // a una dimensione minuscola. Salvarlo così com'è
+                                            // significava riaprire la prossima volta una
+                                            // fessura di pochi pixel, fuori da qualunque
+                                            // schermo: l'utente vedeva l'icona nella barra
+                                            // applicazioni ma nessuna finestra visibile.
+                                            // is_minimized() è la guardia corretta; il
+                                            // controllo sulla dimensione minima resta come
+                                            // rete di sicurezza per qualunque altra causa
+                                            // porti a uno stato ugualmente inutilizzabile.
+                                            if window_per_salvataggio.is_minimized().unwrap_or(false) {
+                                                return;
+                                            }
                                             if let (Ok(pos), Ok(size)) = (
                                                 window_per_salvataggio.outer_position(),
                                                 window_per_salvataggio.inner_size(),
                                             ) {
+                                                if size.width < 200 || size.height < 200 {
+                                                    return;
+                                                }
                                                 window_state::salva(
                                                     &app_data_dir_per_salvataggio,
                                                     &window_state::StatoFinestra {

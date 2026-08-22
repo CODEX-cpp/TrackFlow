@@ -5,6 +5,24 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.17
+
+### it
+- Corretto un bug per cui la finestra risultava invisibile al riavvio se era stata chiusa minimizzata: Windows salvava una posizione/dimensione fittizia, e la finestra ripartiva fuori schermo e microscopica.
+- Rimossa la finestra della console che si apriva ad ogni avvio dell'app.
+- Nuovo modulo Home "Ore lavorate (calendario)": una griglia stile "contributi GitHub" degli ultimi 6 mesi, colorata in base alle ore effettivamente lavorate rispetto a un budget giornaliero configurabile (Impostazioni → orari di lavoro).
+- Nuovo modulo Home "Categorie (treemap)": un diagramma ad albero proporzionale che mostra il tempo per categoria, con le app più usate di ciascuna categoria annidate all'interno — le voci troppo piccole per essere leggibili si accorpano automaticamente in "Altro" o vengono nascoste.
+- Modalità "Modifica moduli" nella Home: trascinare un modulo ora lo fissa nella colonna scelta invece di farlo ricadere sempre nella colonna più corta, con un'anteprima tratteggiata di dove verrà rilasciato. Corretto anche un bug di animazione per cui, rilasciando un modulo, quelli sotto potevano accavallarsi o lasciare uno spazio vuoto.
+- Timeline: le barre ora mostrano icona e nome dell'app quando c'è spazio a sufficienza, aggiornandosi dal vivo durante lo zoom; il testo passa automaticamente a nero sui colori più chiari per restare leggibile.
+
+### en
+- Fixed a bug where the window was invisible on restart if it had been closed while minimized: Windows saved a fake off-screen position/size, and the window came back tiny and off-screen.
+- Removed the console window that used to open on every app launch.
+- New Home module "Hours worked (calendar)": a GitHub-contributions-style grid of the last 6 months, colored by actual hours worked against a configurable daily budget (Settings → working hours).
+- New Home module "Categories (treemap)": a proportional treemap showing time per category, with each category's most-used apps nested inside — entries too small to read merge automatically into "Other" or are hidden.
+- Home "Edit modules" mode: dragging a module now pins it to the chosen column instead of always falling back to the shortest one, with a dashed preview of where it will land. Also fixed an animation bug where releasing a module could make the ones below overlap or leave an empty gap.
+- Timeline: bars now show the app's icon and name when there's enough room, updating live while zooming; the text automatically switches to black on lighter colors to stay readable.
+
 ## 0.1.16
 
 ### it
