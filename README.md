@@ -1,6 +1,21 @@
-# TrackFlow
+<div align="center">
+  <img src="docs/assets/img/logo-256.png" alt="TrackFlow logo" width="120" height="120">
 
-A Windows desktop app that automatically tracks how you spend your time at work — apps used, active windows, VPN sessions, VoiSpeed calls, Claude Code sessions, periodic screenshots — and organizes it all into a daily timeline, summary modules on the home screen, and projects with a dedicated stopwatch.
+  # TrackFlow
+
+  **Automatic time tracking for people who bill by the client.**
+
+  [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-3178c6)](LICENSE.txt)
+  [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](#)
+  [![Latest release](https://img.shields.io/github/v/release/CODEX-cpp/TrackFlow?label=release)](https://github.com/CODEX-cpp/TrackFlow/releases/latest)
+  [![Fork of ActivityWatch](https://img.shields.io/badge/fork%20of-ActivityWatch-e67635)](https://activitywatch.net/)
+</div>
+
+---
+
+TrackFlow watches what you actually work on — apps, active windows, VPN sessions, VoiSpeed calls, Excel files, Claude Code sessions, periodic screenshots — and turns it into a daily timeline, at-a-glance Home modules, and per-client projects with their own stopwatch. No manual timers, no "did I remember to log that."
+
+It was built around one recurring, mundane problem: **which client was I actually working for, and for how long?** A VPN session maps to a client. An Excel file maps to a client. A project maps to a client with an hour budget and overrun alerts. Everything ends up on one timeline instead of scattered across memory, spreadsheets, and VPN client logs.
 
 It's a fork of [ActivityWatch](https://activitywatch.net/), rewritten almost entirely: the original Python backend (server, watchers, `aw-notify`) has been replaced with a single Rust process embedded in [Tauri](https://tauri.app/) — no external server, no open network port, everything runs in-process inside the app — and the web UI has been heavily redesigned on top of the original Vue 2 base.
 
@@ -8,15 +23,15 @@ It's a fork of [ActivityWatch](https://activitywatch.net/), rewritten almost ent
 
 ## Key features
 
-- **Daily timeline** with lanes for apps, VPN, Claude Code, VS Code, Excel, VoiSpeed, browser
-- **Reorderable home modules** — top apps, top window titles, Claude usage, and more
-- **App→category tagging**, assignable by hand or automatically by an AI agent (Claude)
-- **Projects** with start/pause stopwatch, hour budgets, deadlines and overrun alerts
-- **Custom notifications** — configurable rules by category/app/project/idle time/VPN, delivered as native Windows notifications
-- **Dedicated watchers**: active window, idle (AFK), VPN sessions (OpenVPN Connect + ZyWALL SecuExtender), VoiSpeed, Claude Code, VS Code, Excel, periodic screenshots, app icons
-- **Configurable privacy filters** — drop or redact sensitive data before it's ever written to disk
-- **Chat with an AI agent** (Claude) that answers questions about your own activity data
-- **Self-updating** — checks for new releases on startup, downloads and verifies them (digital signature) in the background, and prompts to restart when ready; can be switched to a manual "click to update" mode from Settings
+- 📅 **Daily timeline** with lanes for apps, VPN, Claude Code, VS Code, Excel, VoiSpeed, browser
+- 🧩 **Reorderable home modules** — top apps, top window titles, Claude usage, and more
+- 🏷️ **App→category tagging**, assignable by hand or automatically by an AI agent (Claude)
+- ⏱️ **Projects** with start/pause stopwatch, hour budgets, deadlines and overrun alerts
+- 🔔 **Custom notifications** — configurable rules by category/app/project/idle time/VPN, delivered as native Windows notifications
+- 👀 **Dedicated watchers**: active window, idle (AFK), VPN sessions (OpenVPN Connect + ZyWALL SecuExtender), VoiSpeed, Claude Code, VS Code, Excel, periodic screenshots, app icons
+- 🔒 **Configurable privacy filters** — drop or redact sensitive data before it's ever written to disk
+- 💬 **Chat with an AI agent** (Claude) that answers questions about your own activity data
+- 🔄 **Self-updating** — checks for new releases on startup, downloads and verifies them (digital signature) in the background, and prompts to restart when ready; can be switched to a manual "click to update" mode from Settings
 
 ## Tech stack
 
