@@ -175,7 +175,9 @@ import { getHomeClient } from '~/util/awclient';
 // Moduli a piena larghezza (span = tutte le colonne) — nessun tipo la
 // usa più oggi (i due che la popolavano, sunburst_clock e vis_timeline,
 // sono stati rimossi, vedi BLUEPRINT.md sezione 16), lasciata pronta
-// per un futuro modulo "large".
+// per un futuro modulo "large". workflow_grid l'aveva usata inizialmente
+// ma è stato riportato a 3 colonne su richiesta esplicita (vedi
+// TRIPLE_TYPES sotto) — troppo largo a tutta pagina.
 const LARGE_TYPES: string[] = [];
 // Moduli larghi 2 colonne (es. Categorie) — vedi BLUEPRINT.md sezione
 // 17/18 per la storia completa di come si è arrivati a un vero motore
@@ -184,8 +186,12 @@ const LARGE_TYPES: string[] = [];
 // TRIPLE_TYPES su richiesta esplicita, in coppia con la finestra
 // temporale portata a 6 mesi (vedi GIORNI_FINESTRA in
 // ActivityHeatmap.vue) — è la combinazione larghezza/durata che riempie
-// la card senza lasciarla vuota a destra né farla traboccare.
-const DOUBLE_TYPES = ['top_categories', 'activity_heatmap'];
+// la card senza lasciarla vuota a destra né farla traboccare. workflow_grid
+// (griglia categorie×slot da 15 minuti) è passato di qui in due tappe su
+// richiesta esplicita dell'utente — prima tutta larghezza (LARGE_TYPES),
+// poi 3 colonne (TRIPLE_TYPES), infine 2 — resta comunque scrollabile in
+// orizzontale se il contenuto non entra (vedi .workflow-grid-scroll).
+const DOUBLE_TYPES = ['top_categories', 'activity_heatmap', 'workflow_grid'];
 // Moduli larghi 3 colonne — category_treemap (treemap categorie→app)
 // richiede esplicitamente questa larghezza (richiesta dell'utente: "x3,
 // non x2 come Categorie/Calendario") per avere spazio sufficiente a

@@ -23,6 +23,8 @@ div
     )
       span.cat-chip-name {{ c.name }}
       span.cat-chip-count {{ c.apps.length }}
+      span.cat-chip-edit(@click.stop="apriModificaCategoria(c.name)")
+        icon(name="pencil-alt")
       span.cat-chip-delete(@click.stop="categoriaDaEliminare = c.name") ×
   div.settings-row-help(v-else) {{ $t('settings.categorization.noCategories') }}
 
@@ -74,12 +76,33 @@ div
     @cancel="categoriaDaEliminare = null"
   )
     div {{ $t('settings.categorization.deleteConfirmText', { name: categoriaDaEliminare }) }}
+
+  confirm-modal(
+    v-if="categoriaDaModificare"
+    :title="$t('settings.categorization.editConfirmTitle', { name: categoriaDaModificare })"
+    :confirm-label="$t('settings.categorization.editConfirm')"
+    :cancel-label="$t('settings.categorization.editCancel')"
+    confirm-variant="primary"
+    @confirm="confermaModificaCategoria"
+    @cancel="categoriaDaModificare = null"
+  )
+    div.cat-color-label {{ $t('settings.categorization.colorLabel') }}
+    div.cat-color-picker
+      div.cat-color-swatch(
+        v-for="color in paletteColoriCategoria"
+        :key="color"
+        :class="{ 'cat-color-swatch-selected': colorSelezionato === color }"
+        :style="{ backgroundColor: color }"
+        @click="colorSelezionato = color"
+      )
 </template>
 
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
 import { useAppCategoriesStore } from '~/stores/appCategories';
 import { iconUrlForApp, fallbackIconForApp } from '~/util/appNames';
+import { CATEGORY_COLOR_PALETTE } from '~/util/hashColor';
+import 'vue-awesome/icons/pencil-alt';
 
 interface AppConosciuta {
   app: string;
@@ -96,6 +119,17 @@ export default {
       categorieStore: useAppCategoriesStore(),
       nuovaCategoria: '',
       categoriaDaEliminare: null as string | null,
+      // Popup di modifica — per ora solo il colore (icona penna → 15
+      // cerchi pastello, vedi CATEGORY_COLOR_PALETTE in util/hashColor.ts):
+      // base su cui costruire altra modifica (rinomina, ecc.) in un
+      // secondo momento.
+      categoriaDaModificare: null as string | null,
+      // Colore selezionato nel popup — inizializzato al colore GIÀ
+      // salvato per la categoria (apriModificaCategoria sotto), non a
+      // quello automatico calcolato dal nome: così l'anello giallo mostra
+      // "nessuna scelta ancora fatta" per una categoria mai modificata,
+      // invece di far sembrare selezionato un cerchio a caso.
+      colorSelezionato: null as string | null,
       categoriaSelezionata: null as string | null,
       appConosciute: [] as AppConosciuta[],
       caricandoApp: true,
@@ -107,6 +141,9 @@ export default {
   computed: {
     categorie() {
       return this.categorieStore.categories;
+    },
+    paletteColoriCategoria() {
+      return CATEGORY_COLOR_PALETTE;
     },
     appFiltrate(): AppConosciuta[] {
       const query = this.filtroApp.trim().toLowerCase();
@@ -167,6 +204,16 @@ export default {
       }
       this.categoriaDaEliminare = null;
     },
+    apriModificaCategoria(nome: string) {
+      const cat = this.categorie.find((c: any) => c.name === nome);
+      this.colorSelezionato = (cat && cat.color) || null;
+      this.categoriaDaModificare = nome;
+    },
+    async confermaModificaCategoria() {
+      if (!this.categoriaDaModificare) return;
+      await this.categorieStore.setCategoryColor(this.categoriaDaModificare, this.colorSelezionato);
+      this.categoriaDaModificare = null;
+    },
     async assegnaApp(app: string, categoria: string | null) {
       await this.categorieStore.assignApp(app, categoria);
     },
@@ -204,6 +251,11 @@ export default {
   color: var(--color-text);
   cursor: pointer;
   border: 1px solid transparent;
+  /* line-height:1 su tutto il chip — senza, nome/numero/icone (font-size
+     diversi tra loro) prendevano ciascuno l'altezza di riga naturale del
+     proprio font-size invece di una comune, facendoli sembrare storti
+     l'uno rispetto all'altro anche con align-items:center sul flex. */
+  line-height: 1;
 }
 
 .cat-chip:hover {
@@ -226,15 +278,86 @@ export default {
   font-size: var(--font-size-xs);
 }
 
+/* Stesso box fisso (16x16, contenuto centrato) per penna e ×, invece
+   di due span "a misura di contenuto" con dimensioni/line-height
+   diverse tra loro — era quello a farle sembrare posizionate a
+   altezze/dimensioni diverse l'una dall'altra, segnalato dall'utente. */
+.cat-chip-edit,
 .cat-chip-delete {
   cursor: pointer;
   color: var(--color-text-faint);
-  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   line-height: 1;
+}
+
+.cat-chip-edit:hover {
+  color: var(--color-accent1);
+}
+
+.cat-chip-delete {
+  font-size: 15px;
 }
 
 .cat-chip-delete:hover {
   color: var(--color-danger);
+}
+
+.cat-chip-edit svg {
+  display: block;
+  width: 10px;
+  height: 10px;
+  /* Piccolo aggiustamento a occhio verso il basso — richiesta esplicita
+     dell'utente, il glifo della matita ha più "aria" visiva sopra che
+     sotto rispetto alla × accanto, anche a box/dimensioni ormai
+     identici tra i due. */
+  position: relative;
+  top: 1px;
+}
+
+.cat-color-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  margin-bottom: 10px;
+}
+
+.cat-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  /* justify-content:center (non solo flex-wrap) — richiesta esplicita
+     dell'utente: senza, ogni riga (compresa l'ultima, spesso non piena)
+     si allinea a sinistra invece che al centro del popup. Dimensione
+     cerchio/gap scelta apposta con CATEGORY_COLOR_PALETTE (21 colori,
+     vedi util/hashColor.ts) perché entrino ESATTAMENTE 7 per riga nei
+     292px interni del popup (340px - 24px di padding per lato) — 3
+     righe piene, nessun cerchio isolato in fondo. */
+  justify-content: center;
+  gap: 8px;
+}
+
+.cat-color-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cat-color-swatch:hover {
+  filter: brightness(1.1);
+}
+
+/* Anello giallo attorno al cerchio selezionato — richiesta esplicita
+   dell'utente. box-shadow invece di border/outline: un anello via
+   box-shadow segue sempre il border-radius:50% del cerchio in modo
+   pulito, con un piccolo distacco (il primo box-shadow, colore sfondo
+   del popup) tra lo swatch e l'anello vero e proprio. */
+.cat-color-swatch-selected {
+  box-shadow: 0 0 0 3px var(--color-bg-elev), 0 0 0 5px #f2c94c;
 }
 
 .cat-apps-section {

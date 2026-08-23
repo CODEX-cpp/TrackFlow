@@ -17,6 +17,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
+import { useSettingsStore } from '~/stores/settings';
 import logoUrl from '~/assets/logo.png';
 
 marked.setOptions({ breaks: true });
@@ -39,6 +40,17 @@ export default {
       // già usato altrove (vedi CategorizationSettings.vue).
     }
     try {
+      // Bug reale segnalato dall'utente: il changelog compariva in
+      // inglese anche con l'app in italiano. Causa: this.$i18n.locale
+      // parte dalla lingua rilevata dal sistema operativo finché
+      // setAppLocale() non applica quella salvata dall'utente
+      // (settingsStore.load(), asincrono) — se questo componente si
+      // monta e legge $i18n.locale PRIMA che quel caricamento finisca
+      // (es. Impostazioni → Info aperta subito dopo l'avvio), leggeva
+      // ancora il default del sistema invece della preferenza vera.
+      // ensureLoaded() aspetta che quel caricamento sia finito per
+      // davvero prima di leggere la lingua.
+      await useSettingsStore().ensureLoaded();
       const markdown = await invoke<string>('leggi_changelog', {
         versione: this.versione,
         lingua: this.$i18n.locale,

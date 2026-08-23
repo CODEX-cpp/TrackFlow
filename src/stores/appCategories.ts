@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { useSettingsStore } from './settings';
+import { colorVarForName } from '~/util/hashColor';
 
 // Nuovo sistema di categorie, deliberatamente semplice: una categoria è
 // solo un nome + un elenco di app assegnate (nessuna regola regex, a
@@ -13,6 +14,14 @@ import { useSettingsStore } from './settings';
 export interface AppCategory {
   name: string;
   apps: string[];
+  // Colore scelto a mano dal popup "Modifica categoria" (Impostazioni →
+  // Categorizzazione, vedi CATEGORY_COLOR_PALETTE in util/hashColor.ts)
+  // — assente per ogni categoria mai modificata così, nel qual caso
+  // colorForCategoryName() sotto ricade sul colore automatico calcolato
+  // da colorVarForName. Opzionale (non un default vuoto) apposta: così
+  // le categorie salvate prima di questa funzione restano valide senza
+  // bisogno di alcuna migrazione.
+  color?: string;
 }
 
 export const useAppCategoriesStore = defineStore('appCategories', {
@@ -31,6 +40,20 @@ export const useAppCategoriesStore = defineStore('appCategories', {
           c.apps.some(a => a.toLowerCase() === app.toLowerCase())
         );
         return cat ? cat.name : null;
+      };
+    },
+    // Colore da usare per QUALUNQUE visualizzazione basata su categoria
+    // (treemap, "Flusso di lavoro", barra Categorie) — unico punto che
+    // decide tra il colore scelto a mano (popup "Modifica categoria") e
+    // quello automatico calcolato dal nome (colorVarForName, la stessa
+    // funzione già usata per app/domini/client nella Timeline). Non
+    // richiede che la categoria esista davvero: una categoria mai
+    // creata (es. "Non categorizzato", che non è una voce reale in
+    // `categories`) ricade comunque sul colore automatico.
+    colorForCategoryName() {
+      return (name: string): string => {
+        const cat = this.categories.find(c => c.name === name);
+        return (cat && cat.color) || colorVarForName(name);
       };
     },
   },
@@ -69,6 +92,21 @@ export const useAppCategoriesStore = defineStore('appCategories', {
         const target = updated.find(c => c.name === categoryName);
         if (target) target.apps.push(app);
       }
+      await settingsStore.update({ appCategories: updated });
+    },
+    // `color: null` toglie la scelta manuale (torna al colore automatico
+    // — vedi colorForCategoryName sopra), non un colore "nullo" vero e
+    // proprio.
+    async setCategoryColor(name: string, color: string | null) {
+      const settingsStore = useSettingsStore();
+      const updated = settingsStore.appCategories.map(c => {
+        if (c.name !== name) return c;
+        if (color === null) {
+          const { color: _rimosso, ...senzaColore } = c;
+          return senzaColore;
+        }
+        return { ...c, color };
+      });
       await settingsStore.update({ appCategories: updated });
     },
   },

@@ -40,6 +40,16 @@ export const useTimelineHighlightStore = defineStore('timelineHighlight', {
     highlightedFile: null as string | null,
     zoom: 'day' as TimelineZoom,
     timelineMode: 'normal' as TimelineMode,
+    // --- INIZIO: hover quadratino "Flusso di lavoro" → due linee in Timeline (funzione sperimentale, facile da rimuovere) ---
+    // Intervallo (ISO string, non moment — lo stato di uno store deve
+    // restare serializzabile) su cui disegnare due linee verticali nella
+    // Timeline, impostato da WorkflowGrid.vue al passaggio del mouse su
+    // un quadratino e letto da HomeTimelineSection.vue. Se l'intera
+    // funzione va rimossa: basta cancellare questo campo e i blocchi
+    // delimitati allo stesso modo in WorkflowGrid.vue/
+    // HomeTimelineSection.vue, nessun'altra parte dello store la usa.
+    hoveredRange: null as { start: string; end: string } | null,
+    // --- FINE ---
   }),
   actions: {
     // Clicking the already-selected row again clears it, so there's an
@@ -91,5 +101,13 @@ export const useTimelineHighlightStore = defineStore('timelineHighlight', {
     setTimelineMode(mode: TimelineMode) {
       this.timelineMode = mode;
     },
+    // --- INIZIO: hover quadratino "Flusso di lavoro" → due linee in Timeline ---
+    setHoveredRange(start: string, end: string) {
+      this.hoveredRange = { start, end };
+    },
+    clearHoveredRange() {
+      this.hoveredRange = null;
+    },
+    // --- FINE ---
   },
 });

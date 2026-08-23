@@ -325,6 +325,10 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       deleteCancel: 'Annulla',
       deleteConfirmText:
         'Eliminare la categoria "{name}"? Le app che conteneva torneranno non categorizzate — nessun dato di tracciamento viene perso.',
+      editConfirmTitle: 'Modifica categoria "{name}"',
+      editConfirm: 'Conferma',
+      editCancel: 'Annulla',
+      colorLabel: 'Colore',
       appsTitle: 'App',
       searchPlaceholder: 'Cerca app…',
       onlyUncategorized: 'Solo non categorizzate',
@@ -745,6 +749,11 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     categoryTreemap: {
       title: 'Categorie (treemap)',
       empty: 'Nessuna app categorizzata oggi — assegna una categoria alle app in Impostazioni → Categorizzazione.',
+    },
+    workflowGrid: {
+      title: 'Flusso di lavoro',
+      empty: 'Nessuna attività categorizzata oggi — assegna una categoria alle app in Impostazioni → Categorizzazione.',
+      distractions: 'Distrazioni',
     },
     customWatcherView: 'Dati di un watcher personalizzato',
     customHtmlModule: 'Modulo HTML personalizzato',

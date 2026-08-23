@@ -96,7 +96,6 @@ div.category-bar
 // Applicazioni, niente doppia interrogazione dei dati) e fa da sola tutto
 // il lavoro categoria→durata, non serve altro dal chiamante.
 import { useAppCategoriesStore } from '~/stores/appCategories';
-import { colorVarForName } from '~/util/hashColor';
 import { formatHoursMinutes } from '~/util/projectTime';
 
 // Soglia sotto la quale una categoria (non "Non categorizzato", vedi
@@ -169,7 +168,7 @@ export default {
         color,
       });
 
-      const risultato = principali.map(([nome, durata]) => build(nome, durata, colorVarForName(nome)));
+      const risultato = principali.map(([nome, durata]) => build(nome, durata, this.categorieStore.colorForCategoryName(nome)));
       if (altro > 0) {
         risultato.push(
           build(this.$t('visualizations.categoryBar.other') as string, altro, 'var(--color-text-dim)')

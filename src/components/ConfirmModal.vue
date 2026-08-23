@@ -8,7 +8,7 @@ div
 
     div.edit-modal-actions
       div.pill-btn-ghost(@click="$emit('cancel')") {{ cancelLabel }}
-      div.pill-btn-danger(@click="$emit('confirm')") {{ confirmLabel }}
+      div(:class="confirmVariant === 'danger' ? 'pill-btn-danger' : 'pill-btn'" @click="$emit('confirm')") {{ confirmLabel }}
 </template>
 
 <style lang="scss" scoped>
@@ -28,6 +28,12 @@ export default {
     title: { type: String, required: true },
     confirmLabel: { type: String, default: 'Confirm' },
     cancelLabel: { type: String, default: 'Cancel' },
+    // 'danger' (default, invariato per tutte le chiamate esistenti) per
+    // conferme distruttive (elimina...); 'primary' per un'azione non
+    // distruttiva (es. modifica) che comunque merita lo stesso schema
+    // conferma/annulla — il rosso di pill-btn-danger su un'azione che
+    // non cancella nulla leggerebbe come un avvertimento fuori posto.
+    confirmVariant: { type: String, default: 'danger' },
   },
 };
 </script>

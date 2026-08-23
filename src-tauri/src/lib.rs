@@ -614,6 +614,19 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path, watcher_templat
         .to_str()
         .expect("Percorso del database non valido UTF-8")
         .to_string();
+    // Controllo di integrità + auto-ripristino da backup, PRIMA di
+    // aprire il database per davvero — vedi aw-datastore/src/
+    // recovery.rs per il perché (corruzione reale già capitata più
+    // volte durante lo sviluppo, quasi certamente da un
+    // TerminateProcess esterno a metà di un checkpoint del WAL: nessun
+    // fix lato "chiusura pulita" può prevenirla, solo rilevarla e
+    // ripararla al prossimo avvio). Il valore di ritorno è solo
+    // informativo per il log qui sotto — il database al percorso
+    // db_path è comunque pronto all'uso in entrambi i casi.
+    if aw_datastore::verifica_e_ripristina(&db_path) {
+        log::warn!("Database ripristinato automaticamente da un backup dopo aver rilevato corruzione all'avvio — vedi i log precedenti per i dettagli.");
+    }
+
     let legacy_import = true;
     let datastore = aw_datastore::Datastore::new(db_path, legacy_import);
     // Clonato PRIMA di spostarlo in ServerState — Datastore è solo un

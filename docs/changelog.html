@@ -43,6 +43,16 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.18</h2>
+      <ul>
+        <li>Fixed a bug where the database could get corrupted after an unclean shutdown (e.g. "End task" from Task Manager), leaving the app stuck on a white screen on the next launch. Now, on every startup, the app checks the database's integrity and, if it finds it damaged, restores itself from the latest automatic backup (the damaged file is never deleted, and stays available for manual recovery). The app also takes an automatic backup every 3 hours while the database is healthy.</li>
+        <li>New Home module "Workflow": one row per category, 15-minute columns across the day, colored by how much of that slot was actually covered by activity in that category; a final row shows time away from the PC. Hovering a cell highlights the matching time range in the Timeline with two lines and dims the rest.</li>
+        <li>Settings → Categorization: every category now has a pencil icon to assign it a color from 21 muted tones — used everywhere a category color appears (Categories bar, treemap, "Workflow" module).</li>
+        <li>Fixed a bug where the changelog in Settings → About could show in English even with the app set to Italian.</li>
+        <li>Timeline: icons inside bars now have their own background, so they stay visible even when the icon's color matches the bar's.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.17</h2>
       <ul>
         <li>Fixed a bug where the window was invisible on restart if it had been closed while minimized: Windows saved a fake off-screen position/size, and the window came back tiny and off-screen.</li>

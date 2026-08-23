@@ -5,6 +5,22 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.18
+
+### it
+- Corretto un bug per cui il database poteva corrompersi dopo una chiusura non pulita (es. "Termina attività" da Gestione attività), lasciando l'app con lo schermo bianco al riavvio successivo. Ora, ad ogni avvio, l'app controlla l'integrità del database e, se lo trova danneggiato, si ripristina da sola dall'ultimo backup automatico (il file danneggiato non viene mai cancellato, resta disponibile per un recupero manuale). L'app si fa anche un backup automatico ogni 3 ore quando il database è sano.
+- Nuovo modulo Home "Flusso di lavoro": una riga per ciascuna delle tue categorie, colonne da 15 minuti sull'arco della giornata, colorate in base a quanto di quello slot era davvero occupato da attività di quella categoria; un'ultima riga mostra i periodi di assenza dal PC. Passando il mouse su un quadratino, la Timeline evidenzia l'esatto intervallo corrispondente con due linee e scurisce il resto.
+- Impostazioni → Categorizzazione: ogni categoria ha ora un'icona a forma di matita per assegnarle un colore a scelta tra 21 tonalità tenui — usato ovunque compaia un colore di categoria (barra Categorie, diagramma ad albero, modulo "Flusso di lavoro").
+- Corretto un bug per cui il changelog in Impostazioni → Info poteva comparire in inglese anche con l'app impostata in italiano.
+- Timeline: le icone dentro le barre hanno ora uno sfondo proprio, per restare visibili anche quando il colore dell'icona coincide con quello della barra.
+
+### en
+- Fixed a bug where the database could get corrupted after an unclean shutdown (e.g. "End task" from Task Manager), leaving the app stuck on a white screen on the next launch. Now, on every startup, the app checks the database's integrity and, if it finds it damaged, restores itself from the latest automatic backup (the damaged file is never deleted, and stays available for manual recovery). The app also takes an automatic backup every 3 hours while the database is healthy.
+- New Home module "Workflow": one row per category, 15-minute columns across the day, colored by how much of that slot was actually covered by activity in that category; a final row shows time away from the PC. Hovering a cell highlights the matching time range in the Timeline with two lines and dims the rest.
+- Settings → Categorization: every category now has a pencil icon to assign it a color from 21 muted tones — used everywhere a category color appears (Categories bar, treemap, "Workflow" module).
+- Fixed a bug where the changelog in Settings → About could show in English even with the app set to Italian.
+- Timeline: icons inside bars now have their own background, so they stay visible even when the icon's color matches the bar's.
+
 ## 0.1.17
 
 ### it

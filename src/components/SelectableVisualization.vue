@@ -131,6 +131,8 @@ div.vis-card(v-if="visibile")
       aw-category-treemap(:apps="top_apps_filtered")
     div(v-if="type == 'activity_heatmap'")
       aw-activity-heatmap
+    div(v-if="type == 'workflow_grid'")
+      aw-workflow-grid
     div(v-if="type == 'custom_watcher_view' && !props.templateId")
       aw-custom-watcher-view(:bucket-id="props.bucketId" :title="props.title")
     div(v-if="type == 'custom_watcher_view' && props.templateId")
@@ -342,6 +344,7 @@ export default {
         'top_categories',
         'category_treemap',
         'activity_heatmap',
+        'workflow_grid',
         'custom_watcher_view',
         'custom_html_module',
         'top_vpn_clients',
@@ -458,6 +461,14 @@ export default {
           // Stesso ragionamento di top_categories — usa gli stessi
           // eventi finestra di Top Applications, nessun bucket/watcher
           // dedicato.
+          available: true,
+        },
+        workflow_grid: {
+          title: this.$t('visualizations.workflowGrid.title'),
+          // Sempre "disponibile" come activity_heatmap sopra — si
+          // scarica da sé gli eventi finestra/AFK del giorno corrente,
+          // un bucket assente mostra solo lo stato vuoto onesto del
+          // componente invece di questo banner.
           available: true,
         },
         custom_watcher_view: {

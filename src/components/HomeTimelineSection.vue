@@ -44,6 +44,11 @@ div.timeline-section
 
         div.now-line(v-if="showNowLine" :style="{ left: nowLeft + 'px' }")
 
+        // --- INIZIO: hover quadratino "Flusso di lavoro" → due linee qui (funzione sperimentale, facile da rimuovere — vedi stores/timelineHighlight.ts) ---
+        div.hover-range-dim(v-for="rect in hoveredRangeDimRects" :key="'hover-dim-' + rect.side" :style="{ left: rect.left + 'px', width: rect.width + 'px' }")
+        div.hover-range-line(v-for="line in hoveredRangeLines" :key="'hover-range-' + line.side" :style="{ left: line.left + 'px' }")
+        // --- FINE ---
+
         div.lane(v-for="lane in lanes" :key="lane.key")
           div.lane-label {{ lane.name }}
           div.lane-track(:style="{ height: trackHeight(lane) + 'px' }")
@@ -291,6 +296,61 @@ div.timeline-section
   z-index: 2;
 }
 
+// --- INIZIO: hover quadratino "Flusso di lavoro" → due linee (funzione sperimentale, facile da rimuovere — vedi stores/timelineHighlight.ts) ---
+// Transizione su left (e width per il rettangolo scuro) invece di un
+// v-if che monta/smonta il nodo: chiave stabile nel template
+// (line.side/rect.side, non il valore in px) così, passando veloce da
+// un quadratino all'altro, le due linee e le zone scurite SCIVOLANO
+// verso la nuova posizione invece di sparire/ricomparire di scatto —
+// richiesta esplicita dell'utente dopo aver notato l'effetto "brutto"
+// dello sfarfallio.
+.hover-range-line {
+  position: absolute;
+  // Stessa estensione verticale di .hover-range-dim (top:32px sotto il
+  // righello, bottom:0 fino alla fine vera dell'ultima corsia) —
+  // richiesta esplicita dell'utente: prima le linee usavano la stessa
+  // estensione di .now-line (18px/12px, pensata per un singolo trattino
+  // sottile) e finivano per sporgere sopra/sotto lo sfondo scurito
+  // invece di segnarne esattamente i bordi.
+  top: 32px;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--color-accent1);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 4;
+  transition: left 0.15s ease;
+}
+
+// Le due zone scurite fuori dall'intervallo selezionato — rendono più
+// evidente il tratto di Timeline a cui corrisponde il quadratino sotto
+// hover, richiesta esplicita dell'utente. `side` è sempre 'before'/
+// 'after' (mai il valore), quindi anche a larghezza 0 (range non
+// ancora/più visibile su quel lato) il nodo resta lo stesso e la
+// larghezza anima invece di comparire di scatto.
+.hover-range-dim {
+  position: absolute;
+  // Sopra: rientra oltre il righello (32px, non 18px come
+  // .now-line/.hover-range-line) — a 18px lo sfondo scuro copriva metà
+  // dell'etichetta orario, segnalato dall'utente.
+  // Sotto: 0, non un rientro fisso — il numero di corsie (e quante
+  // righe usa ciascuna, vedi MAX_ROWS_PER_LANE) cambia da un giorno
+  // all'altro a seconda di quali watcher hanno dati, quindi un valore
+  // fisso in px o arrivava troppo corto (bug segnalato dall'utente: non
+  // raggiungeva la fine delle barre di Generale in un giorno con più
+  // righe del solito) o troppo lungo in un altro. .lane:last-child
+  // finisce sempre esattamente al bordo di .timeline-inner (nessun
+  // padding/margine dopo l'ultima corsia), quindi bottom:0 segue sempre
+  // il contenuto vero, qualunque esso sia.
+  top: 32px;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 3;
+  transition: left 0.15s ease, width 0.15s ease;
+}
+// --- FINE ---
+
 .lane {
   display: flex;
   align-items: center;
@@ -351,19 +411,30 @@ div.timeline-section
   overflow: hidden;
 }
 
+// Sfondo pieno (stesso colore di sfondo della Timeline, .timeline-scroll
+// più sopra) dietro l'icona — richiesta esplicita dell'utente: molto
+// spesso il colore dominante dell'icona di un'app combacia con quello
+// del blocco colorato sotto (entrambi derivati dallo stesso colorVarForName/
+// iconColorForApp), rendendo l'icona praticamente invisibile senza un
+// contrasto proprio. Quadrato con angoli arrotondati (non un cerchio,
+// tornato indietro su richiesta esplicita), leggermente più grande di
+// prima (17px, non 15px).
 .lane-block-icon,
 .lane-block-icon-fallback {
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 17px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-sm);
 }
 
 .lane-block-icon {
   object-fit: contain;
-  border-radius: 3px;
+  padding: 1.5px;
+  box-sizing: border-box;
 }
 
 .lane-block-icon-fallback {
@@ -604,7 +675,7 @@ const MIN_OVERLAPPING_BLOCK_SECONDS = 120;
 // sarebbe un giro (creare un nodo, leggerne lo stile calcolato) solo per
 // un valore che nel tema non cambia mai.
 const BLOCK_LABEL_FONT = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const BLOCK_ICON_WIDTH = 14;
+const BLOCK_ICON_WIDTH = 17;
 const BLOCK_ICON_GAP = 4;
 // Padding orizzontale del blocco (0 4px nel CSS, quindi 4px per lato) —
 // deve combaciare con quello.
@@ -831,6 +902,53 @@ export default {
     nowLeft(): number {
       return LANE_LABEL_WIDTH + moment().diff(this.viewStart, 'minutes') * this.pxPerMinute;
     },
+    // --- INIZIO: hover quadratino "Flusso di lavoro" → due linee (funzione sperimentale, facile da rimuovere — vedi stores/timelineHighlight.ts) ---
+    // 0, 1 o 2 linee (solo quelle che cadono dentro la porzione di
+    // giornata attualmente visibile — es. zoomando su un'ora diversa da
+    // quella del quadratino sotto hover, la linea semplicemente non
+    // compare invece di essere disegnata fuori scala/in un punto
+    // fuorviante) per le due estremità dell'intervallo impostato da
+    // WorkflowGrid.vue al passaggio del mouse su un quadratino. `side`
+    // resta stabile da un hover al successivo (solo `left` cambia) —
+    // vedi il commento sulla transizione CSS in .hover-range-line per
+    // il perché.
+    hoveredRangeLines(): { side: 'start' | 'end'; left: number }[] {
+      const range = this.highlightStore.hoveredRange;
+      if (!range) return [];
+      const result: { side: 'start' | 'end'; left: number }[] = [];
+      const estremi: ['start' | 'end', string][] = [
+        ['start', range.start],
+        ['end', range.end],
+      ];
+      for (const [side, iso] of estremi) {
+        const t = moment(iso);
+        if (t.isBefore(this.viewStart) || t.isAfter(this.viewEnd)) continue;
+        result.push({ side, left: LANE_LABEL_WIDTH + t.diff(this.viewStart, 'minutes') * this.pxPerMinute });
+      }
+      return result;
+    },
+    // Le due zone da scurire fuori dall'intervallo (vedi .hover-range-dim
+    // nel CSS) — SEMPRE due voci (mai 0 o 1, a differenza delle linee
+    // sopra), con larghezza 0 quando quel lato dell'intervallo non è
+    // (ancora/più) visibile, cosicché `side` resti una chiave stabile
+    // ('before'/'after') anche muovendosi fuori/dentro l'area visibile,
+    // permettendo alla larghezza di animare invece di comparire di
+    // scatto.
+    hoveredRangeDimRects(): { side: 'before' | 'after'; left: number; width: number }[] {
+      const range = this.highlightStore.hoveredRange;
+      if (!range) return [];
+      const startPx =
+        LANE_LABEL_WIDTH +
+        moment.max(moment(range.start), this.viewStart).diff(this.viewStart, 'minutes') * this.pxPerMinute;
+      const endPx =
+        LANE_LABEL_WIDTH +
+        moment.min(moment(range.end), this.viewEnd).diff(this.viewStart, 'minutes') * this.pxPerMinute;
+      return [
+        { side: 'before', left: LANE_LABEL_WIDTH, width: Math.max(0, startPx - LANE_LABEL_WIDTH) },
+        { side: 'after', left: endPx, width: Math.max(0, this.innerWidthPx - endPx) },
+      ];
+    },
+    // --- FINE ---
     selectedLane(): Lane | null {
       return this.lanes.find(l => l.key === this.selectedLaneKey) || null;
     },

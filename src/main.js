@@ -58,6 +58,7 @@ Vue.component('aw-eventlist', () => import('./visualizations/EventList.vue'));
 Vue.component('aw-category-bar', () => import('./visualizations/CategoryBar.vue'));
 Vue.component('aw-activity-heatmap', () => import('./visualizations/ActivityHeatmap.vue'));
 Vue.component('aw-category-treemap', () => import('./visualizations/CategoryTreemap.vue'));
+Vue.component('aw-workflow-grid', () => import('./visualizations/WorkflowGrid.vue'));
 Vue.component('aw-timeline-barchart', () => import('./visualizations/TimelineBarChart.vue'));
 Vue.component('aw-custom-vis', () => import('./visualizations/CustomVisualization.vue'));
 Vue.component('aw-custom-watcher-view', () => import('./visualizations/CustomWatcherView.vue'));

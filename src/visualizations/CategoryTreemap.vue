@@ -169,7 +169,6 @@ div.cat-treemap-root
 // ampio, per richiesta esplicita) e fa da sé tutto il lavoro app→
 // categoria→layout.
 import { useAppCategoriesStore } from '~/stores/appCategories';
-import { colorVarForName } from '~/util/hashColor';
 import { formatHoursMinutes } from '~/util/projectTime';
 import { displayNameForApp } from '~/util/appNames';
 import { squarify, TreemapInput, TreemapRect } from '~/util/treemap';
@@ -483,7 +482,7 @@ export default {
         const sorgente = categoriePrincipali.find(c => c.name === rect.key);
         const isAltroSintetico = !sorgente && rect.key === altroLabel;
         const isUncategorized = !isAltroSintetico && sorgente!.name === (this.$t('visualizations.categoryBar.uncategorized') as string);
-        const color = isUncategorized || isAltroSintetico ? 'var(--color-text-faint)' : colorVarForName(sorgente!.name);
+        const color = isUncategorized || isAltroSintetico ? 'var(--color-text-faint)' : this.categorieStore.colorForCategoryName(sorgente!.name);
         const bgColor = `color-mix(in srgb, ${color} 8%, var(--color-surface))`;
 
         if (isAltroSintetico) {

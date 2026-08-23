@@ -20,9 +20,11 @@ macro_rules! json_map {
 mod datastore;
 mod legacy_import;
 mod privacy_filter;
+mod recovery;
 mod worker;
 
 pub use self::datastore::DatastoreInstance;
+pub use self::recovery::verifica_e_ripristina;
 pub use self::worker::Datastore;
 
 #[derive(Clone)]
