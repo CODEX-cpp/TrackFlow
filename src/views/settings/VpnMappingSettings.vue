@@ -18,9 +18,10 @@ div
   template(v-else)
     div.settings-row-help {{ $t('settings.vpnMapping.tableHelp') }}
     div.settings-row-help(v-if="righe.length === 0") {{ $t('settings.vpnMapping.allEmpty') }}
-    div.vpn-list(v-else)
+    div.vpn-list.themed-scroll(v-else ref="listaScroll")
       div.vpn-row(v-for="riga in righe" :key="riga.id")
         input.settings-field.vpn-input-client(
+          ref="inputCliente"
           v-model="riga.cliente"
           @input="riga.sovrascritta = true"
           :placeholder="$t('settings.vpnMapping.clientPlaceholder')"
@@ -130,6 +131,18 @@ export default {
     },
     aggiungiRiga() {
       this.righe.push({ id: contatoreId++, indirizzo: '', cliente: '', origineAuto: false, sovrascritta: false });
+      // La nuova riga finisce sempre in fondo all'array (l'ordinamento
+      // alfabetico è calcolato solo al caricamento, non dal vivo — vedi
+      // carica()), quindi con una lista lunga e scrollata in cima
+      // restava fuori dallo schermo e l'utente non capiva dove scrivere
+      // (bug segnalato dall'utente). Scrolla la lista in fondo e mette
+      // subito il focus sul campo nome della riga appena aggiunta.
+      this.$nextTick(() => {
+        const lista = this.$refs.listaScroll as HTMLElement | undefined;
+        if (lista) lista.scrollTop = lista.scrollHeight;
+        const input = this.$refs.inputCliente as HTMLInputElement[] | undefined;
+        if (input && input.length) input[input.length - 1].focus();
+      });
     },
     rimuoviRiga(id: number) {
       this.righe = this.righe.filter(r => r.id !== id);
@@ -215,7 +228,14 @@ export default {
   margin-top: 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  /* Richiesta esplicita dell'utente: con molti clienti la tabella
+     diventava lunghissima, costringendo a scorrere tutta la pagina
+     delle Impostazioni solo per arrivare alla sezione successiva.
+     Altezza massima + scroll verticale proprio (overflow-x resta
+     hidden, per non perdere gli angoli arrotondati sui lati). */
+  max-height: 420px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .vpn-row {

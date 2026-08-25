@@ -2,9 +2,9 @@
 //! cliente usato da `aw-watcher-vpn-rust` — vedi il commento in cima a
 //! quel crate per il design completo. In breve: gli indirizzi OpenVPN
 //! si risolvono da soli (letti dai profili salvati in OpenVPN Connect,
-//! sezione "automatica" del file, riscritta dal watcher ogni 30
-//! minuti), le ZyWALL no (nessun profilo da cui leggere un nome) e
-//! finora andavano scritte a mano nel file `client_mapping.txt` fuori
+//! sezione "automatica" del file, riscritta dal watcher ad ogni giro),
+//! le ZyWALL no (nessun profilo da cui leggere un nome) e finora
+//! andavano scritte a mano nel file `client_mapping.txt` fuori
 //! dall'app — richiesta esplicita dell'utente di poterlo fare da qui.
 //!
 //! Il file non lo tocchiamo mai per la parte automatica: la leggiamo
@@ -16,12 +16,20 @@
 //! quel crate è un binario a sé (sidecar), non una libreria condivisa.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
+use crate::AppServer;
+
+/// Bucket delle sessioni VPN — vedi BUCKET_ID in aw-watcher-vpn-rust/
+/// src/main.rs, duplicato qui per lo stesso motivo di SEZIONE_AUTO_INIZIO
+/// sopra (crate separato, non condiviso).
+const BUCKET_ID: &str = "vpn-sessions";
+
 const NOME_FILE: &str = "client_mapping.txt";
 const SEZIONE_AUTO_INIZIO: &str =
-    "# === INIZIO SEZIONE AUTOMATICA (profili OpenVPN Connect - aggiornata da sola ogni 30 minuti, non modificare qui sotto) ===";
+    "# === INIZIO SEZIONE AUTOMATICA (profili OpenVPN Connect - aggiornata da sola, non modificare qui sotto) ===";
 const SEZIONE_AUTO_FINE: &str = "# === FINE SEZIONE AUTOMATICA ===";
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -145,5 +153,68 @@ pub fn salva_mapping_vpn_manuale(app_handle: AppHandle, voci: Vec<VoceMappingVpn
 
     let parent: &Path = percorso.parent().ok_or_else(|| "percorso non valido".to_string())?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    std::fs::write(&percorso, nuovo_contenuto).map_err(|e| e.to_string())
+    std::fs::write(&percorso, nuovo_contenuto).map_err(|e| e.to_string())?;
+
+    correggi_eventi_vpn_esistenti(&app_handle, &voci);
+    Ok(())
+}
+
+/// Corregge nel database SOLO gli eventi già registrati il cui campo
+/// "cliente" corrisponde ESATTAMENTE a uno degli indirizzi appena
+/// (ri)mappati — cioè solo le sessioni che il watcher aveva dovuto
+/// etichettare con l'indirizzo IP grezzo perché non c'era ancora una
+/// mappatura, non un rename generico di sessioni già nominate
+/// correttamente. Richiesta esplicita dell'utente: "solo ed
+/// unicamente per il dato salvato" — il resto della cronologia tracciata
+/// resta intoccato (stessa filosofia già seguita altrove nel progetto:
+/// mai riscrivere dati già registrati "a caso"), qui si corregge solo un
+/// valore che sappiamo per certo essere sbagliato (un IP al posto di un
+/// nome) ora che la mappatura giusta è nota. Un errore qui (server non
+/// ancora pronto, query fallita) non fa fallire il salvataggio della
+/// mappatura stessa — è già scritta su disco, questa è solo una
+/// rifinitura sui dati storici.
+fn correggi_eventi_vpn_esistenti(app_handle: &AppHandle, voci: &[VoceMappingVpnInput]) {
+    let Some(server) = app_handle.try_state::<Arc<AppServer>>() else {
+        return;
+    };
+
+    let da_correggere: std::collections::HashMap<&str, &str> = voci
+        .iter()
+        .map(|v| (v.indirizzo.trim(), v.cliente.trim()))
+        .filter(|(indirizzo, cliente)| !indirizzo.is_empty() && !cliente.is_empty())
+        .collect();
+    if da_correggere.is_empty() {
+        return;
+    }
+
+    let eventi = match server.datastore.get_events(BUCKET_ID, None, None, None) {
+        Ok(eventi) => eventi,
+        Err(_) => return,
+    };
+
+    let mut da_aggiornare = Vec::new();
+    for mut evento in eventi {
+        let cliente_attuale = evento
+            .data
+            .get("cliente")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let Some(cliente_attuale) = cliente_attuale else {
+            continue;
+        };
+        if let Some(nuovo_nome) = da_correggere.get(cliente_attuale.as_str()) {
+            evento
+                .data
+                .insert("cliente".to_string(), serde_json::Value::String(nuovo_nome.to_string()));
+            da_aggiornare.push(evento);
+        }
+    }
+
+    if !da_aggiornare.is_empty() {
+        log::info!(
+            "Corretti {} eventi VPN storici dopo una nuova mappatura indirizzo→cliente",
+            da_aggiornare.len()
+        );
+        let _ = server.datastore.insert_events(BUCKET_ID, &da_aggiornare);
+    }
 }

@@ -43,6 +43,18 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.19</h2>
+      <ul>
+        <li>VPN: the address→client mapping now updates in real time (every ~15 seconds instead of every 30 minutes) — notifications for unmapped clients arrive faster and are no longer occasionally wrong, and registering a new client immediately updates historical sessions already in the Timeline too, without needing an app restart.</li>
+        <li>Settings → VPN: the mapped addresses list now scrolls instead of stretching the window indefinitely; "Add address" jumps the view straight to the new row.</li>
+        <li>The window, if closed while maximized, now genuinely returns maximized on restart (it used to come back at a fixed size that left the desktop visible around it).</li>
+        <li>Timeline: clicking a single block (without an entire app selected from a summary module) now shows a precise chronological list of that block's activity, with exact times and activities under 15 seconds filtered out — useful for finding "what was I doing at 12:11" without scrolling dozens of title-grouped entries.</li>
+        <li>Fixed a bug where the same Excel file opened read-only and then editable showed up as two different files in the Timeline — it's now a single block, with the mode (read-only/normal) shown in each session's detail.</li>
+        <li>Timeline: the VPN, Claude, VS Code, Excel and VoiSpeed lanes now give each new client/file/project of the day a color clearly distinguishable from the ones already in use, instead of a semi-random one that could make two different things look the same.</li>
+        <li>New button in the Timeline to attach an activity directly to the AI assistant chat (like replying to a message) — the assistant gets that block's exact data without having to look it up itself. The chat window is also resizable by hand and remembers the chosen size across restarts.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.18</h2>
       <ul>
         <li>Fixed a bug where the database could get corrupted after an unclean shutdown (e.g. "End task" from Task Manager), leaving the app stuck on a white screen on the next launch. Now, on every startup, the app checks the database's integrity and, if it finds it damaged, restores itself from the latest automatic backup (the damaged file is never deleted, and stays available for manual recovery). The app also takes an automatic backup every 3 hours while the database is healthy.</li>

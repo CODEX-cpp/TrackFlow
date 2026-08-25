@@ -1387,6 +1387,20 @@ pub fn run() {
                                 if !avvio_minimizzato {
                                     let _ = window.show();
                                 }
+                                // Bug reale segnalato dall'utente: una finestra
+                                // lasciata a schermo intero riapriva a una
+                                // dimensione fissa (l'area di lavoro dello
+                                // schermo, catturata mentre era massimizzata)
+                                // invece che DAVVERO massimizzata — bordi e
+                                // sfondo del desktop restavano visibili intorno.
+                                // `.inner_size()`/`.position()` sul builder sopra
+                                // impostano solo la geometria "normale" (quella a
+                                // cui la finestra torna se l'utente la
+                                // demassimizza); questo la porta per davvero nello
+                                // stato massimizzato di Windows.
+                                if stato_effettivo.map(|s| s.maximized).unwrap_or(false) {
+                                    let _ = window.maximize();
+                                }
                                 // Windows stesso riposiziona la finestra da solo
                                 // circa 1-2s dopo la creazione (osservato: succede
                                 // anche SENZA nessuna posizione esplicita nostra,
@@ -1407,6 +1421,9 @@ pub fn run() {
                                         let _ = window_per_riaffermazione.set_size(
                                             tauri::PhysicalSize::new(stato.width, stato.height),
                                         );
+                                        if stato.maximized {
+                                            let _ = window_per_riaffermazione.maximize();
+                                        }
                                     });
                                 }
                                 let window_clone = window.clone();
@@ -1502,6 +1519,9 @@ pub fn run() {
                                                         y: pos.y,
                                                         width: size.width,
                                                         height: size.height,
+                                                        maximized: window_per_salvataggio
+                                                            .is_maximized()
+                                                            .unwrap_or(false),
                                                     },
                                                 );
                                             }

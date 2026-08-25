@@ -7,11 +7,18 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{vpn_mapping, AppServer, SidecarProcesses};
 
-/// Ogni quanto controllare la sessione VPN più recente. Non serve un
-/// intervallo breve: il campo "cliente" viene risolto dal watcher subito
-/// alla connessione (vedi aw-watcher-vpn-rust) e resta quello per tutta
-/// la durata della sessione, quindi non c'è nulla da "cogliere al volo".
-const INTERVALLO_CONTROLLO_SECONDI: u64 = 150;
+/// Ogni quanto controllare la sessione VPN più recente. Prima 150s, sul
+/// presupposto (rivelatosi falso — bug reale segnalato dall'utente) che
+/// il campo "cliente" fosse sempre già corretto dal momento della
+/// connessione, quindi un intervallo breve non servisse. In realtà il
+/// watcher poteva impiegare fino a 30 minuti a ricaricare una mappatura
+/// appena registrata (vedi il fix in aw-watcher-vpn-rust/src/main.rs,
+/// `sincronizza_mapping_se_serve`), quindi la notifica finiva per
+/// arrivare tardi o per un client già associato nel frattempo. Con
+/// quella causa risolta (mappatura ricaricata quasi subito, ~15s), non
+/// serve più un canale diretto watcher→notifica: basta un intervallo
+/// breve qui, stesso ordine di grandezza del poll del watcher.
+const INTERVALLO_CONTROLLO_SECONDI: u64 = 20;
 
 /// Indirizzi/nomi grezzi (il valore del campo "cliente" quando il
 /// watcher non ha trovato una mappatura) già notificati in questa
@@ -60,12 +67,21 @@ async fn controlla_sessione_corrente(app_handle: &AppHandle, server: &AppServer)
     // aperta è già interrogabile qui (non serve aspettare la
     // disconnessione, vedi discussione in chat) — l'evento più recente
     // rappresenta sempre la sessione corrente o l'ultima chiusa.
+    //
+    // Bug reale trovato testando con un evento finto: `sort_by_timestamp`
+    // ordina dal più VECCHIO (aw-transform::sort_by_timestamp usa
+    // `sort_by_key` naturale, crescente) e `limit_events(events, 1)`
+    // prende i primi `limit` elementi — cioè il più vecchio nella
+    // finestra di 24h, l'esatto opposto di quello che il commento (e il
+    // nome della funzione) promettevano. Non esiste un `sort_by_timestamp`
+    // discendente nel linguaggio di query, quindi si ordina crescente
+    // come sempre e si prende l'ULTIMO elemento lato Rust (vedi `.last()`
+    // sotto) invece di limitare a 1 dentro la query stessa.
     let ora = chrono::Utc::now();
     let timeperiod = format!("{}/{}", (ora - chrono::Duration::hours(24)).to_rfc3339(), ora.to_rfc3339());
     let query = vec![
         "events = flood(query_bucket(\"vpn-sessions\"));".to_string(),
         "events = sort_by_timestamp(events);".to_string(),
-        "events = limit_events(events, 1);".to_string(),
         "RETURN = events;".to_string(),
     ];
     let risposta = match server.query(vec![timeperiod], query).await {
@@ -80,7 +96,7 @@ async fn controlla_sessione_corrente(app_handle: &AppHandle, server: &AppServer)
         .as_array()
         .and_then(|periodi| periodi.first())
         .and_then(|eventi| eventi.as_array())
-        .and_then(|eventi| eventi.first())
+        .and_then(|eventi| eventi.last())
         .and_then(|evento| evento.get("data"))
         .and_then(|data| data.get("cliente"))
         .and_then(|c| c.as_str())

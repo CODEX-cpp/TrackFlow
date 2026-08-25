@@ -137,8 +137,10 @@ div.timeline-section
     v-if="selectedBlock"
     :block="selectedBlock"
     :lane-name="selectedLane.name"
+    :lane-key="selectedLane.key"
     :occurrences="selectedOccurrences"
     :occurrences-by-title="selectedOccurrencesByTitle"
+    :occurrences-timeline="selectedOccurrencesTimeline"
     @close="selectedBlock = null; selectedSubOccurrences = null"
   )
 </template>
@@ -594,6 +596,7 @@ import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '~/util/projectTime';
 import { colorVarForName, isLightColor } from '~/util/hashColor';
+import { colorePerGiorno } from '~/util/dailyColorPalette';
 import { domainForEvent } from '~/util/browserDomain';
 import {
   displayNameForApp,
@@ -651,6 +654,23 @@ const LANE_LABEL_WIDTH = 90;
 // Timeline blocks and the block-detail popup's "Altre occorrenze" list,
 // since both are built from the same merge.
 const MERGE_GAP_SECONDS = 300;
+
+// Soglia più stretta usata SOLO dalle due viste "per titolo" del popup
+// di dettaglio (selectedOccurrencesByTitle quando l'app è evidenziata
+// per intero, selectedOccurrencesTimeline per il singolo blocco): lì lo
+// scopo è vedere con precisione i cambi reali di attività, non leggere
+// blocchi comodi — a differenza di MERGE_GAP_SECONDS sopra, che serve
+// invece a non far sembrare "a tratteggio" la barra grande della
+// Timeline per il normale jitter del watcher. Le due viste per titolo
+// condividono la stessa soglia su richiesta esplicita, per coerenza fra
+// "tutto selezionato" e "singolo blocco".
+const MERGE_GAP_SECONDI_RAGGRUPPATO = 60;
+
+// Sotto questa soglia un'attività viene scartata (non "arrotondata")
+// da entrambe le viste "per titolo" sopra — con molto cambio-scheda nel
+// browser, mostrarle tutte le renderebbe illeggibili tanto quanto il
+// problema che si voleva risolvere.
+const MIN_DURATA_SECONDI_RAGGRUPPATO = 15;
 
 // Now that same-key blocks can span over a brief different-key
 // interruption (see the merge above), two blocks in the same lane can
@@ -1012,6 +1032,10 @@ export default {
     // comparso. Copre l'INTERA giornata (come "Altre occorrenze"), non
     // un singolo intervallo clippato.
     selectedOccurrencesByTitle(): { title: string; occurrences: { start: moment.Moment; end: moment.Moment }[] }[] {
+      // Solo quando l'intera app è evidenziata (vedi appInteroSelezionato
+      // sotto) — altrimenti questa vista lascia il posto a
+      // selectedOccurrencesTimeline, vedi il suo commento per il perché.
+      if (this.selectedBlock && !this.appInteroSelezionato) return [];
       if (!this.selectedBlock || !this.selectedLaneKey || this.selectedSubOccurrences) return [];
       const rawEvents = this.rawEventsByLane[this.selectedLaneKey];
       if (!rawEvents) return [];
@@ -1021,11 +1045,18 @@ export default {
       // Nessun campo title (la maggior parte delle corsie non-Generale/
       // Browser): tutti gli eventi ricadono sulla stessa chiave (il
       // blocco stesso) — un solo gruppo, scartato subito sotto.
+      // Stesso scarto delle attività sotto i 15 secondi applicato in
+      // selectedOccurrencesTimeline (MIN_DURATA_SECONDI_RAGGRUPPATO più
+      // sotto) — mancava qui, lasciando passare gli stessi frammenti di
+      // rumore da cambio-scheda che nella vista a blocco singolo erano
+      // già filtrati.
       const segments = mergeEventsByKey(
         events,
-        (e: any) => (e.data && e.data.title) || key,
-        MERGE_GAP_SECONDS
-      ).sort((a, b) => a.start.diff(b.start));
+        (e: any) => this.titoloOccorrenza(e, key),
+        MERGE_GAP_SECONDI_RAGGRUPPATO
+      )
+        .filter(seg => seg.end.diff(seg.start, 'seconds') >= MIN_DURATA_SECONDI_RAGGRUPPATO)
+        .sort((a, b) => a.start.diff(b.start));
 
       const groups = new Map<string, { start: moment.Moment; end: moment.Moment }[]>();
       for (const seg of segments) {
@@ -1041,6 +1072,60 @@ export default {
       return [...groups.entries()]
         .map(([title, occurrences]) => ({ title, occurrences }))
         .sort((a, b) => a.occurrences[0].start.diff(b.occurrences[0].start));
+    },
+    // true quando l'app del blocco cliccato è ANCHE quella evidenziata
+    // da un pannello riepilogo (Applicazioni principali, ecc.) — "tutto
+    // è già selezionato, quindi mostra tutto" (l'intera giornata,
+    // raggruppata per titolo — vedi selectedOccurrencesByTitle sopra).
+    // Un click diretto su un singolo blocco, senza nessuna
+    // evidenziazione attiva, va invece sotto: l'utente in quel caso
+    // vuole sapere cosa succedeva DURANTE quel blocco preciso, non
+    // l'intera giornata.
+    appInteroSelezionato(): boolean {
+      return !!this.selectedBlock && this.highlightedKey === this.selectedBlock.key;
+    },
+    // Elenco CRONOLOGICO (non raggruppato per titolo) degli eventi
+    // dentro l'orario del blocco cliccato — richiesta esplicita
+    // dell'utente dopo aver mostrato che un solo blocco Firefox di
+    // poco più di un'ora poteva contenere 36 titoli diversi da
+    // scorrere in "Altre occorrenze", impossibile da usare per trovare
+    // "cosa stavo facendo alle 12:11". Un titolo può comparire più
+    // volte nell'elenco (cambio scheda avanti e indietro) — a
+    // differenza di selectedOccurrencesByTitle non li raggruppa
+    // insieme, l'ordine cronologico è il punto.
+    //
+    // Sotto i 15 secondi una voce viene scartata (non "arrotondata" —
+    // richiesta esplicita: con molto cambio scheda nel browser,
+    // mostrarle tutte renderebbe l'elenco illeggibile quanto il
+    // raggruppamento per titolo che si voleva evitare).
+    selectedOccurrencesTimeline(): { title: string; start: moment.Moment; end: moment.Moment }[] {
+      if (!this.selectedBlock || !this.selectedLaneKey || this.selectedSubOccurrences) return [];
+      if (this.appInteroSelezionato) return [];
+      const rawEvents = this.rawEventsByLane[this.selectedLaneKey];
+      if (!rawEvents) return [];
+      const keyFn = this.laneKeyFn(this.selectedLaneKey);
+      const key = this.selectedBlock.key;
+      const inizio = this.selectedBlock.start;
+      const fine = this.selectedBlock.end;
+      const events = rawEvents.filter((e: any) => keyFn(e) === key);
+      // Vedi il commento su MERGE_GAP_SECONDI_RAGGRUPPATO più in alto nel
+      // file — stessa soglia usata da selectedOccurrencesByTitle, per
+      // coerenza fra le due viste "per titolo".
+      const segments = mergeEventsByKey(
+        events,
+        (e: any) => this.titoloOccorrenza(e, key),
+        MERGE_GAP_SECONDI_RAGGRUPPATO
+      );
+
+      return segments
+        .filter(seg => seg.end.isAfter(inizio) && seg.start.isBefore(fine))
+        .map(seg => ({
+          title: seg.key,
+          start: moment.max(seg.start, inizio),
+          end: moment.min(seg.end, fine),
+        }))
+        .filter(seg => seg.end.diff(seg.start, 'seconds') >= MIN_DURATA_SECONDI_RAGGRUPPATO)
+        .sort((a, b) => a.start.diff(b.start));
     },
     // Only meaningful together with highlightedKey (see
     // stores/timelineHighlight.ts's toggleTitle — always set as a
@@ -1868,14 +1953,19 @@ export default {
         {
           key: 'vpn',
           name: this.$t('home.timeline.laneVpn'),
-          blocks: this.buildBlocks(vpnEvents, e => e.data.cliente || 'Sconosciuto'),
+          blocks: this.buildBlocks(
+            vpnEvents,
+            e => e.data.cliente || 'Sconosciuto',
+            key => colorePerGiorno('vpn', key)
+          ),
         },
         {
           key: 'claude',
           name: this.$t('home.timeline.laneClaude'),
           blocks: this.buildBlocks(
             claudeCombined,
-            e => (e.data && e.data.cliente) || 'Claude Desktop (finestra)'
+            e => (e.data && e.data.cliente) || 'Claude Desktop (finestra)',
+            key => colorePerGiorno('claude', key)
           ),
         },
         {
@@ -1908,18 +1998,27 @@ export default {
             e =>
               (e.data.project
                 ? projectDisplayName(e.data.project)
-                : vscodeTitleDisplayName(e.data.title || '')) || 'VS Code (finestra)'
+                : vscodeTitleDisplayName(e.data.title || '')) || 'VS Code (finestra)',
+            key => colorePerGiorno('vscode', key)
           ),
         },
         {
           key: 'excel',
           name: this.$t('home.timeline.laneExcel'),
-          blocks: this.buildBlocks(excelEvents, e => e.data.file || 'Sconosciuto'),
+          blocks: this.buildBlocks(
+            excelEvents,
+            e => e.data.file || 'Sconosciuto',
+            key => colorePerGiorno('excel', key)
+          ),
         },
         {
           key: 'voispeed',
           name: this.$t('home.timeline.laneVoispeed'),
-          blocks: this.buildBlocks(voispeedEvents, e => e.data.cliente || 'Sconosciuto'),
+          blocks: this.buildBlocks(
+            voispeedEvents,
+            e => e.data.cliente || 'Sconosciuto',
+            key => colorePerGiorno('voispeed', key)
+          ),
         },
         {
           key: 'general',
@@ -2139,6 +2238,26 @@ export default {
           return () => 'Sconosciuto';
         }
       }
+    },
+    // Titolo per-occorrenza usato dalle due viste "per titolo" sopra
+    // (selectedOccurrencesByTitle/selectedOccurrencesTimeline) per
+    // raggruppare/etichettare le righe dentro un blocco. La maggior
+    // parte delle corsie non ha un `data.title` distinto (vedi il
+    // fallback in laneKeyFn) e finisce tutta sotto lo stesso titolo (la
+    // chiave del blocco stesso) — Excel è un caso a parte: stesso file
+    // (stessa chiave/blocco, corretto — vedi aw-watcher-excel-rust) ma
+    // sessioni diverse possono avere modalità diverse (sola lettura vs
+    // normale), che l'utente vuole distinguere riga per riga senza che
+    // questo spezzi il blocco unificato in Timeline. Bug reale
+    // segnalato: prima "[Sola lettura]" finiva dentro `data.file` stesso
+    // (bug del watcher, corretto lato Rust), facendo apparire due
+    // blocchi separati invece di uno solo con dettaglio della modalità.
+    titoloOccorrenza(e: any, key: string): string {
+      if (e.data && e.data.title) return e.data.title;
+      if (this.selectedLaneKey === 'excel' && e.data && e.data.modalita) {
+        return `${key} [${e.data.modalita}]`;
+      }
+      return key;
     },
     // Top Applications selects by the raw process name (e.g.
     // "claude.exe", "Code.exe") — but the Claude/VSCode lanes key their

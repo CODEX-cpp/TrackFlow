@@ -423,6 +423,9 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     close: 'Chiudi',
     emptyHint:
       'Chiedi qualcosa sui tuoi dati di attività — tempo per progetto, categorie, sessioni VPN, chiamate VoiSpeed…',
+    apiKeyMissing: 'Serve prima una chiave API per usare l\'assistente.',
+    apiKeyMissingAction: 'Vai in Impostazioni → Agente AI',
+    removeContext: 'Rimuovi',
     thinking: 'Sto pensando…',
     placeholder: 'Scrivi un messaggio…',
     toolsUsedPrefix: 'Consultati:',
@@ -679,7 +682,9 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       time: 'Orario',
       duration: 'Durata',
       otherOccurrences: 'Altre occorrenze oggi',
+      duringThisBlock: 'Durante questo blocco',
       viewPhotos: '{count} foto',
+      askAi: "Chiedi all'assistente AI",
       close: 'Chiudi',
     },
     calendarPicker: {

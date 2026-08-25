@@ -5,6 +5,26 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.19
+
+### it
+- VPN: la mappatura indirizzo→cliente ora si aggiorna in tempo reale (ogni ~15 secondi, non più ogni 30 minuti) — le notifiche per client non ancora mappati arrivano più in fretta e non risultano più sbagliate, e registrare un nuovo cliente aggiorna subito anche le sessioni storiche già in Timeline, senza dover riavviare l'app.
+- Impostazioni → VPN: l'elenco degli indirizzi mappati è ora scorrevole invece di allungare la finestra all'infinito; "Aggiungi indirizzo" porta subito la vista alla nuova riga.
+- La finestra, se chiusa massimizzata, torna davvero massimizzata al riavvio (prima tornava a una dimensione fissa che lasciava vedere il desktop attorno).
+- Timeline: cliccando un singolo blocco (senza aver selezionato l'intera app da un modulo riepilogo) si vede ora l'elenco cronologico preciso delle attività di quel blocco, con orari precisi e attività sotto i 15 secondi filtrate — utile per trovare "cosa stavo facendo alle 12:11" senza scorrere decine di voci raggruppate per titolo.
+- Corretto un bug per cui uno stesso file Excel aperto in sola lettura e poi in modifica appariva come due file diversi in Timeline — ora è un unico blocco, con la modalità (sola lettura/normale) indicata nel dettaglio di ogni sessione.
+- Timeline: le corsie VPN, Claude, VS Code, Excel e VoiSpeed assegnano ora ad ogni nuovo client/file/progetto della giornata un colore ben distinguibile dagli altri già in uso, invece di un colore semi-casuale che poteva far sembrare uguali due elementi diversi.
+- Nuovo pulsante nella Timeline per allegare un'attività direttamente alla chat dell'assistente AI (come rispondere a un messaggio) — l'assistente riceve così i dati esatti di quel blocco senza doverli cercare da solo. La finestra della chat è anche ridimensionabile a mano e ricorda la dimensione scelta tra un riavvio e l'altro.
+
+### en
+- VPN: the address→client mapping now updates in real time (every ~15 seconds instead of every 30 minutes) — notifications for unmapped clients arrive faster and are no longer occasionally wrong, and registering a new client immediately updates historical sessions already in the Timeline too, without needing an app restart.
+- Settings → VPN: the mapped addresses list now scrolls instead of stretching the window indefinitely; "Add address" jumps the view straight to the new row.
+- The window, if closed while maximized, now genuinely returns maximized on restart (it used to come back at a fixed size that left the desktop visible around it).
+- Timeline: clicking a single block (without an entire app selected from a summary module) now shows a precise chronological list of that block's activity, with exact times and activities under 15 seconds filtered out — useful for finding "what was I doing at 12:11" without scrolling dozens of title-grouped entries.
+- Fixed a bug where the same Excel file opened read-only and then editable showed up as two different files in the Timeline — it's now a single block, with the mode (read-only/normal) shown in each session's detail.
+- Timeline: the VPN, Claude, VS Code, Excel and VoiSpeed lanes now give each new client/file/project of the day a color clearly distinguishable from the ones already in use, instead of a semi-random one that could make two different things look the same.
+- New button in the Timeline to attach an activity directly to the AI assistant chat (like replying to a message) — the assistant gets that block's exact data without having to look it up itself. The chat window is also resizable by hand and remembers the chosen size across restarts.
+
 ## 0.1.18
 
 ### it

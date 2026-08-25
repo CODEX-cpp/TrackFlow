@@ -156,6 +156,40 @@ fn file_excel_aperti() -> Vec<String> {
     compile_error!("aw-watcher-excel supporta solo Windows");
 }
 
+/// Separa un descrittore file come lo produce `interpreta_titolo` (es.
+/// "RipeilogoDati_Renergy.xlsx [Sola lettura]") nel nome file pulito e,
+/// se presente, il testo tra le parentesi quadre finali. Bug reale
+/// segnalato dall'utente: il titolo REALE di Excel mette l'indicatore
+/// di modalità (Sola lettura, Modalità protetta, ...) PRIMA di
+/// " - Excel" e tra QUADRE, non dopo e tra tonde come ipotizzato in
+/// `interpreta_titolo` (mai verificato empiricamente finché l'utente
+/// non ha testato su un'installazione Excel vera, vedi commento in cima
+/// al file) — quel testo restava quindi dentro il nome file stesso,
+/// facendo trattare lo stesso identico file aperto in sola lettura e in
+/// modifica come due file COMPLETAMENTE DIVERSI nella Timeline (due
+/// blocchi separati invece di uno solo con la modalità come dettaglio).
+///
+/// Usato solo al momento di mandare l'evento — il tracciamento
+/// apertura/chiusura in `main()` continua a usare il descrittore intero
+/// invariato come chiave, così un cambio di modalità a runtime (es.
+/// sblocco di un file in sola lettura) resta un confine di sessione
+/// come già osservato nei dati reali, invece di dover gestire un
+/// cambio di modalità a metà sessione.
+fn dividi_file_e_modalita(descrittore: &str) -> (String, Option<String>) {
+    if descrittore.ends_with(']') {
+        if let Some(apertura_parentesi) = descrittore.rfind('[') {
+            if apertura_parentesi > 0 {
+                let file = descrittore[..apertura_parentesi].trim();
+                let modalita = descrittore[apertura_parentesi + 1..descrittore.len() - 1].trim();
+                if !file.is_empty() && !modalita.is_empty() {
+                    return (file.to_string(), Some(modalita.to_string()));
+                }
+            }
+        }
+    }
+    (descrittore.to_string(), None)
+}
+
 /// Manda UN evento completo (non un heartbeat) per una sessione appena
 /// chiusa: `apertura` è quando il file è comparso per la prima volta tra
 /// le finestre aperte, `chiusura` è adesso (non più trovato). Op
@@ -164,9 +198,13 @@ fn file_excel_aperti() -> Vec<String> {
 /// solo "ultimo evento" per bucket: andrebbe benissimo per un file alla
 /// volta ma frammenterebbe la durata se più file venissero tracciati in
 /// parallelo, vedi commento in cima al file).
-fn emit_sessione_chiusa(bucket_id: &str, file: &str, apertura: DateTime<Utc>, chiusura: DateTime<Utc>) {
+fn emit_sessione_chiusa(bucket_id: &str, descrittore: &str, apertura: DateTime<Utc>, chiusura: DateTime<Utc>) {
+    let (file, modalita) = dividi_file_e_modalita(descrittore);
     let mut data = Map::new();
     data.insert("file".to_string(), file.into());
+    if let Some(modalita) = modalita {
+        data.insert("modalita".to_string(), modalita.into());
+    }
     let durata_secondi = (chiusura - apertura).num_milliseconds() as f64 / 1000.0;
     let envelope = json!({
         "bucket_id": bucket_id,
@@ -301,5 +339,53 @@ mod tests {
         assert!(is_excel_exe("EXCEL.EXE"));
         assert!(is_excel_exe("excel.exe"));
         assert!(!is_excel_exe("winword.exe"));
+    }
+
+    // dividi_file_e_modalita: bug reale segnalato dall'utente — il
+    // titolo REALE di Excel per un file in sola lettura è tipo
+    // "RipeilogoDati_Renergy.xlsx [Sola lettura] - Excel" (indicatore
+    // PRIMA di " - Excel", tra QUADRE), non come ipotizzato in
+    // interpreta_titolo senza un'installazione Excel vera a
+    // disposizione — quindi interpreta_titolo restituisce il
+    // descrittore combinato "RipeilogoDati_Renergy.xlsx [Sola
+    // lettura]", che va poi separato qui prima di finire nell'evento.
+    #[test]
+    fn dividi_file_e_modalita_sola_lettura() {
+        let (file, modalita) = dividi_file_e_modalita("RipeilogoDati_Renergy.xlsx [Sola lettura]");
+        assert_eq!(file, "RipeilogoDati_Renergy.xlsx");
+        assert_eq!(modalita, Some("Sola lettura".to_string()));
+    }
+
+    #[test]
+    fn dividi_file_e_modalita_normale() {
+        let (file, modalita) = dividi_file_e_modalita("RipeilogoDati_Renergy.xlsx");
+        assert_eq!(file, "RipeilogoDati_Renergy.xlsx");
+        assert_eq!(modalita, None);
+    }
+
+    #[test]
+    fn dividi_file_e_modalita_modalita_protetta() {
+        let (file, modalita) = dividi_file_e_modalita("Report.xlsx [Modalità protetta]");
+        assert_eq!(file, "Report.xlsx");
+        assert_eq!(modalita, Some("Modalità protetta".to_string()));
+    }
+
+    // Un nome file che finisce per coincidenza con "]" ma senza una "["
+    // corrispondente (o con parentesi vuote) non deve essere spezzato a
+    // metà — resta il descrittore intero, nessuna modalità.
+    #[test]
+    fn dividi_file_e_modalita_niente_parentesi_quadre() {
+        let (file, modalita) = dividi_file_e_modalita("Cartel1");
+        assert_eq!(file, "Cartel1");
+        assert_eq!(modalita, None);
+    }
+
+    #[test]
+    fn dividi_file_e_modalita_integrazione_con_interpreta_titolo() {
+        let descrittore =
+            interpreta_titolo("RipeilogoDati_Renergy.xlsx [Sola lettura] - Excel").unwrap();
+        let (file, modalita) = dividi_file_e_modalita(&descrittore);
+        assert_eq!(file, "RipeilogoDati_Renergy.xlsx");
+        assert_eq!(modalita, Some("Sola lettura".to_string()));
     }
 }

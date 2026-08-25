@@ -196,15 +196,8 @@ fn build_client_mapping(
     mapping
 }
 
-/// Ogni quanto ricontrollare `config.json` di OpenVPN Connect per
-/// aggiornamenti (nuovi profili, rinomine) mentre il watcher è già in
-/// esecuzione — richiesto esplicitamente: capita spesso di eliminare un
-/// profilo VPN e ricrearlo con un nome diverso, quindi il file di mapping
-/// va tenuto sincronizzato, non solo letto una volta all'avvio.
-const OPENVPN_SYNC_INTERVAL_SECONDS: u64 = 30 * 60;
-
 const SEZIONE_AUTO_INIZIO: &str =
-    "# === INIZIO SEZIONE AUTOMATICA (profili OpenVPN Connect - aggiornata da sola ogni 30 minuti, non modificare qui sotto) ===";
+    "# === INIZIO SEZIONE AUTOMATICA (profili OpenVPN Connect - aggiornata da sola, non modificare qui sotto) ===";
 const SEZIONE_AUTO_FINE: &str = "# === FINE SEZIONE AUTOMATICA ===";
 
 /// Crea (se manca) o aggiorna `client_mapping.txt` con i nomi letti da
@@ -417,7 +410,6 @@ struct VpnWatcher {
     mapping_file: PathBuf,
     openvpn_config_path: PathBuf,
     ultimo_da_openvpn: HashMap<String, String>,
-    prossima_sincronizzazione: std::time::Instant,
 }
 
 impl VpnWatcher {
@@ -446,33 +438,36 @@ impl VpnWatcher {
             mapping_file,
             openvpn_config_path,
             ultimo_da_openvpn: da_openvpn_iniziale,
-            prossima_sincronizzazione: std::time::Instant::now()
-                + StdDuration::from_secs(OPENVPN_SYNC_INTERVAL_SECONDS),
         }
     }
 
-    /// Ricontrolla `config.json` di OpenVPN Connect ogni
-    /// `OPENVPN_SYNC_INTERVAL_SECONDS`: se qualcosa è cambiato (nuovo
-    /// profilo, rinomina, profilo rimosso) aggiorna sia la mappa usata
-    /// dal vivo per etichettare le sessioni sia il file su disco, così
-    /// non serve riavviare il watcher per far comparire un cliente nuovo
-    /// o un nome cambiato.
-    fn sincronizza_openvpn_se_serve(&mut self) {
-        if std::time::Instant::now() < self.prossima_sincronizzazione {
-            return;
-        }
-        self.prossima_sincronizzazione =
-            std::time::Instant::now() + StdDuration::from_secs(OPENVPN_SYNC_INTERVAL_SECONDS);
-
+    /// Ricontrolla ad OGNI giro (non più ogni 30 minuti — bug reale
+    /// segnalato dall'utente, vedi sotto) sia `config.json` di OpenVPN
+    /// Connect sia la parte MANUALE di `client_mapping.txt`
+    /// (Impostazioni → Integrazioni → VPN, o scritta a mano per ZyWALL,
+    /// che non ha profili da cui auto-rilevarsi). Entrambi sono letture
+    /// di file piccoli (JSON/testo), il costo di rileggerli ad ogni poll
+    /// (default 15s) è trascurabile.
+    ///
+    /// Prima, la parte manuale veniva ricaricata SOLO quando cambiava
+    /// ANCHE il profilo OpenVPN nello stesso giro (il vecchio early
+    /// return qui sotto usciva prima di toccare `override_manuale` se
+    /// `da_openvpn` non era cambiato) — un salvataggio da Impostazioni
+    /// (nuovo cliente ZyWALL, o correzione di un nome) restava quindi
+    /// invisibile al watcher già in esecuzione anche per decine di
+    /// minuti, o del tutto finché non veniva riavviato: causa reale
+    /// delle notifiche "cliente VPN non associato" in ritardo o su
+    /// client già registrati, e del nome che non cambiava mai per le
+    /// connessioni successive a una registrazione ZyWALL appena fatta.
+    fn sincronizza_mapping_se_serve(&mut self) {
         let da_openvpn = load_openvpn_profile_names(&self.openvpn_config_path);
-        if da_openvpn.is_empty() || da_openvpn == self.ultimo_da_openvpn {
-            return;
+        if !da_openvpn.is_empty() && da_openvpn != self.ultimo_da_openvpn {
+            write_openvpn_section(&self.mapping_file, &da_openvpn);
+            self.ultimo_da_openvpn = da_openvpn;
         }
 
-        write_openvpn_section(&self.mapping_file, &da_openvpn);
         let override_manuale = load_client_mapping(&self.mapping_file);
-        self.mapping = build_client_mapping(da_openvpn.clone(), override_manuale);
-        self.ultimo_da_openvpn = da_openvpn;
+        self.mapping = build_client_mapping(self.ultimo_da_openvpn.clone(), override_manuale);
     }
 
     fn controlla_tutte_le_fonti(&mut self) {
@@ -728,7 +723,7 @@ fn main() {
         watcher.controlla_tutte_le_fonti();
         watcher.chiudi_se_processo_terminato();
         watcher.tieni_vive_le_sessioni_aperte();
-        watcher.sincronizza_openvpn_se_serve();
+        watcher.sincronizza_mapping_se_serve();
     }
 }
 

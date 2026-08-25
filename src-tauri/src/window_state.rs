@@ -17,6 +17,19 @@ pub struct StatoFinestra {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    // Bug reale segnalato dall'utente: senza questo campo, una finestra
+    // lasciata a schermo intero riapriva a una dimensione FISSA (quella
+    // catturata da outer_position()/inner_size() mentre era massimizzata,
+    // cioè l'area di lavoro dello schermo) invece di essere DAVVERO
+    // massimizzata — visivamente quasi identico ma non uguale: bordi e
+    // sfondo del desktop restavano visibili intorno, perché impostare
+    // posizione/dimensione a mano non mette Windows nello stato
+    // "massimizzato" vero e proprio (quello che risponde anche a doppio
+    // click sulla barra del titolo, snap, ecc.). `#[serde(default)]`
+    // così un window-state.json scritto da una build precedente (senza
+    // questo campo) resta leggibile — false, il comportamento di prima.
+    #[serde(default)]
+    pub maximized: bool,
 }
 
 fn percorso_file(app_data_dir: &Path) -> PathBuf {
