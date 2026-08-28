@@ -50,6 +50,11 @@ semver = "1"
 minisign-verify = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+# Usata dal log diagnostico avanzato opzionale (diagnostics.rs,
+# disattivato di default, attivabile da Impostazioni → Sviluppatore) per
+# campionare uso CPU/RAM del processo.
+sysinfo = "0.32"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_System_JobObjects", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp"] }
 # Avvio automatico con Windows (autostart.rs) — wrapper sicuro sul

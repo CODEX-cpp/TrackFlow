@@ -18,7 +18,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     save_modules_config, spawn_watcher, stop_watcher, AppDataDirState, AppServer, IconsHandle,
-    ModuleMenuItems, ModulesConfigState, SidecarProcesses, ALL_MODULES, MODULES_CONFIG_FILE,
+    ModuleMenuItems, ModulesConfigState, SidecarProcesses, TrayLabelItems, ALL_MODULES,
+    MODULES_CONFIG_FILE,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -45,7 +46,11 @@ pub fn stato_watcher(app_handle: AppHandle) -> Vec<WatcherStatus> {
 
     ALL_MODULES
         .iter()
-        .map(|(name, label)| {
+        // Solo l'etichetta italiana qui — pannello di diagnostica per
+        // sviluppatori (Impostazioni → Sviluppatore), non il menu della
+        // tray (che invece sceglie tra le due, vedi lib.rs) — fuori
+        // scopo dell'issue GitHub #2 che ha motivato le due etichette.
+        .map(|(name, label, _label_en)| {
             let enabled_in_config = modules_config
                 .as_ref()
                 .map(|c| *c.0.lock().unwrap().get(*name).unwrap_or(&true))
@@ -76,6 +81,34 @@ pub fn stato_watcher(app_handle: AppHandle) -> Vec<WatcherStatus> {
             }
         })
         .collect()
+}
+
+/// Rinomina a runtime le voci del menu tray (issue GitHub #2 — vedi
+/// TrayLabelItems in lib.rs) quando l'utente cambia lingua dalle
+/// Impostazioni mentre l'app è già aperta — invocato dal frontend
+/// (stores/settings.ts) ogni volta che `locale` viene salvata, non solo
+/// all'avvio. `set_text` fallisce solo se l'icona tray non esiste più
+/// (finestra in chiusura) — ignorato, niente da fare in quel caso.
+#[tauri::command]
+pub fn aggiorna_lingua_tray(app_handle: AppHandle, lingua: String) {
+    let inglese = lingua == "en";
+
+    if let Some(items) = app_handle.try_state::<TrayLabelItems>() {
+        let (show_hide_label, quit_label, modules_label) =
+            if inglese { ("Show/Hide", "Quit", "Modules") } else { ("Mostra/Nascondi", "Esci", "Moduli") };
+        let _ = items.show_hide.set_text(show_hide_label);
+        let _ = items.quit.set_text(quit_label);
+        let _ = items.modules_submenu.set_text(modules_label);
+    }
+
+    if let Some(module_items) = app_handle.try_state::<ModuleMenuItems>() {
+        let guard = module_items.0.lock().unwrap();
+        for (name, label_it, label_en) in ALL_MODULES {
+            if let Some(item) = guard.get(*name) {
+                let _ = item.set_text(if inglese { *label_en } else { *label_it });
+            }
+        }
+    }
 }
 
 /// Avvia un watcher SENZA toccare modules-config.json — "solo per

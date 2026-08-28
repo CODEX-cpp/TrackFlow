@@ -24,7 +24,7 @@ mod recovery;
 mod worker;
 
 pub use self::datastore::DatastoreInstance;
-pub use self::recovery::verifica_e_ripristina;
+pub use self::recovery::{leggi_locale_per_tray, verifica_e_ripristina};
 pub use self::worker::Datastore;
 
 #[derive(Clone)]

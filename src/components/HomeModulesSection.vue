@@ -169,6 +169,7 @@ import { useActivityStore, QueryOptions } from '~/stores/activity';
 import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
 import { get_day_start_with_offset, get_today_with_offset } from '~/util/time';
+import { useClockStore } from '~/stores/clock';
 import { TimePeriod } from '~/util/timeperiod';
 import { getHomeClient } from '~/util/awclient';
 
@@ -244,6 +245,11 @@ export default {
       bucketsStore: useBucketsStore(),
       refreshInterval: null as ReturnType<typeof setInterval> | null,
       lastBucketsSignature: null as string | null,
+      // Debounce del cambio giorno/host — vedi il watcher `date()` sotto
+      // per il perché (stesso problema e stessa soluzione di
+      // HomeTimelineSection.vue: scorrimento veloce tra i giorni
+      // attraversava ogni giorno di passaggio con una query completa).
+      timerDebounceCambioGiorno: null as ReturnType<typeof setTimeout> | null,
       // Indici (__idx) dei moduli che si sono nascosti da soli per
       // mancanza di dati (Excel/VPN/VoiSpeed — vedi il commento su
       // `visibile` in SelectableVisualization.vue) — popolato via
@@ -280,11 +286,18 @@ export default {
     host(): string {
       return this.bucketsStore.host;
     },
-    // Same fallback Activity.vue's own `_date` computed used — the
-    // prop default can't depend on "today" at mount time (would freeze
-    // to whatever day the app happened to load on), so it's resolved
-    // fresh here instead.
+    // Same fallback Activity.vue's own `_date` computed used. Bug reale
+    // segnalato dall'utente: essendo un computed Vue, questo NON si
+    // ricalcolava da solo al passare della mezzanotte/dell'ora di inizio
+    // giornata — get_today_with_offset() legge l'ora reale, che Vue non
+    // traccia come dipendenza, quindi restava congelato al valore della
+    // prima valutazione finché route.params.date o startOfDay non
+    // cambiavano per altri motivi (es. cambiare giorno a mano nel
+    // selettore, che per questo "sistemava" il bug). Il tick di
+    // stores/clock.ts, letto qui solo per il suo effetto collaterale,
+    // forza un ricalcolo entro un minuto dal vero cambio giorno.
     date(): string {
+      useClockStore().tick;
       return (
         (this.$route.params.date as string) || get_today_with_offset(this.settingsStore.startOfDay)
       );
@@ -402,11 +415,21 @@ export default {
     },
   },
   watch: {
+    // Bug reale segnalato dall'utente: cambiando giorno/host, i moduli
+    // sparivano del tutto per un istante (start_loading() azzerava i
+    // dati a null PRIMA che i nuovi arrivassero) invece di aggiornarsi
+    // sul posto — esattamente il problema che il flag `background` di
+    // ensure_loaded() risolve già, finora usato solo dall'auto-refresh
+    // periodico (vedi checkForUpdatesAndReload sotto). Passandolo anche
+    // qui, i vecchi valori (nomi app, icone, barre) restano visibili
+    // finché i nuovi non sono pronti, poi vengono sostituiti sul posto
+    // — stessa transizione morbida dell'auto-refresh, non più uno
+    // sparire-e-riapparire.
     date() {
-      this.loadActivityData();
+      this.avviaCaricamentoConDebounce();
     },
     host() {
-      this.loadActivityData();
+      this.avviaCaricamentoConDebounce();
     },
   },
   async mounted() {
@@ -442,11 +465,30 @@ export default {
     window.removeEventListener('mouseup', this.onDragMouseUp);
     if (this.ro) this.ro.disconnect();
     if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.timerDebounceCambioGiorno) clearTimeout(this.timerDebounceCambioGiorno);
     // Cancels pending requests and resets the store — same cleanup
     // Activity.vue's own beforeDestroy used to do when leaving the page.
     this.activityStore.reset();
   },
   methods: {
+    // Richiesta esplicita dell'utente dopo l'indagine di performance:
+    // scorrere velocemente tra i giorni lanciava una query completa per
+    // ogni giorno di passaggio, anche se l'utente si fermava solo
+    // sull'ultimo — lavoro vero sprecato (rete + calcolo lato server),
+    // non solo un render di troppo. Aspetta 200ms di "silenzio" (nessun
+    // altro cambio giorno/host) prima di partire sul serio — sempre con
+    // `background: true` (vedi il commento sul watcher `date()`), così
+    // anche il primo aggiornamento dopo l'attesa resta morbido invece
+    // di far sparire tutto.
+    avviaCaricamentoConDebounce() {
+      if (this.timerDebounceCambioGiorno) {
+        clearTimeout(this.timerDebounceCambioGiorno);
+      }
+      this.timerDebounceCambioGiorno = setTimeout(() => {
+        this.timerDebounceCambioGiorno = null;
+        this.loadActivityData(false, true);
+      }, 200);
+    },
     async loadActivityData(force = false, background = false) {
       const queryOptions: QueryOptions = {
         host: this.host,

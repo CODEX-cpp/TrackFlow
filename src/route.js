@@ -1,6 +1,9 @@
 import Vue from 'vue';
 import VueRouter from 'vue-router';
 import { useBucketsStore } from '~/stores/buckets';
+import { getHomeClient } from '~/util/awclient';
+// Log diagnostico avanzato, disattivato di default — vedi util/diagnostics.ts.
+import { logEvento as logEventoDiagnostica } from '~/util/diagnostics';
 
 // The old Bootstrap "Activity" page (Activity.vue/ActivityView.vue —
 // toolbar with day/week/month/year buttons, Summary/Window/Browser/
@@ -92,6 +95,37 @@ const router = new VueRouter({
     },
     { path: '/stopwatch', component: Progetti, meta: { bareLayout: true } },
   ],
+});
+
+// Problema di performance reale segnalato dall'utente: a fine giornata,
+// con molti eventi accumulati e molti moduli Home aperti insieme,
+// cambiare giorno in fretta blocca il programma e fa sparire i moduli
+// per qualche secondo. Causa: aw-datastore (ereditato da ActivityWatch
+// upstream, TODO già presente nel loro codice) serializza OGNI query —
+// Timeline, ognuno dei moduli — su un unico thread worker, una alla
+// volta. I moduli che leggono eventi grezzi (Timeline, calendario "Ore
+// lavorate", watcher personalizzati VPN/Excel/VoiSpeed/Claude) passano
+// tutti da getHomeClient(), un client CONDIVISO ma senza nessun
+// coordinamento di annullamento: cambiando giorno in fretta, le
+// richieste del giorno vecchio restavano in volo e si accodavano dietro
+// quelle nuove sullo stesso thread singolo, intasandolo sempre di più
+// (activityStore.ensure_loaded(), usato dai moduli "Top X", annulla già
+// da solo le proprie richieste sul client $aw separato — vedi
+// stores/activity.ts riga ~224 — questo gap era solo lato getHomeClient).
+// Annullare qui, ad ogni cambio di data reale, PRIMA che i vari
+// componenti Home reagiscano al nuovo `$route.params.date` e sparino le
+// loro richieste fresche — l'ordine è garantito: le guardie di
+// navigazione del router finiscono prima che Vue propaghi il cambio di
+// route ai watcher dei componenti.
+router.afterEach((to, from) => {
+  if (to.params.date !== from.params.date) {
+    getHomeClient().abort();
+    // Log diagnostico avanzato (vedi util/diagnostics.ts). Marcatore
+    // di inizio cambio giorno: tutto quel che arriva nel log dopo questo
+    // punto (query, long task, rendering) fino al prossimo cambio giorno
+    // appartiene a QUESTO caricamento.
+    logEventoDiagnostica('cambio_giorno', { da: from.params.date, a: to.params.date });
+  }
 });
 
 export default router;

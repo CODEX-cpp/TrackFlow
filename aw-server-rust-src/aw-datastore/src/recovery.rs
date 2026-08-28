@@ -204,3 +204,27 @@ fn backup_se_dovuto(path: &Path) {
         let _ = fs::remove_file(vecchio);
     }
 }
+
+// Legge la lingua salvata (`settings.locale`, la stessa scritta dal
+// frontend — vedi src/i18n/index.ts) con una connessione a parte, sola
+// lettura — serve al menu della tray (src-tauri/src/lib.rs), costruito
+// in modo sincrono durante `.setup()` ben prima che il vero AppServer/
+// Datastore (costruito in un task async separato, vedi build_app_server)
+// sia pronto: senza questa scorciatoia il menu della tray non avrebbe
+// nessun modo di sapere la lingua scelta a quel punto. Bug reale
+// segnalato da un utente esterno (issue GitHub #2, "Tray is wrong
+// language"): il menu era hardcoded in italiano, ignorando del tutto
+// l'impostazione lingua.
+// Tollera qualunque errore restituendo `None` (installazione nuova,
+// tabella non ancora creata, database corrotto non ancora riparato) —
+// il chiamante ricade su un default sensato.
+pub fn leggi_locale_per_tray(db_path: &str) -> Option<String> {
+    let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    let raw: String = conn
+        .query_row("SELECT value FROM key_value WHERE key = 'settings.locale'", [], |row| row.get(0))
+        .ok()?;
+    // Il valore è salvato come stringa JSON (es. `"it"` con le
+    // virgolette incluse) — stesso formato scritto dall'endpoint POST
+    // /api/0/settings/<key> (vedi aw-server/src/endpoints/settings.rs).
+    serde_json::from_str::<String>(&raw).ok()
+}

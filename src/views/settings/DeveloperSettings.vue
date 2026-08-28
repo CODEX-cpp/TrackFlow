@@ -26,6 +26,23 @@ div
       div.settings-toggle(:class="{ 'settings-toggle-on': rawDataDiagnosticsEnabled }" @click="onToggleRawDataDiagnostics")
         div.settings-toggle-thumb
 
+    div.settings-row.dev-inner-row
+      div
+        div.settings-row-title {{ $t('settings.developer.diagnosticsLog.title') }}
+        div.settings-row-help {{ $t('settings.developer.diagnosticsLog.help') }}
+      div.settings-toggle(:class="{ 'settings-toggle-on': diagnosticsLoggingEnabled }" @click="onToggleDiagnosticsLog")
+        div.settings-toggle-thumb
+
+    div.settings-row.dev-inner-row(v-if="diagnosticsLoggingEnabled")
+      div
+        div.settings-row-title {{ $t('settings.developer.diagnosticsLog.folderTitle') }}
+        div.settings-row-help {{ diagnosticsLogFolder || $t('settings.developer.diagnosticsLog.folderDefault') }}
+      div.dev-diagnostics-folder-actions
+        div.pill-btn-ghost(@click="scegliCartellaDiagnostica") {{ $t('settings.developer.diagnosticsLog.chooseFolder') }}
+        div.pill-btn-ghost(v-if="diagnosticsLogFolder" @click="ripristinaCartellaDiagnosticaDefault") {{ $t('settings.developer.diagnosticsLog.resetFolder') }}
+
+    div.settings-alert.settings-alert-danger(v-if="diagnosticsLogError") {{ diagnosticsLogError }}
+
     div.dev-section
       div.settings-row-title {{ $t('settings.developer.watcherStatus.title') }}
       div.settings-row-help {{ $t('settings.developer.watcherStatus.help') }}
@@ -151,7 +168,9 @@ div
 <script lang="ts">
 import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
+import { open as apriSelettoreCartella } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { setAbilitata as impostaDiagnosticaAbilitataJs } from '~/util/diagnostics';
 import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
 import { KNOWN_WATCHER_CLIENTS } from '~/util/knownWatchers';
@@ -223,6 +242,7 @@ export default {
       aqlError: '',
       aqlResultText: '',
       folderError: '',
+      diagnosticsLogError: '',
     };
   },
   computed: {
@@ -234,6 +254,12 @@ export default {
     },
     rawDataDiagnosticsEnabled(): boolean {
       return this.settingsStore.rawDataDiagnosticsEnabled;
+    },
+    diagnosticsLoggingEnabled(): boolean {
+      return this.settingsStore.diagnosticsLoggingEnabled;
+    },
+    diagnosticsLogFolder(): string {
+      return this.settingsStore.diagnosticsLogFolder;
     },
     watcherRows(this: any) {
       return this.watchers.map((w: WatcherStatusDto) => {
@@ -450,7 +476,10 @@ export default {
           developerModeEnabled: false,
           devtoolsEnabled: false,
           rawDataDiagnosticsEnabled: false,
+          diagnosticsLoggingEnabled: false,
         });
+        impostaDiagnosticaAbilitataJs(false);
+        invoke('imposta_diagnostica', { abilitata: false, cartella: null }).catch(() => {});
       } else {
         this.showConfirm = true;
       }
@@ -461,6 +490,51 @@ export default {
     },
     async onToggleRawDataDiagnostics() {
       await this.settingsStore.update({ rawDataDiagnosticsEnabled: !this.rawDataDiagnosticsEnabled });
+    },
+    async onToggleDiagnosticsLog(this: any) {
+      this.diagnosticsLogError = '';
+      const next = !this.diagnosticsLoggingEnabled;
+      await this.settingsStore.update({ diagnosticsLoggingEnabled: next });
+      impostaDiagnosticaAbilitataJs(next);
+      try {
+        await invoke('imposta_diagnostica', {
+          abilitata: next,
+          cartella: this.diagnosticsLogFolder || null,
+        });
+      } catch (e: any) {
+        this.diagnosticsLogError = `${this.$t('settings.developer.diagnosticsLog.error')} ${e?.message ?? e}`;
+      }
+    },
+    async scegliCartellaDiagnostica(this: any) {
+      this.diagnosticsLogError = '';
+      let cartella: string | string[] | null;
+      try {
+        cartella = await apriSelettoreCartella({ directory: true });
+      } catch (e) {
+        // Fuori da Tauri (dev server puro nel browser) — il selettore
+        // nativo non esiste in quel contesto, non bloccante.
+        return;
+      }
+      if (!cartella || Array.isArray(cartella)) return;
+      await this.settingsStore.update({ diagnosticsLogFolder: cartella });
+      if (this.diagnosticsLoggingEnabled) {
+        try {
+          await invoke('imposta_diagnostica', { abilitata: true, cartella });
+        } catch (e: any) {
+          this.diagnosticsLogError = `${this.$t('settings.developer.diagnosticsLog.error')} ${e?.message ?? e}`;
+        }
+      }
+    },
+    async ripristinaCartellaDiagnosticaDefault(this: any) {
+      this.diagnosticsLogError = '';
+      await this.settingsStore.update({ diagnosticsLogFolder: '' });
+      if (this.diagnosticsLoggingEnabled) {
+        try {
+          await invoke('imposta_diagnostica', { abilitata: true, cartella: null });
+        } catch (e: any) {
+          this.diagnosticsLogError = `${this.$t('settings.developer.diagnosticsLog.error')} ${e?.message ?? e}`;
+        }
+      }
     },
     async onToggleDevtools() {
       const next = !this.devtoolsEnabled;
@@ -735,5 +809,12 @@ export default {
 
 .dev-folder-row + .dev-folder-row {
   margin-top: 14px;
+}
+
+.dev-diagnostics-folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 </style>

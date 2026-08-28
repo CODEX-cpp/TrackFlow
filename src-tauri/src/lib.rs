@@ -17,6 +17,9 @@ mod categorization;
 mod custom_modules;
 mod custom_watchers;
 mod devtools;
+// Modulo diagnostico avanzato (perf), disattivato di default — vedi
+// diagnostics.rs. Attivabile da Impostazioni → Sviluppatore.
+mod diagnostics;
 mod dpapi;
 mod folder_shortcuts;
 mod notifications;
@@ -128,26 +131,29 @@ const WATCHERS: &[&str] = &[
     "aw-watcher-excel",
 ];
 
-/// Tutti e 9 i moduli, incluso app-icons, con l'etichetta mostrata nel
-/// sottomenu "Moduli" della tray — un modulo alla volta, ordine fisso.
-/// Un modulo assente da modules-config.json (es. appena aggiunto qui)
-/// parte sempre attivo di default — vedi load_modules_config() sotto.
-const ALL_MODULES: &[(&str, &str)] = &[
-    ("aw-watcher-afk", "Rilevamento inattività"),
-    ("aw-watcher-window", "Finestra attiva"),
-    ("aw-watcher-vpn", "Sessioni VPN"),
-    ("aw-watcher-claude-code", "Sessioni Claude Code"),
-    ("aw-watcher-screenshot", "Screenshot"),
-    ("aw-watcher-app-icons", "Icone app"),
-    ("aw-watcher-tray", "App in background (system tray)"),
-    ("aw-watcher-vscode", "Attività VS Code"),
-    ("aw-watcher-excel", "Attività Excel"),
+/// Tutti e 9 i moduli, incluso app-icons, con l'etichetta (italiano,
+/// inglese) mostrata nel sottomenu "Moduli" della tray — un modulo alla
+/// volta, ordine fisso. Un modulo assente da modules-config.json (es.
+/// appena aggiunto qui) parte sempre attivo di default — vedi
+/// load_modules_config() sotto. Le due etichette (non solo l'italiano
+/// come prima) esistono per lo stesso motivo di show_hide/quit/Moduli
+/// più sotto — vedi il commento lì (issue GitHub #2).
+const ALL_MODULES: &[(&str, &str, &str)] = &[
+    ("aw-watcher-afk", "Rilevamento inattività", "Idle detection"),
+    ("aw-watcher-window", "Finestra attiva", "Active window"),
+    ("aw-watcher-vpn", "Sessioni VPN", "VPN sessions"),
+    ("aw-watcher-claude-code", "Sessioni Claude Code", "Claude Code sessions"),
+    ("aw-watcher-screenshot", "Screenshot", "Screenshot"),
+    ("aw-watcher-app-icons", "Icone app", "App icons"),
+    ("aw-watcher-tray", "App in background (system tray)", "Background app (system tray)"),
+    ("aw-watcher-vscode", "Attività VS Code", "VS Code activity"),
+    ("aw-watcher-excel", "Attività Excel", "Excel activity"),
     // Non è un sidecar (gira in-process nel binario principale, vedi
     // voispeed.rs) — assente da WATCHERS sopra apposta, ma ha comunque
     // una voce qui per poter essere acceso/spento dal menu Moduli come
     // gli altri. Spegnerlo ferma solo il polling periodico, non
     // scollega l'account (l'identità resta salvata).
-    ("aw-watcher-voispeed", "VoiSpeed"),
+    ("aw-watcher-voispeed", "VoiSpeed", "VoiSpeed"),
     // Anche questo virtuale, come VoiSpeed sopra — nessun processo da
     // avviare/fermare (gira agganciato agli eventi del watcher finestra,
     // vedi categorization.rs), ma spegnibile dal menu Moduli per chi non
@@ -155,7 +161,7 @@ const ALL_MODULES: &[(&str, &str)] = &[
     // categorizzazione automatica, pur tenendo attiva la chiave AI per
     // la chat. Il controllo vero e proprio è letto dal vivo ad ogni
     // evento (vedi spawn_stdout_drain), non da uno start/stop qui.
-    ("ai-categorization", "Categorizzazione app (AI)"),
+    ("ai-categorization", "Categorizzazione app (AI)", "App categorization (AI)"),
 ];
 
 /// Nome del file, dentro la cartella dati scrivibile, dove si ricorda
@@ -187,7 +193,7 @@ fn load_modules_config(app_data_dir: &Path) -> HashMap<String, bool> {
     //   prima volta.
     // Tutti restano comunque riattivabili a mano dal sottomenu "Moduli"
     // della tray.
-    for (name, _) in ALL_MODULES {
+    for (name, _, _) in ALL_MODULES {
         let default_attivo = !matches!(
             *name,
             "aw-watcher-tray"
@@ -229,6 +235,19 @@ struct ModulesConfigState(std::sync::Mutex<HashMap<String, bool>>);
 /// Handle ai `CheckMenuItem` del sottomenu Moduli, per aggiornarne la
 /// spunta a video quando lo stato cambia (avvio/arresto di un modulo).
 struct ModuleMenuItems(std::sync::Mutex<HashMap<String, CheckMenuItem<tauri::Wry>>>);
+
+/// Handle alle voci "statiche" del menu tray (non i moduli, quelli sono
+/// in ModuleMenuItems sopra) — serve solo per poterne rinominare il
+/// testo a runtime quando l'utente cambia lingua dalle Impostazioni
+/// mentre l'app è già aperta (watcher_status::aggiorna_lingua_tray).
+/// Prima di questo la lingua del tray veniva letta solo all'avvio (vedi
+/// il commento più sotto su `lingua_tray`) — richiesta esplicita
+/// dell'utente dopo aver verificato il fix iniziale.
+struct TrayLabelItems {
+    show_hide: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+    modules_submenu: Submenu<tauri::Wry>,
+}
 
 /// Il server `aw-server-rust` incorporato nel processo di questa app
 /// (Fase 5 — vedi BLUEPRINT.md): non apre più nessuna porta TCP, ogni
@@ -448,6 +467,9 @@ impl AppServer {
             match req.uri().path() {
                 "/api/0/settings/screenshotIntervalSeconds" => Some("screenshot-interval-override.txt"),
                 "/api/0/settings/screenshotRetentionDays" => Some("screenshot-retention-days-override.txt"),
+                "/api/0/settings/screenshotOnlyActiveWindow" => Some("screenshot-mode-override.txt"),
+                "/api/0/settings/diagnosticsLoggingEnabled" => Some("diagnostics-enabled-override.txt"),
+                "/api/0/settings/diagnosticsLogFolder" => Some("diagnostics-log-folder-override.txt"),
                 _ => None,
             }
         } else {
@@ -1086,7 +1108,10 @@ pub fn run() {
             agent::ai_agent_list_models,
             categorization::elenca_app_conosciute,
             devtools::apri_devtools,
+            diagnostics::log_frontend_diagnostica,
+            diagnostics::imposta_diagnostica,
             watcher_status::stato_watcher,
+            watcher_status::aggiorna_lingua_tray,
             watcher_status::avvia_watcher_sessione,
             watcher_status::ferma_watcher_sessione,
             watcher_status::riavvia_watcher,
@@ -1098,6 +1123,9 @@ pub fn run() {
             folder_shortcuts::apri_cartella_config_afk,
             folder_shortcuts::apri_cartella_watcher,
             folder_shortcuts::apri_cartella_database,
+            folder_shortcuts::apri_cartella_screenshot,
+            folder_shortcuts::dimensione_cartella_screenshot,
+            folder_shortcuts::elimina_tutti_screenshot,
             custom_watchers::elenca_watcher_personalizzati,
             custom_watchers::ricarica_watcher_personalizzati,
             custom_watchers::crea_watcher_personalizzato_semplice,
@@ -1174,6 +1202,20 @@ pub fn run() {
                 .join("TrackFlow")
                 .join("app-data");
             let _ = std::fs::create_dir_all(&app_data_dir);
+
+            // Log diagnostico avanzato (vedi diagnostics.rs) — disattivato
+            // di default, riparte automaticamente solo se l'utente lo
+            // aveva attivato dalle Impostazioni → Sviluppatore l'ultima
+            // volta (stesso meccanismo di override file di
+            // screenshotIntervalSeconds e simili, vedi dispatch() più
+            // sotto).
+            {
+                let abilitata = std::fs::read_to_string(app_data_dir.join("diagnostics-enabled-override.txt"))
+                    .map(|s| s.trim() == "true")
+                    .unwrap_or(false);
+                let cartella = std::fs::read_to_string(app_data_dir.join("diagnostics-log-folder-override.txt")).ok();
+                diagnostics::avvia_da_impostazioni(abilitata, cartella.as_deref());
+            }
 
             // Solo qui, non subito dopo un'installazione/aggiornamento:
             // arrivare fin qui in .setup() senza essere andati in panic
@@ -1527,6 +1569,16 @@ pub fn run() {
                                             }
                                         });
                                     }
+                                    tauri::WindowEvent::Focused(focused) => {
+                                        // Solo per la build diagnostica temporanea
+                                        // (diagnostics.rs) — richiesta esplicita
+                                        // dell'utente: registrare tutto SOLO
+                                        // mentre TrackFlow è in primo piano, per
+                                        // non appesantire il file con dati di
+                                        // quando la finestra è ridotta a icona.
+                                        crate::diagnostics::IN_FOREGROUND
+                                            .store(*focused, std::sync::atomic::Ordering::Relaxed);
+                                    }
                                     _ => {}
                                 });
                                 attach_navigation_retry(&window);
@@ -1606,17 +1658,46 @@ pub fn run() {
             // anche dopo un riavvio, vedi load/save_modules_config), Esci
             // (termina anche tutti i processi sidecar, non solo la
             // finestra).
-            let show_hide = MenuItem::with_id(app, "show_hide", "Mostra/Nascondi", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Esci", true, None::<&str>)?;
+            //
+            // Testi in italiano o inglese in base a `settings.locale` —
+            // prima erano hardcoded in italiano, ignorando del tutto la
+            // lingua scelta nell'app (issue GitHub #2, segnalata da un
+            // utente esterno: "Tray is wrong language"). Letta con una
+            // connessione SQLite a parte, sola lettura
+            // (aw_datastore::leggi_locale_per_tray) invece che tramite
+            // AppServer/get_setting: a questo punto di `.setup()`,
+            // sincrono, il vero AppServer non esiste ancora (costruito
+            // più sotto in un task async separato) — non c'è altro modo
+            // di saperlo qui. Questa è solo la lingua di partenza
+            // (all'avvio) — un cambio successivo dalle Impostazioni
+            // rinomina le voci a runtime tramite
+            // watcher_status::aggiorna_lingua_tray, invocato dal
+            // frontend (vedi stores/settings.ts), non richiede un
+            // riavvio.
+            let lingua_tray: &str = {
+                let db_path_tray = app_data_dir.join("sqlite.db");
+                match aw_datastore::leggi_locale_per_tray(&db_path_tray.to_string_lossy()) {
+                    Some(loc) if loc == "en" => "en",
+                    _ => "it",
+                }
+            };
+            let (show_hide_label, quit_label, modules_label) = if lingua_tray == "en" {
+                ("Show/Hide", "Quit", "Modules")
+            } else {
+                ("Mostra/Nascondi", "Esci", "Moduli")
+            };
+            let show_hide = MenuItem::with_id(app, "show_hide", show_hide_label, true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
 
             let mut module_items: HashMap<String, CheckMenuItem<tauri::Wry>> = HashMap::new();
             let mut module_item_list: Vec<CheckMenuItem<tauri::Wry>> = Vec::new();
-            for (name, label) in ALL_MODULES {
+            for (name, label_it, label_en) in ALL_MODULES {
                 let checked = *modules_config.get(*name).unwrap_or(&true);
+                let label = if lingua_tray == "en" { *label_en } else { *label_it };
                 let item = CheckMenuItem::with_id(
                     app,
                     format!("module:{name}"),
-                    *label,
+                    label,
                     true,
                     checked,
                     None::<&str>,
@@ -1626,8 +1707,14 @@ pub fn run() {
             }
             let module_item_refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
                 module_item_list.iter().map(|i| i as &dyn IsMenuItem<tauri::Wry>).collect();
-            let modules_submenu = Submenu::with_id_and_items(app, "modules_submenu", "Moduli", true, &module_item_refs)?;
+            let modules_submenu =
+                Submenu::with_id_and_items(app, "modules_submenu", modules_label, true, &module_item_refs)?;
             app.manage(ModuleMenuItems(std::sync::Mutex::new(module_items)));
+            app.manage(TrayLabelItems {
+                show_hide: show_hide.clone(),
+                quit: quit.clone(),
+                modules_submenu: modules_submenu.clone(),
+            });
 
             let tray_menu = Menu::with_items(app, &[&show_hide, &modules_submenu, &quit])?;
 

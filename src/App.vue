@@ -35,11 +35,15 @@ div#wrapper(v-if="loaded")
 
 <script lang="ts">
 import { useSettingsStore } from '~/stores/settings';
+import { useClockStore } from '~/stores/clock';
 import { useServerStore } from '~/stores/server';
 import { useFirstRunStore } from '~/stores/firstRun';
 import { useUpdaterStore } from '~/stores/updater';
 import { detectPreferredTheme } from '~/util/theme';
 import { valutaRegoleNotifica } from '~/util/notifyRulesEngine';
+// Log diagnostico avanzato, disattivato di default — vedi
+// util/diagnostics.ts e Impostazioni → Sviluppatore.
+import { setAbilitata as impostaDiagnosticaAbilitata } from '~/util/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -113,6 +117,19 @@ export default {
   },
 
   mounted: async function (this: any) {
+    // Log diagnostico avanzato — disattivato di default (vedi
+    // Impostazioni → Sviluppatore), quindi non aggancia nessun listener
+    // di performance/memoria né spedisce eventi via IPC se l'utente non
+    // l'ha attivato esplicitamente.
+    impostaDiagnosticaAbilitata(useSettingsStore().diagnosticsLoggingEnabled);
+
+    // Bug reale segnalato dall'utente: con l'app rimasta aperta a
+    // cavallo del cambio giorno, Home/Timeline/Moduli restavano bloccati
+    // sui dati di ieri mentre la Topbar mostrava già "oggi" — vedi
+    // stores/clock.ts per la causa (get_today_with_offset() legge l'ora
+    // reale, che Vue non traccia come dipendenza) e il fix.
+    useClockStore().avvia();
+
     const serverStore = useServerStore();
     await serverStore.getInfo();
 

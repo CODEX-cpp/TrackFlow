@@ -596,6 +596,8 @@ import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '~/util/projectTime';
 import { colorVarForName, isLightColor } from '~/util/hashColor';
+// Solo per la build diagnostica temporanea — vedi util/diagnostics.ts.
+import { logEvento as logEventoDiagnostica } from '~/util/diagnostics';
 import { colorePerGiorno } from '~/util/dailyColorPalette';
 import { domainForEvent } from '~/util/browserDomain';
 import {
@@ -654,6 +656,15 @@ const LANE_LABEL_WIDTH = 90;
 // Timeline blocks and the block-detail popup's "Altre occorrenze" list,
 // since both are built from the same merge.
 const MERGE_GAP_SECONDS = 300;
+
+// Quanti giorni passati tenere pronti in memoria (vedi cacheGiorni sotto
+// e load()) — richiesta esplicita dell'utente dopo l'indagine di
+// performance (BLUEPRINT.md sezione 45): scorrere avanti e indietro tra
+// giorni già visti rifaceva sempre da capo rete+clip+merge, anche se un
+// giorno CONCLUSO non cambia più. 7 giorni copre comodamente "torna
+// indietro di una settimana" senza far crescere la memoria all'infinito
+// in una sessione lunga.
+const LIMITE_CACHE_GIORNI = 7;
 
 // Soglia più stretta usata SOLO dalle due viste "per titolo" del popup
 // di dettaglio (selectedOccurrencesByTitle quando l'app è evidenziata
@@ -835,6 +846,35 @@ export default {
       // color) on a poll that found nothing new, instead of silently
       // re-doing identical work every 30s.
       lastLoadSignature: null as string | null,
+      // Contatore di generazione — vedi il commento in cima a load()
+      // per il bug reale che risolve (cambi giorno ravvicinati
+      // facevano girare più load() in parallelo).
+      loadGeneration: 0,
+      // Cache dei giorni passati già caricati — vedi LIMITE_CACHE_GIORNI
+      // e load(). Chiave: stringa data (this.date). MAI usata per "oggi"
+      // (che continua ad aggiornarsi dal vivo, controllo fatto in
+      // load()). Mantiene tutto lo stato grezzo che load() imposta,
+      // PRIMA di rebuildLanes() (che resta comunque veloce e viene
+      // rieseguito ad ogni ripescaggio dalla cache, così le corsie/
+      // colori restano coerenti con lo stato corrente dell'app invece
+      // di restare congelati a quando il giorno fu caricato la prima
+      // volta).
+      // Debounce del cambio giorno — vedi avviaCaricamentoConDebounce()
+      // e il commento sul watcher `date()` per il perché.
+      timerDebounceCambioGiorno: null as ReturnType<typeof setTimeout> | null,
+      cacheGiorni: new Map() as Map<
+        string,
+        {
+          rawAfkEvents: any[];
+          rawWindowEventsUnclipped: any[];
+          rawGeneralEvents: any[];
+          rawBrowserWindowEvents: any[];
+          rawEditorEvents: any[];
+          laneEventInputs: any;
+          viewRangeEvents: any[];
+          lastLoadSignature: string;
+        }
+      >,
     };
   },
   computed: {
@@ -1355,11 +1395,11 @@ export default {
       // theory, coincidentally produce the same signature as the old
       // day's, which would wrongly skip the reload.
       this.lastLoadSignature = null;
-      this.load();
       // A highlight selected on a different day almost never matches
       // anything on the new one — clear it instead of leaving the
       // whole Timeline dimmed for no visible reason.
       this.highlightStore.clear();
+      this.avviaCaricamentoConDebounce();
     },
     host() {
       this.lastLoadSignature = null;
@@ -1419,6 +1459,7 @@ export default {
     window.removeEventListener('resize', this.measureContainer);
     if (this.refreshInterval) clearInterval(this.refreshInterval);
     if (this.wheelZoomEndTimer) clearTimeout(this.wheelZoomEndTimer);
+    if (this.timerDebounceCambioGiorno) clearTimeout(this.timerDebounceCambioGiorno);
     document.removeEventListener('mousemove', this.onTimelineDragMove);
     document.removeEventListener('mouseup', this.onTimelineDragEnd);
   },
@@ -1666,7 +1707,84 @@ export default {
         this.viewEnd = this.viewStart.clone().add(1, 'hour');
       }
     },
+    // Richiesta esplicita dell'utente dopo l'indagine di performance:
+    // scorrere velocemente tra i giorni attraversava ogni giorno di
+    // passaggio con un load() completo (rete+clip+merge), anche se
+    // scartato subito dal contatore di generazione appena arrivava il
+    // cambio successivo — lavoro vero comunque sprecato, non solo un
+    // render di troppo. Aspetta 200ms di "silenzio" (nessun altro
+    // cambio giorno) prima di partire sul serio.
+    //
+    // Eccezione: un giorno già in cacheGiorni costa pochissimo (niente
+    // rete, solo un rebuildLanes() veloce) — per quelli l'attesa non
+    // serve a niente se non a far sembrare l'app meno reattiva, quindi
+    // si aggiorna subito anche scorrendo veloce tra giorni già
+    // visitati.
+    avviaCaricamentoConDebounce() {
+      if (this.timerDebounceCambioGiorno) {
+        clearTimeout(this.timerDebounceCambioGiorno);
+        this.timerDebounceCambioGiorno = null;
+      }
+      const oggi = get_today_with_offset(this.settingsStore.startOfDay);
+      const inCache = this.date !== oggi && this.cacheGiorni.has(this.date);
+      if (inCache) {
+        this.load();
+        return;
+      }
+      this.timerDebounceCambioGiorno = setTimeout(() => {
+        this.timerDebounceCambioGiorno = null;
+        this.load();
+      }, 200);
+    },
     async load() {
+      // Bug reale trovato analizzando il log diagnostico dell'utente
+      // (portatile, scorrimento veloce tra i giorni): load() non aveva
+      // nessuna protezione contro chiamate sovrapposte — ogni cambio
+      // giorno (watcher `date()` sotto) ne parte una nuova SENZA
+      // aspettare che quella precedente finisca. Con più cambi ravvicinati
+      // partivano più load() in parallelo, ciascuna con le sue 9
+      // richieste di rete, il suo clip/merge di migliaia di eventi e la
+      // sua rebuildLanes() finale — lavoro sprecato più volte per un
+      // singolo cambio dell'utente, e nel peggiore dei casi una
+      // rebuildLanes() più VECCHIA che vince su una più recente per pura
+      // fortuna nell'ordine di arrivo, mostrando per un istante i dati
+      // del giorno sbagliato. Il contatore di generazione sotto scarta
+      // silenziosamente il risultato di qualunque load() non sia più
+      // l'ultima partita, prima ancora di fare tutto il lavoro pesante
+      // di clip/merge/rebuildLanes — non solo prima di ridisegnare.
+      const miaGenerazioneLoad = ++this.loadGeneration;
+      // Build diagnostica TEMPORANEA — vedi util/diagnostics.ts.
+      const inizioCaricoDiagnostica = performance.now();
+
+      // Cache dei giorni passati — richiesta esplicita dell'utente dopo
+      // l'indagine di performance: un giorno CONCLUSO non cambia più
+      // (a differenza di "oggi", sempre escluso qui ed elaborato per
+      // intero come prima), quindi rivisitarlo può ripescare il
+      // risultato già pronto invece di rifare rete+clip+merge da capo.
+      // rebuildLanes() gira comunque di nuovo (veloce, vedi
+      // LIMITE_CACHE_GIORNI sopra) così corsie/colori restano coerenti
+      // con lo stato attuale dell'app invece di restare congelati a
+      // quando il giorno fu caricato la prima volta.
+      const oggiPerCache = get_today_with_offset(this.settingsStore.startOfDay);
+      const chiaveCache = this.date;
+      if (chiaveCache !== oggiPerCache && this.cacheGiorni.has(chiaveCache)) {
+        const cache = this.cacheGiorni.get(chiaveCache)!;
+        this.rawAfkEvents = cache.rawAfkEvents;
+        this.rawWindowEventsUnclipped = cache.rawWindowEventsUnclipped;
+        this.rawGeneralEvents = cache.rawGeneralEvents;
+        this.rawBrowserWindowEvents = cache.rawBrowserWindowEvents;
+        this.rawEditorEvents = cache.rawEditorEvents;
+        this.laneEventInputs = cache.laneEventInputs;
+        this.lastLoadSignature = cache.lastLoadSignature;
+        this.computeViewRange(cache.viewRangeEvents);
+        this.loading = true;
+        this.rebuildLanes();
+        this.loading = false;
+        logEventoDiagnostica('timeline_da_cache', { giorno: chiaveCache });
+        this.measureContainer();
+        return;
+      }
+
       const [
         vpnEventsRaw,
         claudeEventsRaw,
@@ -1697,7 +1815,26 @@ export default {
         // aspettare un nuovo giro di rete.
         this.fetchEvents('tray-apps', this.dayStart, this.dayEnd),
       ]);
+      // Build diagnostica TEMPORANEA — marcatore di fine fase rete. Se
+      // questo numero è molto più alto della più lenta delle singole
+      // client_getEvents già loggate da strumentaClient(), le 9 richieste
+      // NON stanno davvero girando in parallelo nonostante Promise.all —
+      // segno di qualcos'altro che le serializza (es. un limite di
+      // connessioni concorrenti). Se invece combacia con la più lenta,
+      // la fase di rete si comporta come ci si aspetta e il tempo perso
+      // sta più avanti (clip/merge/rebuildLanes).
+      logEventoDiagnostica('timeline_fase_rete_completata', {
+        durata_ms: Math.round(performance.now() - inizioCaricoDiagnostica),
+      });
       const customLanes = await this.loadCustomLanes();
+      logEventoDiagnostica('timeline_fase_customlanes_completata', {
+        durata_ms: Math.round(performance.now() - inizioCaricoDiagnostica),
+      });
+
+      // Una load() più recente è già partita mentre questa aspettava la
+      // rete — scarta questo risultato prima di fare qualunque lavoro
+      // pesante (clip/merge/rebuildLanes), non solo prima di ridisegnare.
+      if (miaGenerazioneLoad !== this.loadGeneration) return;
 
       // Auto-refresh (every 30s, see mounted()) short-circuits here on a
       // poll that found nothing new — cheap count+last-id fingerprint,
@@ -1856,14 +1993,15 @@ export default {
       // AFK bar — to silently freeze at wherever AFK last said
       // "not-afk" ended, instead of showing genuinely fresh activity as
       // an accurately-colored (if red) trailing stretch.
-      this.computeViewRange([
+      const viewRangeEvents = [
         ...vpnEventsRaw,
         ...claudeEventsRaw,
         ...rawWindowEventsUnclipped,
         ...browserEventsRaw,
         ...rawEditorEventsUnclipped.filter(e => isKnownEditorValue(e.data.project)),
         ...rawVoispeedEventsUnclipped,
-      ]);
+      ];
+      this.computeViewRange(viewRangeEvents);
 
       // Non ancora clippati sugli intervalli non-afk (a differenza degli
       // altri): la presenza di un'icona in tray non dipende dal fatto
@@ -1884,8 +2022,76 @@ export default {
         trayEvents,
         customLanes,
       };
+
+      // Salva in cache SOLO i giorni passati (mai "oggi", vedi il
+      // controllo dell'inizio di load()) — chiaveCache/oggiPerCache sono
+      // già in scope da lì.
+      if (chiaveCache !== oggiPerCache) {
+        this.cacheGiorni.set(chiaveCache, {
+          rawAfkEvents: this.rawAfkEvents,
+          rawWindowEventsUnclipped: this.rawWindowEventsUnclipped,
+          rawGeneralEvents: this.rawGeneralEvents,
+          rawBrowserWindowEvents: this.rawBrowserWindowEvents,
+          rawEditorEvents: this.rawEditorEvents,
+          laneEventInputs: this.laneEventInputs,
+          viewRangeEvents,
+          lastLoadSignature: signature,
+        });
+        // Tetto a LIMITE_CACHE_GIORNI giorni — una Map in JS conserva
+        // l'ordine di inserimento, quindi il primo risultato di .keys()
+        // è sempre il meno recente (il prossimo da scartare).
+        while (this.cacheGiorni.size > LIMITE_CACHE_GIORNI) {
+          const chiavePiuVecchia = this.cacheGiorni.keys().next().value;
+          if (chiavePiuVecchia === undefined) break;
+          this.cacheGiorni.delete(chiavePiuVecchia);
+        }
+      }
+      // Build diagnostica TEMPORANEA — marcatore subito PRIMA di
+      // rebuildLanes(): tutto quello che sta tra questo e il prossimo
+      // marcatore (clip/merge di migliaia di eventi grezzi, sincrono,
+      // niente rete) è la fase più sospetta per un blocco lungo con CPU
+      // bassa — se anche qui la CPU misurata resta bassa nonostante un
+      // salto grande di durata, il tempo non lo sta mangiando questo
+      // calcolo, sta aspettando qualcos'altro (nota mentale per chi
+      // legge il prossimo log).
+      logEventoDiagnostica('timeline_fase_preparadati_completata', {
+        durata_ms: Math.round(performance.now() - inizioCaricoDiagnostica),
+      });
       this.rebuildLanes();
       this.loading = false;
+      // Build diagnostica TEMPORANEA — vedi util/diagnostics.ts. Copre
+      // fetch + clip + merge + costruzione blocchi (rebuildLanes) —
+      // tutto quello che questo metodo fa dall'inizio alla fine, non
+      // solo la parte di rete già cronometrata singolarmente da
+      // strumentaClient() su ogni fetchEvents().
+      logEventoDiagnostica('timeline_caricata', {
+        durata_ms: Math.round(performance.now() - inizioCaricoDiagnostica),
+        corsie: this.lanes.length,
+        blocchi_totali: this.lanes.reduce((tot: number, l: any) => tot + l.blocks.length, 0),
+      });
+      // Build diagnostica TEMPORANEA — 'timeline_caricata' sopra copre
+      // solo il lavoro sincrono di load() (fetch+clip+merge+
+      // rebuildLanes). L'assegnazione reattiva a this.lanes fa scattare
+      // il re-render di Vue in modo ASINCRONO subito dopo — $nextTick
+      // segna quando la patch del DOM è finita, il doppio
+      // requestAnimationFrame quando il browser ha anche DIPINTO il
+      // fotogramma (tecnica standard per "aspetta il vero paint", non
+      // solo l'aggiornamento del DOM in memoria). Se il grosso del
+      // blocco segnalato dall'utente sta qui invece che in
+      // 'timeline_caricata', il sospetto si sposta dal calcolo JS al
+      // rendering vero e proprio del browser.
+      this.$nextTick(() => {
+        logEventoDiagnostica('timeline_dom_aggiornato', {
+          durata_ms: Math.round(performance.now() - inizioCaricoDiagnostica),
+        });
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            logEventoDiagnostica('timeline_dipinta', {
+              durata_ms: Math.round(performance.now() - inizioCaricoDiagnostica),
+            });
+          });
+        });
+      });
       this.measureContainer();
     },
     // Una corsia per ogni watcher personalizzato con "mostra su una riga

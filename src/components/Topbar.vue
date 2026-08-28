@@ -425,6 +425,7 @@ import { useTimelineHighlightStore } from '~/stores/timelineHighlight';
 import { useBucketsStore } from '~/stores/buckets';
 import { useSettingsStore } from '~/stores/settings';
 import { get_today_with_offset } from '~/util/time';
+import { useClockStore } from '~/stores/clock';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { SETTINGS_SEARCH_INDEX } from '~/util/settingsSearchIndex';
 
@@ -564,11 +565,21 @@ export default {
     // finivano per interrogare un periodo nel futuro (04:00 di oggi -
     // 04:00 di domani) — da qui moduli vuoti dopo un giro ieri->oggi.
     currentDate(): string {
+      // Letto solo per registrare la dipendenza reattiva sull'orologio
+      // condiviso — vedi stores/clock.ts: senza, questo computed
+      // restava "congelato" al valore della prima valutazione anche
+      // dopo il vero cambio giorno (bug reale segnalato dall'utente:
+      // Topbar mostrava "oggi" corretto — per puro caso, essendosi
+      // rivalutata più tardi per altri motivi — mentre Home/Timeline/
+      // Moduli, con questo stesso identico problema, restavano bloccati
+      // sul giorno precedente).
+      useClockStore().tick;
       return (
         (this.$route.params.date as string) || get_today_with_offset(this.settingsStore.startOfDay)
       );
     },
     dateLabel(): string {
+      useClockStore().tick;
       const oggi = get_today_with_offset(this.settingsStore.startOfDay);
       if (this.currentDate === oggi) return this.$t('topbar.today') as string;
       const ieri = moment(oggi, 'YYYY-MM-DD').subtract(1, 'day').format('YYYY-MM-DD');

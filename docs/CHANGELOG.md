@@ -5,6 +5,28 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.20
+
+### it
+- Cambiare giorno nella Timeline e nei moduli della Home è ora molto più veloce e fluido, specialmente scorrendo rapidamente tra più giorni: i giorni già visti restano pronti in memoria, e i moduli aggiornano i valori sul posto invece di sparire e riapparire ad ogni cambio.
+- Corretto un bug per cui, lasciando l'app aperta a cavallo della mezzanotte, Home/Timeline/Moduli restavano bloccati sui dati del giorno precedente anche se la barra in alto mostrava già "Oggi".
+- Corretto un bug segnalato da un utente (**@pupontech**, issue [#2](https://github.com/CODEX-cpp/TrackFlow/issues/2)) per cui il menu dell'icona nella barra delle applicazioni restava sempre in italiano, ignorando la lingua scelta nell'app — ora segue subito la lingua, senza bisogno di riavviare.
+- Screenshot: corretta una drastica perdita di qualità con più monitor o uno schermo molto grande (ora la riduzione è proporzionata all'area totale, non più concentrata su un solo lato); alzata anche la qualità di base, prima i testi di dimensione media non si leggevano bene.
+- Impostazioni → Screenshot: nuovo interruttore per catturare solo la finestra in primo piano invece di tutti i monitor uniti, e una nuova riga per aprire la cartella degli screenshot, vedere lo spazio occupato ed eliminarli tutti in un clic.
+- L'assistente AI ora può rispondere a domande come "ho lavorato con qualche cliente oggi?" guardando direttamente i titoli reali delle finestre, invece di doverti chiedere quali parole cercare.
+- VoiSpeed: corretto un bug per cui collegare l'account disconnetteva la sessione dell'app desktop usata per le chiamate; il rinnovo automatico dell'accesso ora avviene anche meno spesso.
+- Impostazioni → Sviluppatore: nuova opzione per un log diagnostico avanzato (per indagare eventuali problemi di prestazioni), disattivato di default, con scelta della cartella dove salvarlo.
+
+### en
+- Switching days in the Timeline and Home modules is now much faster and smoother, especially when scrolling quickly through several days: already-seen days stay ready in memory, and modules update their values in place instead of disappearing and reappearing on every change.
+- Fixed a bug where, with the app left open across midnight, Home/Timeline/Modules stayed stuck on the previous day's data even though the top bar already showed "Today".
+- Fixed a bug reported by a user (**@pupontech**, issue [#2](https://github.com/CODEX-cpp/TrackFlow/issues/2)) where the tray icon's menu always stayed in Italian, ignoring the app's chosen language — it now follows the language immediately, no restart needed.
+- Screenshots: fixed a drastic quality loss with multiple monitors or one very large screen (the reduction is now proportional to total area, not concentrated on a single dimension); also raised the base quality, since medium-sized text used to be hard to read.
+- Settings → Screenshot: new toggle to capture only the active foreground window instead of all monitors combined, plus a new row to open the screenshots folder, see how much space they use, and delete them all in one click.
+- The AI assistant can now answer questions like "did I work with any client today?" by looking directly at real window titles, instead of having to ask you which words to search for.
+- VoiSpeed: fixed a bug where connecting the account would disconnect the desktop app session used for calls; automatic session renewal is now also less frequent.
+- Settings → Developer: new option for an advanced diagnostics log (for troubleshooting performance issues), off by default, with a choice of folder to save it to.
+
 ## 0.1.19
 
 ### it

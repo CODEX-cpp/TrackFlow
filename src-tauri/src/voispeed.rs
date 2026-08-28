@@ -43,7 +43,14 @@ const LOGIN_POLL_INTERVAL_SECONDS: u64 = 2;
 const LOGIN_POLL_TIMEOUT_SECONDS: u64 = 600;
 
 /// Ogni quanto interrogare di nuovo l'elenco chiamate una volta connessi.
-const CALLS_POLL_INTERVAL_SECONDS: u64 = 300;
+/// Alzato da 5 a 30 minuti — richiesta esplicita dell'utente, bug reale:
+/// ogni giro riesegue per pochi secondi la pagina VERA di VoiSpeed (vedi
+/// il commento su `ottieni_token_fresco`/`estrai_identita_da_html`), che
+/// il server tratta come una sessione concorrente a quella dell'app
+/// desktop — a 5 minuti capitava troppo spesso perché fosse solo un
+/// fastidio occasionale. Il registro chiamate non ha comunque bisogno di
+/// essere quasi in tempo reale per uno strumento di time-tracking.
+const CALLS_POLL_INTERVAL_SECONDS: u64 = 1800;
 
 /// Identità del contratto VoiSpeed dell'utente — NON un segreto (stesso
 /// livello di sensibilità di un nome utente), persistita su disco per
@@ -253,9 +260,26 @@ async fn ottieni_token_fresco(app_handle: &AppHandle, visible: bool) -> Option<(
             continue;
         };
         if let Some((token, identity)) = estrai_identita_da_html(&html) {
+            // CHIUDE la finestra (non solo `.hide()`) appena estratto il
+            // token — bug reale segnalato dall'utente: "quando faccio il
+            // login mi disconnette dall'app VoiSpeed desktop". VoiSpeed
+            // applica lato server una regola "una sola sessione live per
+            // account": nascondere la finestra lascia comunque la pagina
+            // vera in esecuzione in background (stessa connessione SSE
+            // aperta di un browser reale), quindi per TUTTO il tempo in
+            // cui TrackFlow resta collegato quella sessione nascosta
+            // competeva continuamente con la sessione dell'app desktop,
+            // non solo per un istante durante il rinnovo. Chiudendo la
+            // finestra invece di nasconderla, la pagina reale (e la sua
+            // connessione SSE) esiste solo per i pochi secondi necessari
+            // a leggere il token ad ogni giro di rinnovo — molto meno
+            // occasioni di conflitto, non zero (l'unica soluzione a zero
+            // conflitti richiederebbe di non eseguire mai la pagina vera,
+            // che è esattamente il meccanismo di bypass scartato per
+            // motivi di autorizzazione, vedi BLUEPRINT.md).
             if !visible {
                 if let Some(window) = app_handle.get_webview_window("voispeed_auth") {
-                    let _ = window.hide();
+                    let _ = window.close();
                 }
             }
             return Some((token, identity));
@@ -465,10 +489,10 @@ async fn esegui_un_giro(app_handle: &AppHandle, server: &Arc<AppServer>, hostnam
 }
 
 /// Ciclo periodico automatico — un `esegui_un_giro` ogni
-/// `CALLS_POLL_INTERVAL_SECONDS` (5 minuti), più frequente dei "circa 15
-/// minuti" richiesti dall'utente per la verifica del login: non serve un
-/// timer separato, il rinnovo del token che questo ciclo fa comunque ad
-/// ogni giro (per interrogare le chiamate) È la stessa identica verifica,
+/// `CALLS_POLL_INTERVAL_SECONDS` (30 minuti, vedi il commento sulla
+/// costante per il perché non più breve): non serve un timer separato,
+/// il rinnovo del token che questo ciclo fa comunque ad ogni giro (per
+/// interrogare le chiamate) È la stessa identica verifica,
 /// semplicemente già eseguita più spesso del minimo richiesto.
 async fn ciclo_di_polling(app_handle: AppHandle, server: Arc<AppServer>, hostname: String) {
     loop {
@@ -573,8 +597,12 @@ pub async fn voispeed_connect(app_handle: AppHandle) -> Result<(), String> {
                 status.connecting = false;
                 status.connected = true;
             }
+            // Stesso motivo del caso "non visibile" in ottieni_token_fresco:
+            // chiudere invece di nascondere evita di lasciare una sessione
+            // VoiSpeed reale (e la sua connessione SSE) viva in background
+            // per tutta la durata del collegamento con TrackFlow.
             if let Some(window) = app_handle.get_webview_window("voispeed_auth") {
-                let _ = window.hide();
+                let _ = window.close();
             }
 
             let server = app_handle.state::<Arc<AppServer>>().inner().clone();

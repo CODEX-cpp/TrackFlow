@@ -9,6 +9,7 @@ import { getHomeClient } from '~/util/awclient';
 import { useBucketsStore } from '~/stores/buckets';
 import { useSettingsStore } from '~/stores/settings';
 import { get_today_with_offset, get_day_start_with_offset } from '~/util/time';
+import { useClockStore } from '~/stores/clock';
 
 export default Vue.extend({
   computed: {
@@ -22,6 +23,12 @@ export default Vue.extend({
     // giro ieri->oggi mentre la Timeline mostrava correttamente i dati
     // di oggi).
     date(): string {
+      // Letto solo per registrare la dipendenza reattiva — vedi
+      // stores/clock.ts: senza, questo computed resta "congelato" al
+      // valore della prima valutazione anche dopo il cambio giorno
+      // reale, finché route.params.date o startOfDay non cambiano per
+      // altri motivi.
+      useClockStore().tick;
       return (
         (this.$route.params.date as string) ||
         get_today_with_offset(useSettingsStore().startOfDay)

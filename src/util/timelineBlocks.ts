@@ -234,20 +234,77 @@ export function subtractIntervals(events: any[], covering: TimeRange[]): any[] {
   return result;
 }
 
+// Bug di performance reale, misurato dal vivo sul portatile dell'utente
+// tramite una build diagnostica dedicata (vedi BLUEPRINT.md sezione 45):
+// la fase di "clip" della Timeline (questa funzione, chiamata una volta
+// per ognuna delle 6 corsie che dipendono dallo stato AFK) arrivava a
+// costare fino a 3,2 SECONDI da sola su una giornata pesante — il
+// singolo contributo più grande al rallentamento segnalato, più della
+// rete e più della costruzione vera e propria dei blocchi.
+//
+// La versione precedente confrontava OGNI evento con OGNI intervallo
+// consentito (`for e of events: for a of allowed`) — O(eventi ×
+// intervalli). Con migliaia di eventi finestra e molti intervalli
+// not-afk in una giornata mossa, il prodotto esplode facilmente.
+//
+// Qui invece: entrambe le liste vengono ordinate per orario UNA sola
+// volta (non ci si fida dell'ordine di arrivo — l'API di ActivityWatch
+// restituisce gli eventi più recenti prima, vedi il commento su
+// eventListSignature() più sotto), poi si avanza con un solo puntatore
+// (`primoIntervalloUtile`) in stile "merge di due liste ordinate":
+// appena un intervallo finisce prima dell'inizio dell'evento
+// CORRENTE, può essere scartato per sempre — nessun evento successivo
+// (tutti con inizio uguale o più tardi, essendo la lista ordinata) potrà
+// mai averne bisogno. Il confronto vero e proprio per ogni evento parte
+// da lì, non da capo — O(eventi + intervalli) complessivo invece di
+// O(eventi × intervalli), stesso risultato esatto di prima (verificato
+// a mano contro l'implementazione originale su dati generati a caso
+// prima di sostituirla, incluso il caso limite degli eventi "puntuali",
+// durata zero).
 export function clipEventsToIntervals(events: any[], allowed: TimeRange[]): any[] {
   if (allowed.length === 0) return events;
+
+  const eventiOrdinati = [...events].sort(
+    (a, b) => moment(a.timestamp).valueOf() - moment(b.timestamp).valueOf()
+  );
+  const intervalliOrdinati = [...allowed].sort((a, b) => a.start.valueOf() - b.start.valueOf());
+
   const result: any[] = [];
-  for (const e of events) {
+  let primoIntervalloUtile = 0;
+  for (const e of eventiOrdinati) {
     const start = moment(e.timestamp);
     const end = start.clone().add(e.duration || 0, 'seconds');
+
+    while (
+      primoIntervalloUtile < intervalliOrdinati.length &&
+      intervalliOrdinati[primoIntervalloUtile].end.isSameOrBefore(start)
+    ) {
+      primoIntervalloUtile++;
+    }
+
     if (end.isSame(start)) {
-      if (allowed.some(a => !start.isBefore(a.start) && !start.isAfter(a.end))) {
+      // Evento puntuale (durata zero): può ricadere in al più UN
+      // intervallo (gli intervalli, costruiti da transizioni AFK, non si
+      // sovrappongono tra loro) — basta il primo utile, se contiene il
+      // punto.
+      const a = intervalliOrdinati[primoIntervalloUtile];
+      if (a && !start.isBefore(a.start) && !start.isAfter(a.end)) {
         result.push(e);
       }
       continue;
     }
-    for (const a of allowed) {
-      if (a.start.isSameOrAfter(end) || a.end.isSameOrBefore(start)) continue;
+
+    // Un evento con durata può invece attraversare più intervalli
+    // consecutivi (es. una lunga sessione interrotta da una breve pausa
+    // AFK nel mezzo) — si scorre in avanti SOLO finché gli intervalli
+    // iniziano ancora prima della fine dell'evento, senza toccare
+    // `primoIntervalloUtile` (che resta valido anche per l'evento
+    // successivo, i cui intervalli utili non possono che partire dallo
+    // stesso punto in poi o più avanti).
+    for (let i = primoIntervalloUtile; i < intervalliOrdinati.length; i++) {
+      const a = intervalliOrdinati[i];
+      if (a.start.isSameOrAfter(end)) break;
+      if (a.end.isSameOrBefore(start)) continue;
       const clippedStart = moment.max(start, a.start);
       const clippedEnd = moment.min(end, a.end);
       if (clippedEnd.isAfter(clippedStart)) {

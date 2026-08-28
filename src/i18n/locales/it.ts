@@ -297,6 +297,20 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       retentionHelp:
         'Dopo quanti giorni aw-watcher-screenshot elimina da solo gli screenshot più vecchi (default 14). Letto direttamente dal watcher — nessun riavvio necessario.',
       days: 'giorni',
+      onlyActiveWindowTitle: 'Cattura solo la finestra attiva',
+      onlyActiveWindowHelp:
+        'Se attivo, aw-watcher-screenshot cattura solo la finestra in primo piano invece di tutti i monitor uniti — utile per la privacy e per evitare la perdita di qualità con più schermi. Letto direttamente dal watcher — nessun riavvio necessario.',
+      manageTitle: 'Screenshot salvati',
+      manageSize: 'Spazio occupato: {size}',
+      manageSizeLoading: 'Calcolo dello spazio occupato…',
+      openFolder: 'Apri cartella',
+      openFolderError: 'Impossibile aprire la cartella:',
+      deleteAll: 'Elimina tutti',
+      deleteAllError: 'Impossibile eliminare gli screenshot:',
+      deleteConfirmTitle: 'Eliminare tutti gli screenshot?',
+      deleteConfirm: 'Elimina tutti',
+      deleteConfirmText:
+        'Tutti gli screenshot salvati finora verranno eliminati definitivamente. Questa azione non può essere annullata.',
     },
     homeVisibility: {
       hideModules: 'Nascondi moduli quando vuoti',
@@ -356,6 +370,16 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
       rawDataDiagnosticsTitle: 'Abilita il pulsante diagnosi delle sorgenti dati',
       rawDataDiagnosticsHelp:
         'Mostra il pulsante "Apri" su ogni riga della pagina Watchers → Sorgenti dati, che porta al pannello tecnico del bucket (timeline grezza ed elenco eventi uno per uno). Pensato per diagnosticare un problema, non per l\'uso quotidiano — spento di default, il pulsante resta nascosto.',
+      diagnosticsLog: {
+        title: 'Log diagnostico avanzato',
+        help:
+          'Registra su file uso di CPU/RAM e tempi di query/rendering, solo mentre la finestra di TrackFlow è in primo piano. Utile solo per diagnosticare un problema di prestazioni — spento di default, non scrive nulla su disco finché non lo attivi.',
+        folderTitle: 'Cartella del file di log',
+        folderDefault: 'Predefinita (Desktop)',
+        chooseFolder: 'Scegli cartella…',
+        resetFolder: 'Usa predefinita',
+        error: 'Impossibile applicare l\'impostazione del log diagnostico:',
+      },
       watcherStatus: {
         title: 'Stato watcher',
         help: 'Elenco dei watcher che questa app avvia e gestisce, con lo stato reale del processo — aggiornato ogni pochi secondi.',
@@ -432,8 +456,19 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
     tools: {
       elenca_bucket: 'elenco fonti dati',
       interroga_periodo: 'interrogazione dati per periodo',
+      confronta_periodi: 'confronto tra periodi',
+      interroga_fascia_oraria_periodo: 'attività per fascia oraria nel periodo',
+      cerca_titolo_finestra: 'ricerca nei titoli delle finestre',
+      elenca_titoli_finestra: 'elenco titoli delle finestre',
+      copertura_giorni: 'giorni con attività',
+      lista_app: 'elenco app',
+      interroga_app_specifica: 'interrogazione app specifica',
       interroga_fascia_oraria: 'dettaglio attività per fascia oraria',
       rileva_pause: 'rilevamento pause',
+      elenca_categorie: 'elenco categorie',
+      crea_categoria: 'creazione categoria',
+      elimina_categoria: 'eliminazione categoria',
+      assegna_categoria_app: 'assegnazione categoria',
     },
   },
   buckets: {

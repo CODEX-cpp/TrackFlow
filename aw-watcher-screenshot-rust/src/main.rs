@@ -22,7 +22,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::Parser;
 use image::{imageops, ImageBuffer, Rgba, RgbaImage};
 use serde_json::{json, Map};
-use xcap::Monitor;
+use xcap::{Monitor, Window};
 
 const CLIENT_NAME: &str = "aw-watcher-screenshot";
 const BUCKET_ID: &str = "aw-watcher-screenshot";
@@ -88,6 +88,63 @@ fn cattura_tutti_i_monitor() -> Result<RgbaImage, String> {
     Ok(combinata)
 }
 
+/// Cattura solo la finestra attualmente in primo piano, invece di tutti
+/// i monitor uniti — richiesta esplicita dell'utente per privacy (le
+/// finestre/schermi non attivi non finiscono mai catturati) e per
+/// qualità (una singola finestra normale non soffre del problema di
+/// area combinata di più monitor, vedi `scala_per_area`). Se nessuna
+/// finestra risulta focalizzata (es. desktop cliccato, tutte le finestre
+/// minimizzate), l'errore fa ricadere il chiamante sulla cattura di
+/// tutti i monitor (vedi `cattura_e_salva`).
+fn cattura_finestra_attiva() -> Result<RgbaImage, String> {
+    let windows = Window::all().map_err(|e| e.to_string())?;
+    let finestra_attiva = windows
+        .into_iter()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .ok_or_else(|| "Nessuna finestra in primo piano trovata".to_string())?;
+
+    finestra_attiva.capture_image().map_err(|e| e.to_string())
+}
+
+/// Modalità di cattura, letta dall'impostazione 'screenshotOnlyActiveWindow'.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Modalita {
+    TuttiIMonitor,
+    FinestraAttiva,
+}
+
+/// Fattore di scala da applicare all'immagine catturata (che con più
+/// monitor, o anche un solo monitor molto grande, può essere molto più
+/// larga/alta di un singolo schermo normale) per restare dentro un
+/// budget di AREA invece che di larghezza/altezza fisse.
+///
+/// Bug reale segnalato dall'utente: "con più schermi la qualità cala
+/// drasticamente, anche solo con un monitor molto grande". La versione
+/// precedente scalava sulla dimensione più vincolante tra `max_width` e
+/// `max_height` — pensata per UN solo schermo, ma applicata
+/// all'immagine COMBINATA di tutti i monitor. Con 3 monitor 1920×1080
+/// affiancati (combinata 5760×1080), quel calcolo dava una scala di
+/// 1920/5760 ≈ 0,33 — ogni monitor finiva rimpicciolito a soli 640×360,
+/// una perdita di dettaglio catastrofica. Un solo monitor 4K/ultrawide
+/// molto più largo di 1920px aveva lo stesso problema.
+///
+/// Qui invece il budget è un'AREA totale (max_width × max_height,
+/// default ≈2 megapixel, la stessa "quantità di dettaglio" pensata per
+/// uno schermo normale) — la scala è `sqrt(area_massima / area_reale)`
+/// perché scalare linearmente entrambe le dimensioni di un fattore `s`
+/// scala l'AREA di `s²`, quindi serve la radice quadrata per ottenere
+/// esattamente l'area target. Un solo schermo normale non viene
+/// toccato (stesso comportamento di prima, `.min(1.0)` non scala mai
+/// verso l'alto); con più monitor la qualità cala in modo proporzionato
+/// e prevedibile invece che catastrofico — ognuno riceve una fetta equa
+/// del budget invece che un terzo (o un quarto, ecc.) della sola
+/// larghezza.
+fn scala_per_area(larghezza: u32, altezza: u32, max_width: u32, max_height: u32) -> f64 {
+    let area_massima = max_width as f64 * max_height as f64;
+    let area_reale = larghezza as f64 * altezza as f64;
+    (area_massima / area_reale).sqrt().min(1.0)
+}
+
 /// Cattura, ridimensiona/comprime e salva su disco. Ritorna il nome del
 /// file salvato (non il percorso intero) e il timestamp dello scatto.
 fn cattura_e_salva(
@@ -95,16 +152,19 @@ fn cattura_e_salva(
     max_width: u32,
     max_height: u32,
     quality: u8,
+    modalita: Modalita,
 ) -> Result<(String, chrono::DateTime<Utc>), String> {
-    let img = cattura_tutti_i_monitor()?;
+    let img = match modalita {
+        Modalita::TuttiIMonitor => cattura_tutti_i_monitor()?,
+        // Se la finestra attiva non è catturabile (nessuna finestra a
+        // fuoco), non facciamo fallire lo scatto: ricadiamo su tutti i
+        // monitor, coerente col comportamento di sempre.
+        Modalita::FinestraAttiva => {
+            cattura_finestra_attiva().or_else(|_| cattura_tutti_i_monitor())?
+        }
+    };
 
-    // Scala uniforme sul lato più vincolante, non solo la larghezza: due
-    // monitor affiancati danno un'immagine molto larga (la larghezza
-    // vincola), uno sopra l'altro un'immagine molto alta (l'altezza
-    // vincola).
-    let scale = (max_width as f64 / img.width() as f64)
-        .min(max_height as f64 / img.height() as f64)
-        .min(1.0);
+    let scale = scala_per_area(img.width(), img.height(), max_width, max_height);
 
     let img = if scale < 1.0 {
         let nuova_larghezza = (img.width() as f64 * scale).round() as u32;
@@ -160,6 +220,23 @@ fn leggi_retention_giorni(override_path: &Path, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+/// Stesso principio di `leggi_intervallo`: rilegge da un piccolo file
+/// locale scritto dal processo Tauri quando l'utente cambia
+/// 'screenshotOnlyActiveWindow' dalla webui (vedi ScreenshotSettings.vue).
+/// Convenzione: il file contiene la stringa letterale "true" quando
+/// l'opzione è attiva, qualsiasi altro contenuto (o file mancante)
+/// equivale a "false" (comportamento di sempre, tutti i monitor).
+fn leggi_modalita(override_path: &Path) -> Modalita {
+    let attiva = std::fs::read_to_string(override_path)
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if attiva {
+        Modalita::FinestraAttiva
+    } else {
+        Modalita::TuttiIMonitor
+    }
+}
+
 /// Elimina gli screenshot più vecchi di `retention_days`, leggendo la
 /// data/ora direttamente dal NOME del file (che la incorpora già, vedi
 /// `cattura_e_salva`) invece che dalla data di modifica sul filesystem —
@@ -205,16 +282,23 @@ struct Args {
     #[arg(long, default_value_t = 30)]
     interval: u64,
 
-    /// Larghezza massima in pixel, ridimensionato mantenendo le proporzioni
-    #[arg(long, default_value_t = 1920)]
+    /// Larghezza di riferimento per il budget di area (vedi
+    /// scala_per_area) — non un limite rigido di larghezza, l'immagine
+    /// combinata di più monitor può restare più larga di questo se
+    /// l'altezza compensa. Alzata da 1920 a 2560 su richiesta esplicita
+    /// dell'utente: a 1920×1080 (~2 megapixel) il testo di dimensione
+    /// media negli screenshot non si leggeva bene nemmeno su un solo
+    /// schermo normale.
+    #[arg(long, default_value_t = 2560)]
     max_width: u32,
 
-    /// Altezza massima in pixel, ridimensionato mantenendo le proporzioni
-    #[arg(long, default_value_t = 1080)]
+    /// Altezza di riferimento per il budget di area — vedi max_width.
+    #[arg(long, default_value_t = 1440)]
     max_height: u32,
 
-    /// Qualità di compressione JPEG, 1-95
-    #[arg(long, default_value_t = 70)]
+    /// Qualità di compressione JPEG, 1-95 — alzata da 70 a 85 insieme al
+    /// budget di area sopra, stesso motivo (testo poco leggibile).
+    #[arg(long, default_value_t = 85)]
     quality: u8,
 
     /// Cartella scrivibile condivisa (icone, screenshot, impostazioni) -
@@ -245,6 +329,7 @@ fn main() {
 
     let interval_override_file = app_data_dir.join("screenshot-interval-override.txt");
     let retention_override_file = app_data_dir.join("screenshot-retention-days-override.txt");
+    let modalita_override_file = app_data_dir.join("screenshot-mode-override.txt");
 
     println!(
         "Modalità: {}",
@@ -265,12 +350,17 @@ fn main() {
         "Dimensione max: {}x{}px, qualità: {}",
         args.max_width, args.max_height, args.quality
     );
+    println!(
+        "Modalità cattura: rilette ad ogni giro da '{}' se presente (default: tutti i monitor)",
+        modalita_override_file.display()
+    );
 
     loop {
         let intervallo = leggi_intervallo(&interval_override_file, args.interval);
         let retention_giorni = leggi_retention_giorni(&retention_override_file, args.retention_days);
+        let modalita = leggi_modalita(&modalita_override_file);
         pulisci_vecchi_screenshot(&screenshots_dir, retention_giorni);
-        match cattura_e_salva(&screenshots_dir, args.max_width, args.max_height, args.quality) {
+        match cattura_e_salva(&screenshots_dir, args.max_width, args.max_height, args.quality, modalita) {
             Ok((filename, quando)) => {
                 let mut data = Map::new();
                 data.insert("filename".to_string(), filename.clone().into());
@@ -314,6 +404,39 @@ mod tests {
     }
 
     #[test]
+    fn scala_per_area_non_tocca_un_singolo_schermo_normale() {
+        // Un solo monitor, esattamente al budget massimo — nessuna scala.
+        assert_eq!(scala_per_area(1920, 1080, 1920, 1080), 1.0);
+    }
+
+    #[test]
+    fn scala_per_area_non_ingrandisce_mai() {
+        // Immagine più piccola del budget — `.min(1.0)` non deve mai far
+        // ingrandire (bug facile da introdurre invertendo la formula).
+        assert_eq!(scala_per_area(800, 600, 1920, 1080), 1.0);
+    }
+
+    #[test]
+    fn scala_per_area_tre_monitor_affiancati() {
+        // Bug reale segnalato dall'utente: 3 monitor 1920×1080 affiancati
+        // (combinata 5760×1080) — la vecchia scala sulla larghezza dava
+        // 1920/5760 ≈ 0,333 (ogni monitor a 640×360, pessimo). Con la
+        // scala per area, ogni monitor riceve una fetta equa del budget:
+        // sqrt(2073600 / 6220800) ≈ 0,577 (ogni monitor ≈ 1109×624,
+        // molto meglio).
+        let scala = scala_per_area(5760, 1080, 1920, 1080);
+        assert!((scala - 0.5774).abs() < 0.001, "scala inattesa: {scala}");
+    }
+
+    #[test]
+    fn scala_per_area_singolo_monitor_4k() {
+        // Un solo monitor 4K (3840×2160, area 4× quella target) — anche
+        // senza monitor multipli, lo stesso problema si presentava per
+        // uno schermo molto grande. sqrt(1/4) = 0,5 esatto.
+        assert_eq!(scala_per_area(3840, 2160, 1920, 1080), 0.5);
+    }
+
+    #[test]
     fn leggi_intervallo_falls_back_to_default_when_file_missing() {
         let path = std::env::temp_dir().join(format!("aw-ss-interval-missing-{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&path);
@@ -325,6 +448,29 @@ mod tests {
         let path = std::env::temp_dir().join(format!("aw-ss-interval-override-{}.txt", std::process::id()));
         std::fs::write(&path, "45\n").unwrap();
         assert_eq!(leggi_intervallo(&path, 30), 45);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn leggi_modalita_falls_back_to_tutti_i_monitor_when_file_missing() {
+        let path = std::env::temp_dir().join(format!("aw-ss-modalita-missing-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(leggi_modalita(&path), Modalita::TuttiIMonitor);
+    }
+
+    #[test]
+    fn leggi_modalita_reads_finestra_attiva_when_true() {
+        let path = std::env::temp_dir().join(format!("aw-ss-modalita-true-{}.txt", std::process::id()));
+        std::fs::write(&path, "true\n").unwrap();
+        assert_eq!(leggi_modalita(&path), Modalita::FinestraAttiva);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn leggi_modalita_reads_tutti_i_monitor_when_false() {
+        let path = std::env::temp_dir().join(format!("aw-ss-modalita-false-{}.txt", std::process::id()));
+        std::fs::write(&path, "false\n").unwrap();
+        assert_eq!(leggi_modalita(&path), Modalita::TuttiIMonitor);
         std::fs::remove_file(&path).ok();
     }
 

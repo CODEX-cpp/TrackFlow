@@ -43,6 +43,19 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.20</h2>
+      <ul>
+        <li>Switching days in the Timeline and Home modules is now much faster and smoother, especially when scrolling quickly through several days: already-seen days stay ready in memory, and modules update their values in place instead of disappearing and reappearing on every change.</li>
+        <li>Fixed a bug where, with the app left open across midnight, Home/Timeline/Modules stayed stuck on the previous day's data even though the top bar already showed "Today".</li>
+        <li>Fixed a bug reported by a user (<strong>@pupontech</strong>, issue <a href="https://github.com/CODEX-cpp/TrackFlow/issues/2">#2</a>) where the tray icon's menu always stayed in Italian, ignoring the app's chosen language — it now follows the language immediately, no restart needed.</li>
+        <li>Screenshots: fixed a drastic quality loss with multiple monitors or one very large screen (the reduction is now proportional to total area, not concentrated on a single dimension); also raised the base quality, since medium-sized text used to be hard to read.</li>
+        <li>Settings → Screenshot: new toggle to capture only the active foreground window instead of all monitors combined, plus a new row to open the screenshots folder, see how much space they use, and delete them all in one click.</li>
+        <li>The AI assistant can now answer questions like "did I work with any client today?" by looking directly at real window titles, instead of having to ask you which words to search for.</li>
+        <li>VoiSpeed: fixed a bug where connecting the account would disconnect the desktop app session used for calls; automatic session renewal is now also less frequent.</li>
+        <li>Settings → Developer: new option for an advanced diagnostics log (for troubleshooting performance issues), off by default, with a choice of folder to save it to.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.19</h2>
       <ul>
         <li>VPN: the address→client mapping now updates in real time (every ~15 seconds instead of every 30 minutes) — notifications for unmapped clients arrive faster and are no longer occasionally wrong, and registering a new client immediately updates historical sessions already in the Timeline too, without needing an app restart.</li>

@@ -79,3 +79,65 @@ pub fn apri_cartella_database() -> Result<(), String> {
         .map_err(|_| "Impossibile risolvere la cartella del database".to_string())?;
     apri_in_esplora_risorse(&dir)
 }
+
+/// Stesso percorso che aw-watcher-screenshot-rust usa per salvare
+/// (`<app-data-dir>/screenshots`, vedi la sua `default_app_data_dir()`
+/// e l'argomento `--screenshots-dir`) — richiesta esplicita dell'utente:
+/// riga unica in Impostazioni con "apri cartella"/"elimina tutti"/spazio
+/// occupato per gli screenshot.
+fn cartella_screenshot(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app_handle
+        .try_state::<crate::AppDataDirState>()
+        .ok_or_else(|| "Cartella dati non ancora pronta, riprova tra poco".to_string())?;
+    Ok(dir.0.join("screenshots"))
+}
+
+#[tauri::command]
+pub fn apri_cartella_screenshot(app_handle: tauri::AppHandle) -> Result<(), String> {
+    apri_in_esplora_risorse(&cartella_screenshot(&app_handle)?)
+}
+
+/// Somma la dimensione di tutti i file nella cartella screenshot, in
+/// byte. Cartella mancante (mai scattato nulla) conta come 0, non un
+/// errore.
+#[tauri::command]
+pub fn dimensione_cartella_screenshot(app_handle: tauri::AppHandle) -> Result<u64, String> {
+    let dir = cartella_screenshot(&app_handle)?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(0);
+    };
+    let mut totale = 0u64;
+    for entry in entries.flatten() {
+        if let Ok(meta) = entry.metadata() {
+            if meta.is_file() {
+                totale += meta.len();
+            }
+        }
+    }
+    Ok(totale)
+}
+
+/// Elimina tutti i file dentro la cartella screenshot (non la cartella
+/// stessa, così il watcher può continuare a scrivere subito senza dover
+/// ricrearla). Un singolo file non eliminabile (es. aperto altrove) non
+/// deve bloccare l'eliminazione degli altri.
+#[tauri::command]
+pub fn elimina_tutti_screenshot(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let dir = cartella_screenshot(&app_handle)?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(());
+    };
+    let mut ultimo_errore = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                ultimo_errore = Some(e.to_string());
+            }
+        }
+    }
+    match ultimo_errore {
+        Some(e) => Err(format!("Alcuni file non sono stati eliminati: {e}")),
+        None => Ok(()),
+    }
+}

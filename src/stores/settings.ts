@@ -8,6 +8,7 @@ import type { PrivacyFilterRule } from '~/util/privacyFilters';
 import type { NotifyRule } from '~/util/notifyRules';
 import { isEqual } from 'lodash';
 import { AppLocale, i18n, isAppLocale, setAppLocale } from '~/i18n';
+import { invoke } from '@tauri-apps/api/core';
 
 function jsonEq(a: any, b: any) {
   const jsonA = JSON.parse(JSON.stringify(a));
@@ -43,6 +44,14 @@ interface State {
   // vecchi (stessa lettura diretta della impostazione, nessun bisogno
   // di riavvio — vedi ScreenshotSettings.vue).
   screenshotRetentionDays: number;
+  // Richiesta esplicita dell'utente: catturare solo la finestra in
+  // primo piano invece di tutti i monitor uniti — utile sia per
+  // privacy (schermi/finestre non attivi non finiscono mai catturati)
+  // sia per qualità (una singola finestra normale non soffre del
+  // problema di area combinata di più monitor, vedi
+  // aw-watcher-screenshot-rust/src/main.rs's scala_per_area). Stessa
+  // lettura diretta via file locale delle due impostazioni sopra.
+  screenshotOnlyActiveWindow: boolean;
   theme: 'light' | 'dark' | 'auto';
   locale: string;
 
@@ -85,6 +94,16 @@ interface State {
   // eventi) non pensato per l'uso quotidiano, va acceso solo per
   // diagnosticare un problema. Vedi views/Buckets.vue.
   rawDataDiagnosticsEnabled: boolean;
+  // Log diagnostico avanzato (uso CPU/RAM, tempi di query/rendering, vedi
+  // src-tauri/src/diagnostics.rs) — spento di default su richiesta
+  // esplicita dell'utente, per non scrivere continuamente su disco senza
+  // motivo. Applicato subito (senza riavvio) sia lato Rust che lato JS
+  // quando viene attivato/disattivato da DeveloperSettings.vue.
+  diagnosticsLoggingEnabled: boolean;
+  // Cartella dove scrivere 'trackflow-diagnostica.log' — stringa vuota
+  // equivale a "usa il Desktop" (comportamento storico). Scelta tramite
+  // il selettore di cartelle nativo, vedi DeveloperSettings.vue.
+  diagnosticsLogFolder: string;
 
   // Whether to hide visualizations that lack required data (default: off)
   hideUnsupportedVisualizations: boolean;
@@ -135,6 +154,7 @@ export const useSettingsStore = defineStore('settings', {
     dailyWorkHoursBudget: 8,
     screenshotIntervalSeconds: 30,
     screenshotRetentionDays: 14,
+    screenshotOnlyActiveWindow: false,
 
     // Richiesta esplicita: la primissima apertura (nessuna impostazione
     // salvata ancora) deve mostrare subito il tema scuro, non "auto"
@@ -159,6 +179,8 @@ export const useSettingsStore = defineStore('settings', {
     developerModeEnabled: false,
     devtoolsEnabled: false,
     rawDataDiagnosticsEnabled: false,
+    diagnosticsLoggingEnabled: false,
+    diagnosticsLogFolder: '',
     hideUnsupportedVisualizations: false,
     hideEmptyModules: false,
     hideEmptyTimelineLanes: false,
@@ -327,6 +349,17 @@ export const useSettingsStore = defineStore('settings', {
       await this.ensureLoaded();
       this.$patch(new_state);
       await this.save();
+      // Rinomina a runtime le voci del menu tray (prima erano bloccate
+      // alla lingua letta al primo avvio — issue GitHub #2) invece di
+      // richiedere un riavvio dell'app per vedere l'effetto.
+      if ('locale' in new_state) {
+        try {
+          await invoke('aggiorna_lingua_tray', { lingua: new_state.locale });
+        } catch (e) {
+          // Fuori da Tauri (dev server puro nel browser) invoke() non
+          // esiste — stesso pattern già usato altrove (vedi App.vue).
+        }
+      }
     },
   },
 });

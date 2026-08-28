@@ -2,6 +2,8 @@ import { AWClient } from 'aw-client';
 import type { AxiosInstance } from 'axios';
 
 import { useSettingsStore } from '~/stores/settings';
+// Log diagnostico avanzato, disattivato di default — vedi util/diagnostics.ts.
+import { strumentaClient } from '~/util/diagnostics';
 
 const API_TOKEN_QUERY_PARAM = 'token';
 const API_TOKEN_STORAGE_KEY = 'aw-api-token';
@@ -108,6 +110,7 @@ export function createClient(force?: boolean): AWClient {
       baseURL: resolveBaseURL(),
     });
     applyApiToken(_client, loadApiTokenFromBrowser());
+    strumentaClient(_client, 'globale');
   } else {
     throw 'Tried to instantiate global AWClient twice!';
   }
@@ -137,6 +140,7 @@ export function getHomeClient(): AWClient {
       baseURL: resolveBaseURL(),
     });
     applyApiToken(_homeClient, loadApiTokenFromBrowser());
+    strumentaClient(_homeClient, 'home');
   }
   return _homeClient;
 }
