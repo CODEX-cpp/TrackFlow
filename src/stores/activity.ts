@@ -16,6 +16,8 @@ import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
 
 import { getClient } from '~/util/awclient';
+import { isExcelApp, nomeFileDaTitoloExcel } from '~/util/appNames';
+import { isWatcherEnabled } from '~/util/modulesConfig';
 
 function timeperiodStrsAroundTimeperiod(timeperiod: TimePeriod): string[] {
   return timeperiodsAroundTimeperiod(timeperiod).map(timeperiodToStr);
@@ -281,10 +283,15 @@ export const useActivityStore = defineStore('activity', {
           await this.query_editor_completed();
         }
 
-        if (this.excel.available) {
+        // window.available (non solo excel.available) fa scattare la
+        // query anche quando il bucket Excel dedicato non è mai esistito
+        // — vedi il fallback dentro query_excel, che a quel punto ricava
+        // comunque una classifica dai titoli finestra generici invece di
+        // restare vuoto per sempre su questo dispositivo.
+        if (this.excel.available || this.window.available) {
           await this.query_excel(query_options);
         } else {
-          console.log('Cannot call query_excel as we do not have any excel buckets');
+          console.log('Cannot call query_excel as we do not have any excel or window buckets');
           await this.query_excel_completed();
         }
 
@@ -417,6 +424,19 @@ export const useActivityStore = defineStore('activity', {
     },
 
     async query_excel({ timeperiod }) {
+      // Watcher dedicato spento (o mai esistito su questo dispositivo) —
+      // richiesta esplicita dell'utente: il modulo "File Excel
+      // principali" deve mostrare comunque una classifica, ricavata dai
+      // titoli delle finestre Excel già tracciate dal watcher finestra
+      // GENERICO (tempo in primo piano, non apertura→chiusura come farebbe
+      // il watcher dedicato) invece di restare vuoto. Riusa i dati già
+      // scaricati per "Titoli finestra principali" (query_window,
+      // chiamata prima di questa nello stesso giro — vedi ensure_loaded)
+      // invece di una query AQL dedicata in più.
+      if (this.buckets.excel.length === 0 || !isWatcherEnabled('aw-watcher-excel')) {
+        this.query_excel_completed(this.calcola_excel_da_finestra_generica());
+        return;
+      }
       const periods = [timeperiodToStr(timeperiod)];
       const q = queries.excelActivityQuery(this.buckets.excel);
       const data = await getClient().query(periods, q, {
@@ -582,6 +602,26 @@ export const useActivityStore = defineStore('activity', {
     query_excel_completed(this: State, data = { duration: 0, files: [] }) {
       this.excel.duration = data.duration;
       this.excel.top_files = data.files;
+    },
+
+    // Vedi il commento su query_excel — stessa forma restituita dalla
+    // query AQL dedicata ({"files": [...], "duration": ...}), calcolata
+    // però lato client raggruppando per nome file i titoli finestra già
+    // scaricati (window.top_titles), non con una query separata.
+    calcola_excel_da_finestra_generica(this: State): { files: IEvent[]; duration: number } {
+      const perFile = new Map<string, number>();
+      for (const e of this.window.top_titles || []) {
+        if (!isExcelApp(e.data.app || '')) continue;
+        const file = nomeFileDaTitoloExcel(e.data.title || '');
+        if (!file) continue;
+        perFile.set(file, (perFile.get(file) || 0) + e.duration);
+      }
+      const files: IEvent[] = Array.from(perFile.entries())
+        .map(([file, duration]) => ({ timestamp: new Date().toISOString(), duration, data: { file } }))
+        .sort((a, b) => b.duration - a.duration)
+        .slice(0, 100);
+      const duration = files.reduce((somma, f) => somma + f.duration, 0);
+      return { files, duration };
     },
 
     query_voispeed_completed(this: State, data = { duration: 0, contacts: [] }) {

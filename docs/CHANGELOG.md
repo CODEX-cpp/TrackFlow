@@ -5,6 +5,18 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.21
+
+### it
+- **Nuova opzione per l'assistente AI**: usa l'abbonamento Claude Pro/Max già attivo su Claude Desktop invece di una chiave API Anthropic a consumo (Impostazioni → Agente AI → "Claude (abbonamento Desktop)") — nessuna chiave da procurarsi, stessi strumenti e le stesse limitazioni di sicurezza di prima (nessun accesso a file o comandi del sistema). Ora è l'opzione proposta di default a chi non ha ancora configurato nulla. La sessione resta attiva tra un messaggio e l'altro della stessa conversazione, così solo il primo messaggio paga il costo di avvio.
+- Corretto un bug per cui, disattivando il watcher Excel dedicato, l'attività su Excel spariva del tutto dalla Timeline invece di tornare visibile nella corsia Generale come qualunque altra app.
+- Il modulo Home "File Excel principali" mostra ora una classifica anche a watcher Excel disattivato, ricavata dai titoli delle finestre tracciate dal watcher generico invece di restare vuoto.
+
+### en
+- **New AI assistant option**: use the Claude Pro/Max subscription already active on Claude Desktop instead of a pay-per-token Anthropic API key (Settings → AI Agent → "Claude (Desktop subscription)") — no key to get, same tools and the same security restrictions as before (no access to files or system commands). Now the default option offered to anyone who hasn't configured anything yet. The session stays alive between messages of the same conversation, so only the first message pays the process startup cost.
+- Fixed a bug where disabling the dedicated Excel watcher made Excel activity disappear entirely from the Timeline instead of showing up in the general lane like any other app.
+- The Home "Top Excel Files" module now shows a ranking even with the Excel watcher disabled, derived from window titles tracked by the generic watcher instead of staying empty.
+
 ## 0.1.20
 
 ### it

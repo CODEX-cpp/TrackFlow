@@ -1929,16 +1929,23 @@ export default {
       // Top Applications click highlight the wrong one.
       const isVSCodeWindow = (e: any) => isVSCodeApp((e.data && e.data.app) || '');
       const vscodeWindowEvents = rawWindowEvents.filter(isVSCodeWindow);
-      // Excel: a differenza di VS Code, il watcher dedicato
-      // (aw-watcher-excel) legge già la finestra in primo piano con la
-      // stessa identica tecnica del watcher finestra generico — il suo
-      // bucket COPRE già per intero il tempo in cui Excel aveva il
-      // focus, non serve nessun merge con un fallback finestra (a
-      // differenza di VSCode, dove gli heartbeat editor e il focus
-      // finestra sono due segnali distinti con possibili buchi). Basta
-      // escludere Excel da Generale, la corsia dedicata usa
-      // direttamente excelEvents.
-      const isExcelWindow = (e: any) => isExcelApp((e.data && e.data.app) || '');
+      // Excel: ATTENZIONE, a differenza di quanto si pensava qui prima
+      // (bug reale, issue GitHub #4 — "Excel non compare quasi più da
+      // nessuna parte"), il watcher dedicato (aw-watcher-excel) NON
+      // legge affatto il focus della finestra: traccia da apertura a
+      // chiusura del FILE, indipendentemente da chi ha il fuoco (vedi
+      // aw-watcher-excel-rust/src/main.rs). I due segnali NON sono
+      // equivalenti, quindi escludere Excel da Generale a prescindere
+      // era sbagliato — se il watcher dedicato è spento (o
+      // temporaneamente rotto/non installato), Excel spariva del tutto
+      // dalla Timeline, non solo dalla corsia dedicata. Richiesta
+      // esplicita dell'utente: l'esclusione da Generale vale SOLO se il
+      // watcher dedicato è davvero acceso (la corsia "excel" lo copre
+      // allora per intero); spento, Excel segue la stessa regola di
+      // qualunque altra app e resta nel focus-tracking normale di
+      // Generale, invece di sparire.
+      const excelWatcherAcceso = isWatcherEnabled('aw-watcher-excel');
+      const isExcelWindow = (e: any) => excelWatcherAcceso && isExcelApp((e.data && e.data.app) || '');
       // Pulizia richiesta esplicitamente dall'utente: un browser genera
       // un evento nuovo ad ogni cambio di titolo (spesso ogni singola
       // scheda/pagina), che in Generale si vedeva come un muro di

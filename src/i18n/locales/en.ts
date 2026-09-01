@@ -122,7 +122,12 @@ export default {
       saved: 'Saved.',
       saveError: 'Save failed:',
       provider: 'Provider',
-      providerAnthropic: 'Claude (Anthropic)',
+      providerAnthropic: 'Claude (Anthropic, API key)',
+      providerClaudeDesktop: 'Claude (Desktop subscription)',
+      claudeDesktopHelp:
+        'Uses the Claude Pro/Max subscription already active on Claude Desktop instead of a pay-per-token API key — no extra cost, no key to get. Requires Claude Desktop installed on this PC and already signed in.',
+      claudeDesktopNotFound:
+        'Claude Desktop does not appear to be installed (or up to date) on this PC — install it and make sure you\'re signed in before using this option.',
       apiKey: 'API key',
       apiKeyPlaceholder: 'sk-ant-…',
       apiKeyHint: 'Generated from the chosen provider\'s console — saved only on this computer.',
@@ -135,15 +140,17 @@ export default {
     voispeed: {
       title: 'VoiSpeed',
       help:
-        'Connect your VoiSpeed account to automatically log your call history in the Timeline. Login happens directly on the real VoiSpeed page — TrackFlow never stores your password.',
-      connect: 'Connect VoiSpeed',
-      connecting: 'Waiting for login…',
+        'Connect your VoiSpeed account to automatically log your call history in the Timeline. TrackFlow never stores or sees your password — only your username is needed to connect.',
+      usernamePlaceholder: '260@yourcompany.ucloud',
+      connect: 'Connect',
+      connecting: 'Connecting…',
       disconnect: 'Disconnect',
       statusConnected: 'Connected',
       statusNotConnected: 'Not connected',
       lastSync: 'Last synced',
       never: 'never',
-      loginHint: 'A window will open with the real VoiSpeed login page.',
+      loginHint:
+        "Same username VoiSpeed itself would use to log in automatically (extension@domain format, e.g. 260@yourcompany.ucloud) — find it in the VoiSpeed desktop app, or ask whoever manages the account.",
       refresh: 'Refresh',
       refreshing: 'Checking…',
       refreshTitle: 'Force a connection check now',

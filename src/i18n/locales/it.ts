@@ -124,7 +124,12 @@ export default {
       saved: 'Salvato.',
       saveError: 'Salvataggio non riuscito:',
       provider: 'Provider',
-      providerAnthropic: 'Claude (Anthropic)',
+      providerAnthropic: 'Claude (Anthropic, chiave API)',
+      providerClaudeDesktop: 'Claude (abbonamento Desktop)',
+      claudeDesktopHelp:
+        'Usa l\'abbonamento Claude Pro/Max già attivo su Claude Desktop invece di una chiave API a consumo — nessun costo aggiuntivo, nessuna chiave da procurarsi. Richiede Claude Desktop installata su questo PC con l\'accesso già effettuato.',
+      claudeDesktopNotFound:
+        'Claude Desktop non risulta installata (o non aggiornata) su questo PC — installala e assicurati di aver effettuato l\'accesso prima di usare questa opzione.',
       apiKey: 'Chiave API',
       apiKeyPlaceholder: 'sk-ant-…',
       apiKeyHint: 'Generata dalla console del provider scelto — salvata solo su questo computer.',
@@ -137,15 +142,17 @@ export default {
     voispeed: {
       title: 'VoiSpeed',
       help:
-        'Collega il tuo account VoiSpeed per registrare automaticamente il registro chiamate nella Timeline. Login diretto nella pagina vera di VoiSpeed — nessuna password viene mai salvata da TrackFlow.',
-      connect: 'Collega VoiSpeed',
-      connecting: 'In attesa del login…',
+        'Collega il tuo account VoiSpeed per registrare automaticamente il registro chiamate nella Timeline. Nessuna password viene mai salvata o vista da TrackFlow — solo lo username serve per collegarsi.',
+      usernamePlaceholder: '260@nomeazienda.ucloud',
+      connect: 'Collega',
+      connecting: 'Collegamento…',
       disconnect: 'Scollega',
       statusConnected: 'Collegato',
       statusNotConnected: 'Non collegato',
       lastSync: 'Ultimo aggiornamento',
       never: 'mai',
-      loginHint: 'Si aprirà una finestra con la pagina di login reale di VoiSpeed.',
+      loginHint:
+        'Stesso username che userebbe VoiSpeed per accedere da sola (formato interno@dominio, es. 260@nomeazienda.ucloud) — lo trovi nell\'app desktop VoiSpeed, o chiedilo a chi gestisce l\'account.',
       refresh: 'Aggiorna',
       refreshing: 'Verifica in corso…',
       refreshTitle: 'Forza subito una verifica del collegamento',

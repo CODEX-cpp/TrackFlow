@@ -61,7 +61,7 @@ fn nome_giorno_it(giorno: chrono::Weekday) -> &'static str {
 /// CALCOLATI QUI (Rust, deterministico), non lasciati dedurre al modello —
 /// vedi `nome_giorno_it` sopra per il perché: un secondo bug reale
 /// osservato in chat, distinto da quello della data odierna.
-fn system_prompt() -> String {
+pub(crate) fn system_prompt() -> String {
     use chrono::Datelike;
     let oggi_naive = chrono::Local::now().date_naive();
     let oggi = oggi_naive.format("%Y-%m-%d").to_string();
@@ -294,6 +294,11 @@ pub async fn ai_agent_list_models(
         "anthropic" => tokio::task::spawn_blocking(move || elenca_modelli_anthropic_bloccante(&api_key))
             .await
             .map_err(|e| format!("errore interno: {e}"))?,
+        // Nessuna chiave API per questo provider (vedi
+        // claude_subscription.rs) — l'elenco è statico, non serve una
+        // richiesta di rete: sono gli alias accettati dal CLI Claude
+        // Code (`claude --help`, opzione --model).
+        crate::claude_subscription::PROVIDER_ID => Ok(crate::claude_subscription::modelli_disponibili()),
         altro => Err(format!("provider sconosciuto: {altro}")),
     }
 }
@@ -369,7 +374,7 @@ const RAGGRUPPA_PER_DESC: &str = "app=per applicazione; categoria=per categoria 
 // in ogni chiamata) — stesso significato/comportamento guidato, solo
 // meno parole. Gli schema dei parametri (nomi, tipi, required) non sono
 // stati toccati: guidano la correttezza delle chiamate, non il costo.
-fn definisci_strumenti() -> Vec<Value> {
+pub(crate) fn definisci_strumenti() -> Vec<Value> {
     vec![
         json!({
             "name": "elenca_bucket",
@@ -1493,7 +1498,7 @@ async fn esegui_assegna_categoria_app(
 /// malformate) torna al modello come risultato JSON con una chiave
 /// "errore", così può correggersi da solo nel giro successivo invece di
 /// far fallire l'intera richiesta.
-async fn esegui_strumento(
+pub(crate) async fn esegui_strumento(
     server: &crate::AppServer,
     app_data_dir: &Path,
     hostname: &str,
@@ -1691,6 +1696,24 @@ pub async fn ai_agent_send_message(app_handle: AppHandle, testo: String) -> Resu
     let hostname = gethostname::gethostname().to_string_lossy().to_string();
     let state = app_handle.state::<Arc<AiAgentState>>();
 
+    // Provider "Claude (abbonamento Desktop)" — vedi claude_subscription.rs.
+    // A differenza di "anthropic" non passa da `ciclo_agente`/`messaggi`
+    // (l'API Anthropic è stateless, qui invece il processo Claude Code
+    // resta vivo tra un messaggio e l'altro e gestisce da solo sia la
+    // cronologia sia il ciclo di chiamata degli strumenti via MCP) — non
+    // c'è nulla da accodare o far girare qui.
+    if config.provider == crate::claude_subscription::PROVIDER_ID {
+        return crate::claude_subscription::invia_messaggio(
+            &app_handle,
+            server,
+            app_data_dir,
+            hostname,
+            testo,
+            config.model.clone(),
+        )
+        .await;
+    }
+
     {
         let mut messaggi = state.messaggi.lock().unwrap();
         messaggi.push(json!({ "role": "user", "content": testo }));
@@ -1706,5 +1729,11 @@ pub async fn ai_agent_send_message(app_handle: AppHandle, testo: String) -> Resu
 pub fn ai_agent_new_conversation(app_handle: AppHandle) {
     if let Some(state) = app_handle.try_state::<Arc<AiAgentState>>() {
         state.messaggi.lock().unwrap().clear();
+    }
+    // Provider "claude_desktop" — termina anche il processo Claude Code
+    // persistente (se ce n'era uno), così il prossimo messaggio ne apre
+    // uno pulito invece di continuare la conversazione precedente.
+    if let Some(stato) = app_handle.try_state::<Arc<crate::claude_subscription::ClaudeDesktopState>>() {
+        crate::claude_subscription::termina_sessione(&stato);
     }
 }

@@ -14,6 +14,7 @@ mod about;
 mod agent;
 mod autostart;
 mod categorization;
+mod claude_subscription;
 mod custom_modules;
 mod custom_watchers;
 mod devtools;
@@ -1106,6 +1107,7 @@ pub fn run() {
             agent::ai_agent_send_message,
             agent::ai_agent_new_conversation,
             agent::ai_agent_list_models,
+            claude_subscription::claude_desktop_disponibile,
             categorization::elenca_app_conosciute,
             devtools::apri_devtools,
             diagnostics::log_frontend_diagnostica,
@@ -1249,6 +1251,7 @@ pub fn run() {
             }
             app.manage(voispeed_state);
             app.manage(Arc::new(agent::AiAgentState::new()));
+            app.manage(Arc::new(claude_subscription::ClaudeDesktopState::new()));
             app.manage(Arc::new(categorization::CategorizationState::new()));
             let icons_stdin: IconsHandle = Arc::new(std::sync::Mutex::new(None));
             app.manage(icons_stdin.clone());
@@ -1298,6 +1301,20 @@ pub fn run() {
                             break;
                         }
                         log::error!("Il server in-process non ha ancora risposto dopo 15s, continuo ad aspettare...");
+                    }
+
+                    // Avvia in anticipo il processo Claude Code (provider
+                    // "claude_desktop", vedi claude_subscription.rs) se
+                    // configurato — richiesta esplicita dell'utente per
+                    // non pagare il costo di avvio a freddo sul primo
+                    // messaggio della chat. In background, non blocca
+                    // l'avvio dell'app né la creazione della finestra.
+                    {
+                        let app_handle = app_handle.clone();
+                        let app_data_dir = app_data_dir.clone();
+                        tauri::async_runtime::spawn(async move {
+                            claude_subscription::prewarm_se_configurato(&app_handle, app_data_dir).await;
+                        });
                     }
 
                     // La finestra viene creata SOLO ora, DIRETTAMENTE puntata sul
@@ -1771,6 +1788,15 @@ pub fn run() {
                                     }
                                 }
                             }
+                            // Idem per l'eventuale processo Claude Code
+                            // persistente della chat AI (provider
+                            // "claude_desktop", vedi claude_subscription.rs)
+                            // — non è un sidecar registrato sopra, va
+                            // terminato esplicitamente qui perché non
+                            // resti orfano in background dopo la chiusura.
+                            if let Some(stato) = app.try_state::<Arc<claude_subscription::ClaudeDesktopState>>() {
+                                claude_subscription::termina_sessione(&stato);
+                            }
                             app.exit(0);
                         }
                         _ => {}
@@ -1825,4 +1851,89 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod test_import_manuale {
+    //! Test manuale, NON eseguito da un normale `cargo test` (`#[ignore]`)
+    //! — usato una tantum per verificare dal vivo che un vero export di
+    //! ActivityWatch (issue GitHub #5) si importi correttamente in
+    //! TrackFlow, passando dallo STESSO endpoint (`/api/0/import`) che usa
+    //! la dropzone di Buckets.vue, sul database VERO. Va lanciato con
+    //! `app.exe` GIÀ CHIUSO (stesso database SQLite, evitare accessi
+    //! concorrenti) — vedi BLUEPRINT.md.
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_import_reale() {
+        let app_data_dir = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap())
+            .join("TrackFlow")
+            .join("app-data");
+        let cartella_neutra = std::env::temp_dir();
+
+        let server = build_app_server(&app_data_dir, &cartella_neutra, &cartella_neutra).await;
+
+        let percorso_export =
+            PathBuf::from(std::env::var("USERPROFILE").unwrap()).join("AppData\\Local\\Temp\\aw_export.json");
+        let corpo = std::fs::read_to_string(&percorso_export)
+            .unwrap_or_else(|e| panic!("Impossibile leggere {}: {e}", percorso_export.display()));
+        println!("Export letto da {}, {} byte", percorso_export.display(), corpo.len());
+
+        let risposta = server
+            .client
+            .post("/api/0/import")
+            .header(rocket::http::ContentType::JSON)
+            .header(AppServer::host_header())
+            .body(&corpo)
+            .dispatch()
+            .await;
+        let status = risposta.status().code;
+        let testo = risposta.into_string().await.unwrap_or_default();
+        println!("Import: status {status}, risposta: {testo}");
+        // Fondamentale: senza chiudere esplicitamente il datastore (stesso
+        // motivo del pulsante "Esci" nella tray, vedi lib.rs), il WAL di
+        // SQLite potrebbe non essere ancora stato scritto per bene sul
+        // file principale quando questo processo di test termina — un
+        // secondo processo che riapre subito dopo lo stesso file
+        // rischierebbe di non vedere i dati appena importati.
+        server.datastore.close();
+        assert!((200..300).contains(&status), "import fallito: {testo}");
+    }
+
+    /// Seconda verifica manuale, separata dall'import vero e proprio:
+    /// controlla che il bucket appena importato sia davvero elencato E
+    /// che una query AQL (lo stesso motore usato dalla webui/Timeline)
+    /// ci trovi dentro le app reali dell'export (RainbowSix, Vintagestory,
+    /// ecc.) — non solo che l'endpoint abbia risposto 200.
+    #[tokio::test]
+    #[ignore]
+    async fn test_verifica_dati_importati() {
+        let app_data_dir = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap())
+            .join("TrackFlow")
+            .join("app-data");
+        let cartella_neutra = std::env::temp_dir();
+        let server = build_app_server(&app_data_dir, &cartella_neutra, &cartella_neutra).await;
+
+        let elenco = server.list_buckets().await.expect("elenco bucket fallito");
+        println!("Bucket noti: {}", elenco.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>().join(", ")).unwrap_or_default());
+
+        let query_lines = vec![
+            "events = query_bucket(\"aw-watcher-window\");".to_string(),
+            "RETURN = events;".to_string(),
+        ];
+        let risposta = server
+            .query(vec!["2026-09-01T16:00:00+00:00/2026-09-01T20:30:00+00:00".to_string()], query_lines)
+            .await
+            .expect("query fallita");
+        let eventi = risposta[0].as_array().cloned().unwrap_or_default();
+        println!("Eventi grezzi (senza flood) nella fascia oraria dell'export: {}", eventi.len());
+        for e in eventi.iter().take(15) {
+            println!(
+                "  ts={:?} app={:?} titolo={:?} durata={:?}",
+                e["timestamp"], e["data"]["app"], e["data"]["title"], e["duration"]
+            );
+        }
+        assert!(!eventi.is_empty(), "nessun evento trovato nel bucket importato per oggi");
+    }
 }

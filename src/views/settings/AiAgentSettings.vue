@@ -16,12 +16,18 @@ div
     label.settings-field-label {{ $t('settings.aiAgent.provider') }}
     select.settings-field.aiagent-provider-field(v-model="provider")
       option(value="anthropic") {{ $t('settings.aiAgent.providerAnthropic') }}
+      option(value="claude_desktop") {{ $t('settings.aiAgent.providerClaudeDesktop') }}
 
-  div.settings-field-row
+  div.settings-field-row(v-if="provider === 'anthropic'")
     label.settings-field-label {{ $t('settings.aiAgent.apiKey') }}
     div
       input.settings-field(v-model="apiKey" type="password" :placeholder="$t('settings.aiAgent.apiKeyPlaceholder')")
       div.settings-row-help {{ $t('settings.aiAgent.apiKeyHint') }}
+
+  template(v-else)
+    div.settings-row-help.aiagent-claude-desktop-help {{ $t('settings.aiAgent.claudeDesktopHelp') }}
+    div.settings-alert.settings-alert-danger(v-if="verificatoDisponibilita && !claudeDesktopDisponibile")
+      | {{ $t('settings.aiAgent.claudeDesktopNotFound') }}
 
   div.settings-field-row
     label.settings-field-label {{ $t('settings.aiAgent.model') }}
@@ -31,6 +37,7 @@ div
           option(v-if="modelli.length === 0" value="") {{ $t('settings.aiAgent.modelsEmpty') }}
           option(v-for="m in modelli" :key="m.id" :value="m.id") {{ m.nome }}
         div.pill-btn-ghost.aiagent-refresh-btn(
+          v-if="provider === 'anthropic'"
           @click="!caricandoModelli && apiKey.trim() && aggiornaModelli()"
           :class="{ 'pill-btn-disabled': caricandoModelli || !apiKey.trim() }"
         )
@@ -57,8 +64,18 @@ export default {
   name: 'AiAgentSettings',
   data() {
     return {
-      provider: 'anthropic',
+      // Default per chi non ha ancora salvato nulla — richiesta esplicita
+      // dell'utente dopo aver verificato che questa modalità funziona
+      // bene: niente chiave API da procurarsi, usa subito l'abbonamento
+      // Claude Desktop già attivo. Chi ha già una configurazione salvata
+      // la ritrova invariata in mounted() (questi sono solo i valori di
+      // partenza prima che arrivi la risposta di ai_agent_get_config).
+      provider: 'claude_desktop',
       apiKey: '',
+      // Vuoto apposta: aggiornaModelli() (chiamata subito in mounted()
+      // per questo provider) sceglie da sola l'alias "haiku" — più
+      // veloce/economico, stesso comportamento già in uso per l'altro
+      // provider quando il modello non è ancora stato scelto.
       model: '',
       saving: false,
       error: '',
@@ -66,7 +83,36 @@ export default {
       modelli: [] as ModelloDisponibile[],
       caricandoModelli: false,
       errorModelli: '',
+      // Provider "Claude (abbonamento Desktop)" — vedi
+      // claude_subscription.rs. Verificato una volta all'apertura della
+      // pagina (e ogni volta che l'utente sceglie questo provider), così
+      // un avviso chiaro compare SUBITO se Claude Desktop non è
+      // installata, invece di scoprirlo solo al primo messaggio mandato
+      // in chat.
+      claudeDesktopDisponibile: false,
+      verificatoDisponibilita: false,
     };
+  },
+  watch: {
+    async provider(nuovo: string, precedente: string) {
+      // Bug reale trovato dal log diagnostico: gli ID modello dei due
+      // provider vivono in spazi diversi (Anthropic usa id completi con
+      // data, es. "claude-sonnet-4-5-20250929"; Claude Code CLI vuole
+      // alias corti come "sonnet"/"haiku") — senza azzerarlo qui, un
+      // cambio di provider si portava dietro l'id del provider
+      // precedente, che l'altro non riconosce come pensato (nessun
+      // errore esplicito, semplicemente non il modello inteso).
+      if (precedente && nuovo !== precedente) {
+        this.model = '';
+        this.modelli = [];
+      }
+      if (nuovo === 'claude_desktop') {
+        await this.verificaClaudeDesktop();
+        // Nessuna chiave API per questo provider — l'elenco modelli è
+        // statico (vedi ai_agent_list_models), si carica subito.
+        await this.aggiornaModelli();
+      }
+    },
   },
   async mounted() {
     try {
@@ -75,10 +121,15 @@ export default {
         this.provider = config.provider;
         this.apiKey = config.api_key;
         this.model = config.model;
+      }
+      if (this.provider === 'claude_desktop') {
+        await this.verificaClaudeDesktop();
+        await this.aggiornaModelli();
+      } else if (this.apiKey.trim()) {
         // Se c'è già una chiave salvata, l'elenco modelli si ricarica da
         // solo — l'utente non deve premere "Aggiorna" solo per riaprire
         // la pagina.
-        if (this.apiKey.trim()) await this.aggiornaModelli();
+        await this.aggiornaModelli();
       }
     } catch (e) {
       // L'app potrebbe girare fuori da Tauri durante lo sviluppo web puro
@@ -87,6 +138,15 @@ export default {
     }
   },
   methods: {
+    async verificaClaudeDesktop(this: any) {
+      try {
+        this.claudeDesktopDisponibile = await invoke<boolean>('claude_desktop_disponibile');
+      } catch (e) {
+        // Fuori da Tauri — non bloccante.
+      } finally {
+        this.verificatoDisponibilita = true;
+      }
+    },
     async aggiornaModelli() {
       this.errorModelli = '';
       this.caricandoModelli = true;
@@ -111,7 +171,12 @@ export default {
           // per sottostringa dell'id ("haiku-4-5"), non un id fisso
           // completo — Anthropic aggiunge una data alla fine dell'id
           // (es. "claude-haiku-4-5-20251001") che potrebbe cambiare.
-          const haiku45 = modelli.find(m => m.id.includes('haiku-4-5'));
+          // Sul provider claude_desktop gli id sono già alias corti
+          // ("sonnet"/"opus"/"haiku"), quindi la ricerca cerca "haiku"
+          // e basta lì; su "anthropic" resta specifica per la versione
+          // 4.5 come da comportamento originale.
+          const chiaveRicerca = this.provider === 'claude_desktop' ? 'haiku' : 'haiku-4-5';
+          const haiku45 = modelli.find(m => m.id.includes(chiaveRicerca));
           this.model = haiku45 ? haiku45.id : modelli[0].id;
         }
       } catch (e: any) {
@@ -173,5 +238,9 @@ export default {
 .aiagent-refresh-btn {
   flex: none;
   white-space: nowrap;
+}
+
+.aiagent-claude-desktop-help {
+  margin-bottom: 14px;
 }
 </style>

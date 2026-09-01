@@ -153,6 +153,36 @@ export function isExcelApp(rawName: string): boolean {
   return normalize(rawName) === 'excel.exe';
 }
 
+// Porting in TS della stessa logica di interpreta_titolo/dividi_file_e_modalita
+// in aw-watcher-excel-rust/src/main.rs — richiesta esplicita dell'utente:
+// col watcher Excel dedicato spento, il modulo "File Excel principali"
+// deve comunque poter mostrare una classifica, ricavata dal titolo delle
+// finestre del watcher finestra generico (tempo in primo piano, non
+// apertura→chiusura) invece che dal bucket dedicato — vedi
+// query_excel_da_finestra_generica in stores/activity.ts. Stessi due
+// passaggi del watcher: taglia alla sotto-stringa fissa " - Excel" (o
+// usa il titolo intero se non trovata), poi separa un eventuale
+// indicatore di modalità tra quadre finali (es. "Report.xlsx [Sola
+// lettura]"). Nessun file aperto (titolo bare "Excel") o vuoto -> null.
+export function nomeFileDaTitoloExcel(titolo: string): string | null {
+  const pulito = titolo.trim();
+  if (!pulito || pulito.toLowerCase() === 'excel') return null;
+
+  const idx = pulito.indexOf(' - Excel');
+  const descrittore = idx !== -1 ? pulito.slice(0, idx).trim() : pulito;
+  if (!descrittore) return null;
+
+  if (descrittore.endsWith(']')) {
+    const apertura = descrittore.lastIndexOf('[');
+    if (apertura > 0) {
+      const file = descrittore.slice(0, apertura).trim();
+      const modalita = descrittore.slice(apertura + 1, -1).trim();
+      if (file && modalita) return file;
+    }
+  }
+  return descrittore;
+}
+
 // Nomi .exe Windows dei browser più comuni — richiesta esplicita
 // "una lista di browser il più completa possibile", usata per
 // separare l'attività di navigazione dalla corsia "Generale" della
