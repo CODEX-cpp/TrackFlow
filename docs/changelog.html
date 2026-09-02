@@ -43,6 +43,12 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.22</h2>
+      <ul>
+        <li>Fixed a bug where the AI assistant chat stayed stuck on "an API key is needed first" even with the "Claude (Desktop subscription)" provider correctly connected — that provider never needs a key, but the check required one anyway.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.21</h2>
       <ul>
         <li><strong>New AI assistant option</strong>: use the Claude Pro/Max subscription already active on Claude Desktop instead of a pay-per-token Anthropic API key (Settings → AI Agent → "Claude (Desktop subscription)") — no key to get, same tools and the same security restrictions as before (no access to files or system commands). Now the default option offered to anyone who hasn't configured anything yet. The session stays alive between messages of the same conversation, so only the first message pays the process startup cost.</li>

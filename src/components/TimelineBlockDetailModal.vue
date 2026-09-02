@@ -501,8 +501,11 @@ export default {
     },
     async verificaConfigurazioneAi() {
       try {
-        const config = await invoke<{ api_key: string } | null>('ai_agent_get_config');
-        this.apiConfigurata = !!config && !!config.api_key.trim();
+        const config = await invoke<{ provider: string; api_key: string } | null>('ai_agent_get_config');
+        // Stesso bug reale corretto in AiChatWidget.vue: col provider
+        // "Claude (abbonamento Desktop)" non serve nessuna chiave API.
+        this.apiConfigurata =
+          !!config && (config.provider === 'claude_desktop' || !!config.api_key.trim());
       } catch {
         // Fuori da Tauri (npx vite puro) — vedi lo stesso catch in
         // AiChatWidget.vue.

@@ -289,8 +289,14 @@ export default {
     },
     async verificaConfigurazione() {
       try {
-        const config = await invoke<{ api_key: string } | null>('ai_agent_get_config');
-        this.apiConfigurata = !!config && !!config.api_key.trim();
+        const config = await invoke<{ provider: string; api_key: string } | null>('ai_agent_get_config');
+        // Bug reale segnalato dall'utente: col provider "Claude
+        // (abbonamento Desktop)" (vedi claude_subscription.rs) non
+        // serve nessuna chiave API — questo controllo però guardava
+        // sempre e solo api_key, quindi bloccava la chat come "non
+        // configurata" anche con quel provider correttamente collegato.
+        this.apiConfigurata =
+          !!config && (config.provider === 'claude_desktop' || !!config.api_key.trim());
       } catch {
         // fuori da Tauri (npx vite puro) invoke() non esiste — non blocca
         // l'input in quel contesto di sviluppo, non c'è comunque un vero
