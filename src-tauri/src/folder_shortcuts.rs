@@ -99,28 +99,41 @@ pub fn apri_cartella_screenshot(app_handle: tauri::AppHandle) -> Result<(), Stri
 
 /// Somma la dimensione di tutti i file nella cartella screenshot, in
 /// byte. Cartella mancante (mai scattato nulla) conta come 0, non un
-/// errore.
+/// errore. Scende ricorsivamente anche nelle sottocartelle-giorno
+/// ("gg.mm.yyyy") introdotte da aw-watcher-screenshot-rust — senza
+/// ricorsione lo spazio occupato sembrerebbe azzerarsi non appena gli
+/// screenshot finiscono ordinati per giorno invece che sciolti nella
+/// radice.
 #[tauri::command]
 pub fn dimensione_cartella_screenshot(app_handle: tauri::AppHandle) -> Result<u64, String> {
     let dir = cartella_screenshot(&app_handle)?;
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Ok(0);
+    Ok(dimensione_cartella_ricorsiva(&dir))
+}
+
+fn dimensione_cartella_ricorsiva(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
     };
     let mut totale = 0u64;
     for entry in entries.flatten() {
+        let path = entry.path();
         if let Ok(meta) = entry.metadata() {
-            if meta.is_file() {
+            if meta.is_dir() {
+                totale += dimensione_cartella_ricorsiva(&path);
+            } else if meta.is_file() {
                 totale += meta.len();
             }
         }
     }
-    Ok(totale)
+    totale
 }
 
-/// Elimina tutti i file dentro la cartella screenshot (non la cartella
+/// Elimina tutto il contenuto della cartella screenshot — sia gli
+/// eventuali file legacy ancora sciolti nella radice sia le
+/// sottocartelle-giorno ("gg.mm.yyyy") — ma non la cartella screenshot
 /// stessa, così il watcher può continuare a scrivere subito senza dover
-/// ricrearla). Un singolo file non eliminabile (es. aperto altrove) non
-/// deve bloccare l'eliminazione degli altri.
+/// ricrearla. Un singolo elemento non eliminabile (es. file aperto
+/// altrove) non deve bloccare l'eliminazione degli altri.
 #[tauri::command]
 pub fn elimina_tutti_screenshot(app_handle: tauri::AppHandle) -> Result<(), String> {
     let dir = cartella_screenshot(&app_handle)?;
@@ -130,14 +143,17 @@ pub fn elimina_tutti_screenshot(app_handle: tauri::AppHandle) -> Result<(), Stri
     let mut ultimo_errore = None;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
-            if let Err(e) = std::fs::remove_file(&path) {
-                ultimo_errore = Some(e.to_string());
-            }
+        let risultato = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(e) = risultato {
+            ultimo_errore = Some(e.to_string());
         }
     }
     match ultimo_errore {
-        Some(e) => Err(format!("Alcuni file non sono stati eliminati: {e}")),
+        Some(e) => Err(format!("Alcuni elementi non sono stati eliminati: {e}")),
         None => Ok(()),
     }
 }

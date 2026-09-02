@@ -356,6 +356,118 @@ async fn gestisci_metodo(
     }
 }
 
+/// Variante generica di `avvia`/`gestisci_connessione`, per chi non è la
+/// chat (agent.rs, dati letti dal database vero) ma comunque ha bisogno
+/// di esporre a Claude Code un piccolo set di strumenti su misura —
+/// usata dalla categorizzazione automatica (vedi
+/// `esegui_task_una_tantum` più sotto): il chiamante fornisce il
+/// proprio elenco di strumenti (stesso formato Anthropic `input_schema`
+/// di `agent::definisci_strumenti`) e una funzione SINCRONA per
+/// eseguirli — nessun `Arc<AppServer>` o accesso a dati esterni
+/// impliciti qui, solo quello che il chiamante cattura nella closure
+/// (es. uno stato condiviso dietro `Arc<Mutex<..>>`).
+fn avvia_generico(
+    strumenti: Vec<Value>,
+    gestore: impl Fn(&str, &Value) -> Value + Send + Sync + 'static,
+) -> std::io::Result<BridgeMcp> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    listener.set_nonblocking(true)?;
+    let porta = listener.local_addr()?.port();
+    let token = genera_token();
+    let esecuzione = Arc::new(AtomicBool::new(true));
+    let strumenti = Arc::new(strumenti);
+    let gestore = Arc::new(gestore);
+
+    let token_thread = token.clone();
+    let esecuzione_thread = esecuzione.clone();
+    let join = std::thread::spawn(move || {
+        while esecuzione_thread.load(Ordering::SeqCst) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let _ = stream.set_nonblocking(false);
+                    gestisci_connessione_generica(stream, &strumenti, gestore.as_ref(), &token_thread);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
+    });
+
+    Ok(BridgeMcp { porta, token, esecuzione, join: Some(join) })
+}
+
+fn gestisci_connessione_generica(
+    mut stream: TcpStream,
+    strumenti: &[Value],
+    gestore: &(dyn Fn(&str, &Value) -> Value + Send + Sync),
+    token_atteso: &str,
+) {
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+    let Some((intestazioni, corpo)) = leggi_richiesta_http(&stream) else { return };
+
+    let autorizzato = intestazioni
+        .get("authorization")
+        .map(|v| v == &format!("Bearer {token_atteso}"))
+        .unwrap_or(false);
+    if !autorizzato {
+        scrivi_risposta_http(&mut stream, 401, b"{}");
+        return;
+    }
+
+    let Ok(richiesta) = serde_json::from_slice::<Value>(&corpo) else {
+        scrivi_risposta_http(&mut stream, 400, b"{}");
+        return;
+    };
+    let Some(id) = richiesta.get("id").cloned() else {
+        scrivi_risposta_http(&mut stream, 202, b"");
+        return;
+    };
+    let metodo = richiesta["method"].as_str().unwrap_or("");
+    let parametri = &richiesta["params"];
+
+    let risultato: Result<Value, (i64, String)> = match metodo {
+        "initialize" => Ok(json!({
+            "protocolVersion": "2025-06-18",
+            "capabilities": { "tools": {} },
+            "serverInfo": { "name": "trackflow", "version": "1.0.0" },
+        })),
+        "tools/list" => {
+            let elenco: Vec<Value> = strumenti
+                .iter()
+                .map(|t| {
+                    json!({
+                        "name": t["name"],
+                        "description": t["description"],
+                        "inputSchema": t["input_schema"],
+                    })
+                })
+                .collect();
+            Ok(json!({ "tools": elenco }))
+        }
+        "tools/call" => {
+            let nome = parametri["name"].as_str().unwrap_or("");
+            let argomenti = parametri.get("arguments").cloned().unwrap_or_else(|| json!({}));
+            let risultato = gestore(nome, &argomenti);
+            Ok(json!({ "content": [ { "type": "text", "text": risultato.to_string() } ] }))
+        }
+        "ping" => Ok(json!({})),
+        altro => Err((-32601, format!("metodo sconosciuto: {altro}"))),
+    };
+
+    let risposta_jsonrpc = match risultato {
+        Ok(v) => json!({ "jsonrpc": "2.0", "id": id, "result": v }),
+        Err((codice, messaggio)) => {
+            json!({ "jsonrpc": "2.0", "id": id, "error": { "code": codice, "message": messaggio } })
+        }
+    };
+    let corpo_risposta = serde_json::to_vec(&risposta_jsonrpc).unwrap_or_default();
+    scrivi_risposta_http(&mut stream, 200, &corpo_risposta);
+}
+
 // Seconda rete di sicurezza esplicita accanto ad --allowedTools — vedi
 // il commento in cima al file per la verifica dal vivo che ha motivato
 // questa scelta. "ToolSearch" è qui per un motivo diverso dagli altri
@@ -432,11 +544,20 @@ pub fn termina_sessione(stato: &ClaudeDesktopState) {
 /// Prepara la cartella di lavoro dedicata e il file di configurazione
 /// MCP per il bridge appena avviato — fattorizzato fuori da
 /// `avvia_sessione` solo per leggibilità.
-fn prepara_cartella_e_config(app_data_dir: &Path, bridge: &BridgeMcp) -> Result<PathBuf, String> {
+fn prepara_cartella_e_config(
+    app_data_dir: &Path,
+    nome_cartella: &str,
+    bridge: &BridgeMcp,
+) -> Result<PathBuf, String> {
     // Cartella dedicata — vedi il commento in cima al file: MAI la
     // cartella vera di un progetto dell'utente, così questa
-    // conversazione non compare mai tra le sue sessioni normali.
-    let cartella_lavoro = app_data_dir.join("claude-agent-workdir");
+    // conversazione non compare mai tra le sue sessioni normali. Il
+    // nome è parametrizzato (da "claude-agent-workdir" in poi) perché
+    // riusato anche dalla categorizzazione automatica (vedi
+    // `esegui_task_una_tantum`), che deve restare in una cartella
+    // separata dalla chat: le due potrebbero girare in concomitanza,
+    // sovrascriversi a vicenda lo stesso mcp-config.json altrimenti.
+    let cartella_lavoro = app_data_dir.join(nome_cartella);
     std::fs::create_dir_all(&cartella_lavoro)
         .map_err(|e| format!("Impossibile preparare la cartella di lavoro: {e}"))?;
 
@@ -476,7 +597,7 @@ async fn avvia_sessione(
     let bridge = avvia(server, app_data_dir.clone(), hostname)
         .map_err(|e| format!("Impossibile avviare il collegamento locale per gli strumenti: {e}"))?;
     diagnostics::scrivi("claude_desktop_bridge_mcp_avviato", json!({ "url": bridge.url() }));
-    let cartella_lavoro = prepara_cartella_e_config(&app_data_dir, &bridge)?;
+    let cartella_lavoro = prepara_cartella_e_config(&app_data_dir, "claude-agent-workdir", &bridge)?;
 
     // Elenco ESATTO (non un pattern jolly tipo "mcp__trackflow__*",
     // vedi il commento in cima al file) — fail-closed: solo questi nomi
@@ -758,6 +879,105 @@ pub async fn invia_messaggio(
         }
         Err(e) => Err(e),
     }
+}
+
+/// Task una-tantum (non conversazionale, mai tenuto vivo tra una
+/// chiamata e l'altra) verso Claude Code — usata dalla categorizzazione
+/// automatica (categorization.rs) per funzionare anche quando il
+/// provider configurato è questo invece di "anthropic": a differenza
+/// della chat (`invia_messaggio`, sessione persistente, strumenti fissi
+/// di agent.rs), qui il chiamante fornisce il proprio elenco di
+/// strumenti e la propria funzione sincrona per eseguirli (vedi
+/// `avvia_generico`) — un bridge MCP e un processo claude.exe nuovi di
+/// zecca vengono creati per QUESTA chiamata e chiusi subito dopo l'unica
+/// risposta (nessun riuso, a differenza di `ClaudeDesktopState`): un
+/// task di categorizzazione è raro (solo quando compare un'app nuova)
+/// e non ha bisogno del vantaggio di un processo caldo che invece conta
+/// per la chat, dove i messaggi si susseguono rapidamente.
+pub async fn esegui_task_una_tantum(
+    model: &str,
+    system_prompt: &str,
+    messaggio: &str,
+    strumenti: Vec<Value>,
+    gestore: impl Fn(&str, &Value) -> Value + Send + Sync + 'static,
+    nome_sottocartella: &str,
+    app_data_dir: &Path,
+) -> Result<RispostaAgente, String> {
+    let claude_exe = trova_claude_exe().ok_or_else(|| {
+        "Claude Desktop non trovata (o senza Claude Code aggiornato) su questo PC.".to_string()
+    })?;
+
+    let bridge = avvia_generico(strumenti.clone(), gestore)
+        .map_err(|e| format!("Impossibile avviare il collegamento locale per gli strumenti: {e}"))?;
+    let cartella_lavoro = prepara_cartella_e_config(app_data_dir, nome_sottocartella, &bridge)?;
+
+    // Elenco ESATTO — stessa ragione fail-closed di avvia_sessione.
+    let strumenti_consentiti: Vec<String> = strumenti
+        .iter()
+        .filter_map(|t| t["name"].as_str())
+        .map(|n| format!("mcp__trackflow__{n}"))
+        .collect();
+
+    let mut comando = tokio::process::Command::new(&claude_exe);
+    comando
+        .current_dir(&cartella_lavoro)
+        .arg("-p")
+        .arg("--input-format")
+        .arg("stream-json")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--verbose")
+        .arg("--system-prompt")
+        .arg(system_prompt)
+        .arg("--mcp-config")
+        .arg(cartella_lavoro.join("mcp-config.json"))
+        .arg("--strict-mcp-config")
+        .arg("--allowedTools")
+        .arg(strumenti_consentiti.join(","))
+        .arg("--disallowedTools")
+        .arg(STRUMENTI_NATIVI_VIETATI)
+        .arg("--effort")
+        .arg("low")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        comando.creation_flags(CREATE_NO_WINDOW);
+    }
+    let modello_valido = modelli_disponibili().iter().any(|m| m.id == model.trim());
+    if modello_valido {
+        comando.arg("--model").arg(model.trim());
+    }
+
+    diagnostics::scrivi(
+        "claude_desktop_task_una_tantum_avvio",
+        json!({ "cartella_lavoro": cartella_lavoro.display().to_string(), "strumenti_consentiti": strumenti_consentiti }),
+    );
+
+    let mut figlio = comando.spawn().map_err(|e| format!("Impossibile avviare Claude Code: {e}"))?;
+    let stdin = figlio.stdin.take().ok_or_else(|| "nessun stdin verso Claude Code".to_string())?;
+    let stdout = figlio.stdout.take().ok_or_else(|| "nessun output da Claude Code".to_string())?;
+    let righe_stdout = TokioBufReader::new(stdout).lines();
+
+    // Stessa ragione di avvia_sessione: lo stderr va svuotato in
+    // background, mai lasciato pieno (rischio di bloccare il processo
+    // figlio al primo tentativo di scriverci sopra).
+    if let Some(stderr) = figlio.stderr.take() {
+        tauri::async_runtime::spawn(async move {
+            let mut righe_stderr = TokioBufReader::new(stderr).lines();
+            while let Ok(Some(riga)) = righe_stderr.next_line().await {
+                diagnostics::scrivi("claude_desktop_task_una_tantum_stderr", json!({ "riga": riga }));
+            }
+        });
+    }
+
+    // `sessione` esce di scope alla fine di questa funzione — il suo
+    // `Drop` termina il processo (e con esso il bridge MCP), qualunque
+    // sia l'esito: nessun riuso, coerente col resto del commento sopra.
+    let mut sessione = SessioneAttiva { figlio, stdin, righe_stdout, _bridge: bridge };
+    manda_turno(&mut sessione, messaggio).await
 }
 
 /// Avvia il processo Claude Code in anticipo, subito all'avvio

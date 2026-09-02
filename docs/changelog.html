@@ -43,9 +43,11 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
-      <h2>0.1.22</h2>
+      <h2>0.1.23</h2>
       <ul>
         <li>Fixed a bug where the AI assistant chat stayed stuck on "an API key is needed first" even with the "Claude (Desktop subscription)" provider correctly connected — that provider never needs a key, but the check required one anyway.</li>
+        <li>Fixed a bug where automatic app categorization never ran with the "Claude (Desktop subscription)" provider — same root cause as the bug above, but in the categorization logic, which now works with both providers.</li>
+        <li>Screenshots: now automatically organized into a per-day subfolder ("dd.mm.yyyy") instead of all landing in the same folder; existing screenshots are sorted automatically on the first launch after updating, no manual action needed.</li>
       </ul>
     </section>
     <section class="changelog-entry">

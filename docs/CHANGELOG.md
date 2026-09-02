@@ -5,13 +5,17 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
-## 0.1.22
+## 0.1.23
 
 ### it
 - Corretto un bug per cui la chat con l'assistente AI restava bloccata con il messaggio "serve prima una chiave API" anche con il provider "Claude (abbonamento Desktop)" correttamente collegato — quel provider non ha mai bisogno di una chiave, ma il controllo la richiedeva comunque.
+- Corretto un bug per cui la categorizzazione automatica delle app non scattava mai con il provider "Claude (abbonamento Desktop)" — stessa causa del bug sopra, ma nella logica di categorizzazione, che ora funziona con entrambi i provider.
+- Screenshot: ora organizzati automaticamente in una sottocartella per ogni giorno ("gg.mm.yyyy") invece di finire tutti insieme nella stessa cartella; gli screenshot già esistenti vengono ordinati da soli al primo avvio dopo l'aggiornamento, senza bisogno di alcuna azione manuale.
 
 ### en
 - Fixed a bug where the AI assistant chat stayed stuck on "an API key is needed first" even with the "Claude (Desktop subscription)" provider correctly connected — that provider never needs a key, but the check required one anyway.
+- Fixed a bug where automatic app categorization never ran with the "Claude (Desktop subscription)" provider — same root cause as the bug above, but in the categorization logic, which now works with both providers.
+- Screenshots: now automatically organized into a per-day subfolder ("dd.mm.yyyy") instead of all landing in the same folder; existing screenshots are sorted automatically on the first launch after updating, no manual action needed.
 
 ## 0.1.21
 

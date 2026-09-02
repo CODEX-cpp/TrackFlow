@@ -308,19 +308,15 @@ fn app_gia_categorizzata(categorie: &[AppCategory], app: &str) -> bool {
     categorie.iter().any(|c| c.apps.iter().any(|a| a.eq_ignore_ascii_case(app)))
 }
 
-/// Il vero ciclo tool-calling — nessuna cronologia persistita (a
-/// differenza della chat, questo è un task una tantum, non una
-/// conversazione): un unico messaggio iniziale con le categorie esistenti
-/// + l'elenco da categorizzare, poi round di tool_use/tool_result finché
-/// il modello si ferma o si supera il tetto di iterazioni.
-async fn esegui_categorizzazione(
-    config: &AiAgentConfig,
-    categorie: &mut Vec<AppCategory>,
+/// Costruisce il messaggio iniziale (categorie esistenti + elenco app da
+/// categorizzare) — fattorizzato fuori da `esegui_categorizzazione`
+/// perché serve identico a entrambi i percorsi (API diretta "anthropic"
+/// e Claude Desktop via bridge MCP, vedi sotto).
+fn costruisci_messaggio_iniziale(
+    categorie: &[AppCategory],
     da_categorizzare: &[String],
     nomi_leggibili: &HashMap<String, String>,
-) -> Result<(), String> {
-    let strumenti = definisci_strumenti();
-
+) -> String {
     let elenco_categorie = if categorie.is_empty() {
         "Nessuna categoria esiste ancora.".to_string()
     } else {
@@ -344,10 +340,28 @@ async fn esegui_categorizzazione(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let messaggio_iniziale = format!(
+    format!(
         "Categorie esistenti:\n{elenco_categorie}\n\nApp da categorizzare (NON ancora assegnate a nessuna categoria). Il testo tra parentesi quadre, quando presente, è solo un aiuto per capire di che app si tratta — l'IDENTIFICATIVO ESATTO da passare a assegna_app_categoria è SEMPRE e SOLO la parte prima delle parentesi quadre:\n{elenco_app}"
-    );
+    )
+}
 
+/// Il vero ciclo tool-calling per il provider "anthropic" (API diretta a
+/// consumo, unico che parla il formato Anthropic messages/tools così
+/// com'è) — nessuna cronologia persistita (a differenza della chat,
+/// questo è un task una tantum, non una conversazione): un unico
+/// messaggio iniziale con le categorie esistenti + l'elenco da
+/// categorizzare, poi round di tool_use/tool_result finché il modello si
+/// ferma o si supera il tetto di iterazioni. Per il provider Claude
+/// Desktop, che parla solo MCP, vedi
+/// `esegui_categorizzazione_claude_desktop` invece — il ciclo lì è
+/// interamente interno al CLI Claude Code, non guidato da qui.
+async fn esegui_categorizzazione_anthropic(
+    config: &AiAgentConfig,
+    categorie: &mut Vec<AppCategory>,
+    da_categorizzare: &[String],
+    messaggio_iniziale: &str,
+) -> Result<(), String> {
+    let strumenti = definisci_strumenti();
     let mut messaggi = vec![json!({ "role": "user", "content": messaggio_iniziale })];
 
     for _ in 0..MAX_ITERAZIONI_TOOL {
@@ -382,6 +396,79 @@ async fn esegui_categorizzazione(
     Ok(())
 }
 
+/// Stessa funzionalità di `esegui_categorizzazione_anthropic`, ma per il
+/// provider Claude Desktop — che non parla l'API Anthropic diretta (nessuna
+/// chiave, vedi claude_subscription.rs), solo MCP. Qui il ciclo
+/// tool_use/tool_result NON è guidato da questo codice: un'unica chiamata
+/// a `claude_subscription::esegui_task_una_tantum` avvia un bridge MCP
+/// minimale che espone crea_categoria/assegna_app_categoria, e il CLI
+/// Claude Code stesso richiama quegli strumenti (via HTTP verso il
+/// bridge, gestiti dalla stessa `esegui_strumento` di sempre) finché
+/// decide di aver finito — noi riceviamo solo il risultato finale.
+/// `categorie` viene condiviso con la closure passata al bridge dietro
+/// un Mutex perché quella gira su un thread separato (il thread che
+/// accetta le connessioni del bridge), non nel task async chiamante.
+async fn esegui_categorizzazione_claude_desktop(
+    config: &AiAgentConfig,
+    categorie: &mut Vec<AppCategory>,
+    da_categorizzare: &[String],
+    messaggio_iniziale: &str,
+    app_data_dir: &Path,
+) -> Result<(), String> {
+    let condivise = Arc::new(std::sync::Mutex::new(std::mem::take(categorie)));
+    let identificativi = da_categorizzare.to_vec();
+    let condivise_per_gestore = condivise.clone();
+    let gestore = move |nome: &str, input: &Value| {
+        let mut c = condivise_per_gestore.lock().unwrap();
+        esegui_strumento(&mut c, &identificativi, nome, input)
+    };
+
+    let esito = crate::claude_subscription::esegui_task_una_tantum(
+        &config.model,
+        SYSTEM_PROMPT,
+        messaggio_iniziale,
+        definisci_strumenti(),
+        gestore,
+        "claude-agent-workdir-categorizzazione",
+        app_data_dir,
+    )
+    .await;
+
+    // Recuperate SEMPRE, anche in caso di errore a metà — quel che è
+    // stato assegnato prima dell'errore va comunque salvato (stessa
+    // filosofia del ramo "anthropic": un tetto/errore non deve buttare
+    // via il lavoro già fatto).
+    *categorie = match Arc::try_unwrap(condivise) {
+        Ok(mutex) => mutex.into_inner().unwrap(),
+        Err(arc) => arc.lock().unwrap().clone(),
+    };
+
+    esito.map(|_| ())
+}
+
+async fn esegui_categorizzazione(
+    config: &AiAgentConfig,
+    categorie: &mut Vec<AppCategory>,
+    da_categorizzare: &[String],
+    nomi_leggibili: &HashMap<String, String>,
+    app_data_dir: &Path,
+) -> Result<(), String> {
+    let messaggio_iniziale = costruisci_messaggio_iniziale(categorie, da_categorizzare, nomi_leggibili);
+
+    if config.provider == crate::claude_subscription::PROVIDER_ID {
+        esegui_categorizzazione_claude_desktop(
+            config,
+            categorie,
+            da_categorizzare,
+            &messaggio_iniziale,
+            app_data_dir,
+        )
+        .await
+    } else {
+        esegui_categorizzazione_anthropic(config, categorie, da_categorizzare, &messaggio_iniziale).await
+    }
+}
+
 /// Punto d'ingresso chiamato da `spawn_stdout_drain` (lib.rs) per ogni
 /// nome app ricevuto dal watcher finestra. Non blocca il chiamante: fa
 /// solo un controllo sincrono economico (AI configurata? app già gestita
@@ -399,7 +486,14 @@ pub fn su_nuova_app(
     let Some(config) = agent::load_config(&app_data_dir) else {
         return;
     };
-    if config.api_key.trim().is_empty() {
+    // Bug reale segnalato dall'utente: con il provider Claude Desktop
+    // (nessuna chiave API, l'abbonamento fa da autenticazione) questo
+    // controllo tornava sempre vero e la categorizzazione automatica
+    // non scattava mai, nonostante il provider fosse configurato e
+    // funzionante per la chat. "Configurato" ora significa: chiave
+    // presente PER "anthropic", oppure semplicemente questo provider
+    // (che non ne ha bisogno).
+    if config.provider != crate::claude_subscription::PROVIDER_ID && config.api_key.trim().is_empty() {
         return;
     }
 
@@ -438,8 +532,14 @@ pub fn su_nuova_app(
             if bulk { "primo giro, nessuna categoria esistente ancora" } else { "incrementale" }
         );
 
-        if let Err(e) =
-            esegui_categorizzazione(&config, &mut categorie, &da_categorizzare, &nomi_leggibili).await
+        if let Err(e) = esegui_categorizzazione(
+            &config,
+            &mut categorie,
+            &da_categorizzare,
+            &nomi_leggibili,
+            &app_data_dir,
+        )
+        .await
         {
             log::error!("Categorizzazione AI fallita: {e}");
             return;
@@ -472,7 +572,9 @@ pub fn forza_scansione_iniziale(
     hostname: String,
     config: AiAgentConfig,
 ) {
-    if config.api_key.trim().is_empty() {
+    // Stesso criterio di `su_nuova_app` — vedi il commento lì per il bug
+    // reale col provider Claude Desktop.
+    if config.provider != crate::claude_subscription::PROVIDER_ID && config.api_key.trim().is_empty() {
         return;
     }
 
@@ -495,8 +597,14 @@ pub fn forza_scansione_iniziale(
             da_categorizzare.len()
         );
 
-        if let Err(e) =
-            esegui_categorizzazione(&config, &mut categorie, &da_categorizzare, &nomi_leggibili).await
+        if let Err(e) = esegui_categorizzazione(
+            &config,
+            &mut categorie,
+            &da_categorizzare,
+            &nomi_leggibili,
+            &app_data_dir,
+        )
+        .await
         {
             log::error!("Categorizzazione AI (scansione forzata) fallita: {e}");
             return;
@@ -540,6 +648,57 @@ pub async fn elenca_app_conosciute(app_handle: tauri::AppHandle) -> Vec<AppConos
             AppConosciuta { app: a, nome_leggibile }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod test_manuale {
+    //! Test manuale, NON eseguito da un normale `cargo test` (`#[ignore]`)
+    //! — verifica dal vivo, contro il database reale e un vero
+    //! `claude.exe`, che la categorizzazione automatica funziona anche
+    //! col provider Claude Desktop (bug reale segnalato dall'utente:
+    //! "quando claude desktop... viene collegato, la categorizzazione
+    //! automatica non avviene" — vedi i due fix in `su_nuova_app`/
+    //! `forza_scansione_iniziale` più sopra). Va lanciato con `app.exe`
+    //! GIÀ CHIUSO (stesso database SQLite, evitare accessi concorrenti).
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_categorizzazione_reale_claude_desktop() {
+        let app_data_dir = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap())
+            .join("TrackFlow")
+            .join("app-data");
+        let cartella_neutra = std::env::temp_dir();
+
+        let server = Arc::new(crate::build_app_server(&app_data_dir, &cartella_neutra, &cartella_neutra).await);
+        let hostname = gethostname::gethostname().to_string_lossy().to_string();
+
+        let config = agent::load_config(&app_data_dir).expect("config AI non trovata — collega prima un provider");
+        assert_eq!(config.provider, crate::claude_subscription::PROVIDER_ID, "questo test verifica proprio quel provider");
+
+        let mut categorie = carica_categorie(&server).await;
+        println!("Categorie PRIMA: {categorie:?}");
+
+        let da_categorizzare: Vec<String> = carica_app_conosciute(&server, &app_data_dir, &hostname)
+            .await
+            .into_iter()
+            .filter(|app| !app_gia_categorizzata(&categorie, app))
+            .collect();
+        println!("Da categorizzare: {} app", da_categorizzare.len());
+        assert!(!da_categorizzare.is_empty(), "nessuna app da categorizzare — test non significativo");
+
+        let nomi_leggibili = carica_nomi_leggibili(&app_data_dir);
+
+        esegui_categorizzazione(&config, &mut categorie, &da_categorizzare, &nomi_leggibili, &app_data_dir)
+            .await
+            .expect("categorizzazione fallita");
+
+        println!("Categorie DOPO: {categorie:?}");
+        assert!(!categorie.is_empty(), "doveva essere stata creata almeno una categoria");
+
+        salva_categorie(&server, &categorie).await.expect("salvataggio fallito");
+        server.datastore.close();
+    }
 }
 
 #[cfg(test)]

@@ -145,6 +145,19 @@ fn scala_per_area(larghezza: u32, altezza: u32, max_width: u32, max_height: u32)
     (area_massima / area_reale).sqrt().min(1.0)
 }
 
+/// Nome della sottocartella del giorno per uno scatto — richiesta
+/// esplicita dell'utente: prima tutti gli screenshot finivano insieme
+/// nella stessa cartella (con mesi di utilizzo, migliaia di file
+/// difficili da sfogliare a mano in Esplora risorse) — ora ogni giorno
+/// ha la sua sottocartella "gg.mm.yyyy". Formato in ora LOCALE (non
+/// UTC come il nome del file interno) apposta: deve corrispondere al
+/// giorno di calendario come lo vive l'utente, non a quando scatta la
+/// mezzanotte UTC (che a seconda del fuso orario può differire di
+/// qualche ora da "oggi" per l'utente).
+fn nome_cartella_giorno(quando: &DateTime<Utc>) -> String {
+    quando.with_timezone(&chrono::Local).format("%d.%m.%Y").to_string()
+}
+
 /// Cattura, ridimensiona/comprime e salva su disco. Ritorna il nome del
 /// file salvato (non il percorso intero) e il timestamp dello scatto.
 fn cattura_e_salva(
@@ -190,11 +203,23 @@ fn cattura_e_salva(
         .write_with_encoder(encoder)
         .map_err(|e| e.to_string())?;
 
-    std::fs::create_dir_all(screenshots_dir).map_err(|e| e.to_string())?;
-    std::fs::write(screenshots_dir.join(&filename), buffer.into_inner())
+    // Ogni scatto va nella sottocartella del suo giorno (vedi
+    // `nome_cartella_giorno`) — richiesta esplicita dell'utente per non
+    // ritrovarsi migliaia di file tutti in una cartella sola dopo mesi
+    // di utilizzo. Il percorso RELATIVO (cartella/file) è quello che
+    // viene salvato come `data.filename` nell'evento: la webui costruisce
+    // già l'URL con una semplice concatenazione di stringa
+    // ('/pages/app-data/screenshots/' + filename), quindi un filename
+    // con dentro uno slash produce automaticamente l'URL corretto verso
+    // il file annidato, senza bisogno di alcuna modifica lato frontend.
+    let cartella_giorno = nome_cartella_giorno(&adesso);
+    let cartella_completa = screenshots_dir.join(&cartella_giorno);
+    std::fs::create_dir_all(&cartella_completa).map_err(|e| e.to_string())?;
+    std::fs::write(cartella_completa.join(&filename), buffer.into_inner())
         .map_err(|e| e.to_string())?;
 
-    Ok((filename, adesso))
+    let filename_relativo = format!("{cartella_giorno}/{filename}");
+    Ok((filename_relativo, adesso))
 }
 
 /// Legge l'intervallo da un file locale scritto dal processo Tauri quando
@@ -237,13 +262,31 @@ fn leggi_modalita(override_path: &Path) -> Modalita {
     }
 }
 
-/// Elimina gli screenshot più vecchi di `retention_days`, leggendo la
-/// data/ora direttamente dal NOME del file (che la incorpora già, vedi
-/// `cattura_e_salva`) invece che dalla data di modifica sul filesystem —
-/// più affidabile: la mtime cambia se il file viene copiato/spostato
-/// (come successo migrando lo storico nella nuova cartella scrivibile
-/// durante la Fase 5), la data nel nome no. Un file il cui nome non
-/// rispetta il formato atteso viene ignorato, non eliminato per errore.
+/// Ricava, se possibile, il timestamp incorporato nel nome di un file
+/// screenshot ("20260809-214343-439.jpg" -> 2026-08-09 21:43:43 UTC).
+/// Usata sia dalla pulizia dei file legacy nella radice sia dalla
+/// migrazione una-tantum verso le cartelle-giorno.
+fn timestamp_da_nome_file(stem: &str) -> Option<DateTime<Utc>> {
+    // "20260809-214343-439" -> prendiamo solo "20260809-214343"
+    // (data+ora, i millisecondi finali non servono qui).
+    let data_ora = stem.get(0..15)?;
+    let naive = NaiveDateTime::parse_from_str(data_ora, "%Y%m%d-%H%M%S").ok()?;
+    Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc))
+}
+
+/// Elimina gli screenshot più vecchi di `retention_days`.
+///
+/// Da quando ogni scatto finisce in una sottocartella "gg.mm.yyyy" (vedi
+/// `cattura_e_salva`/`nome_cartella_giorno`), la pulizia elimina intere
+/// cartelle-giorno più vecchie della soglia (il nome della cartella è
+/// già la data — nessun bisogno di aprire i file dentro). Eventuali file
+/// ancora sciolti nella radice (installazioni non ancora aggiornate a
+/// questa versione, prima che `migra_screenshot_vecchi` giri all'avvio,
+/// o un file finito lì per qualche motivo) restano gestiti col vecchio
+/// criterio per-file, leggendo la data dal nome del file stesso (più
+/// affidabile della mtime, che cambia se il file viene copiato/spostato).
+/// Una cartella o un file il cui nome non rispetta il formato atteso
+/// viene ignorato, non eliminato per errore.
 fn pulisci_vecchi_screenshot(screenshots_dir: &Path, retention_days: u64) {
     let soglia = Utc::now() - chrono::Duration::days(retention_days as i64);
     let Ok(entries) = std::fs::read_dir(screenshots_dir) else {
@@ -251,21 +294,80 @@ fn pulisci_vecchi_screenshot(screenshots_dir: &Path, retention_days: u64) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        let is_dir = path.is_dir();
+
+        if is_dir {
+            // Cartella-giorno: il nome stesso è la data "gg.mm.yyyy".
+            let Some(nome_cartella) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Ok(giorno) = chrono::NaiveDate::parse_from_str(nome_cartella, "%d.%m.%Y") else {
+                continue;
+            };
+            // Confrontiamo l'INIZIO del giorno successivo con la soglia,
+            // così una cartella non viene eliminata finché non è
+            // interamente più vecchia della retention.
+            let fine_giornata = giorno.and_hms_opt(23, 59, 59).unwrap();
+            let quando = DateTime::<Utc>::from_naive_utc_and_offset(fine_giornata, Utc);
+            if quando < soglia {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        } else {
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some(quando) = timestamp_da_nome_file(stem) else {
+                continue;
+            };
+            if quando < soglia {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+}
+
+/// Migrazione una-tantum: sposta i file screenshot rimasti sciolti nella
+/// radice di `screenshots_dir` (creati da build precedenti a questa,
+/// prima dell'introduzione delle cartelle-giorno) dentro la sottocartella
+/// "gg.mm.yyyy" che gli spetta in base al timestamp incorporato nel loro
+/// nome — così anche lo storico esistente finisce ordinato, senza
+/// bisogno di alcuna azione manuale da parte dell'utente. Va chiamata
+/// UNA volta all'avvio, prima del loop di cattura: si auto-limita da
+/// sola, dato che dopo la prima esecuzione la radice non contiene più
+/// file sciolti (a parte eventuali nomi non conformi, lasciati stare).
+/// Non tocca cartelle già esistenti o file il cui nome non è nel formato
+/// atteso.
+fn migra_screenshot_vecchi(screenshots_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(screenshots_dir) else {
+        return;
+    };
+    let mut spostati = 0u32;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        // "20260809-214343-439" -> prendiamo solo "20260809-214343"
-        // (data+ora, i millisecondi finali non servono per la soglia).
-        let Some(data_ora) = stem.get(0..15) else {
+        let Some(quando) = timestamp_da_nome_file(stem) else {
             continue;
         };
-        let Ok(naive) = NaiveDateTime::parse_from_str(data_ora, "%Y%m%d-%H%M%S") else {
+        let Some(nome_file) = path.file_name() else {
             continue;
         };
-        let quando = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
-        if quando < soglia {
-            let _ = std::fs::remove_file(&path);
+
+        let cartella_giorno = nome_cartella_giorno(&quando);
+        let cartella_completa = screenshots_dir.join(&cartella_giorno);
+        if std::fs::create_dir_all(&cartella_completa).is_err() {
+            continue;
         }
+        if std::fs::rename(&path, cartella_completa.join(nome_file)).is_ok() {
+            spostati += 1;
+        }
+    }
+    if spostati > 0 {
+        println!("Migrazione screenshot: {spostati} file spostati nelle cartelle per giorno");
     }
 }
 
@@ -354,6 +456,10 @@ fn main() {
         "Modalità cattura: rilette ad ogni giro da '{}' se presente (default: tutti i monitor)",
         modalita_override_file.display()
     );
+
+    // Una tantum, all'avvio: ordina in cartelle-giorno gli screenshot
+    // creati da build precedenti a questa (vedi migra_screenshot_vecchi).
+    migra_screenshot_vecchi(&screenshots_dir);
 
     loop {
         let intervallo = leggi_intervallo(&interval_override_file, args.interval);
@@ -496,6 +602,67 @@ mod tests {
         assert!(!vecchio.exists(), "il file vecchio doveva essere eliminato");
         assert!(recente.exists(), "il file recente NON doveva essere eliminato");
         assert!(non_conforme.exists(), "il file dal nome non standard NON doveva essere toccato");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn nome_cartella_giorno_formato_atteso() {
+        let dt = chrono::DateTime::parse_from_rfc3339("2026-08-09T15:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        // Non verifichiamo un valore fisso (dipende dal fuso locale della
+        // macchina di test), solo il FORMATO: gg.mm.yyyy, 10 caratteri.
+        let cartella = nome_cartella_giorno(&dt);
+        assert_eq!(cartella.len(), 10);
+        assert_eq!(cartella.chars().nth(2), Some('.'));
+        assert_eq!(cartella.chars().nth(5), Some('.'));
+    }
+
+    #[test]
+    fn pulisci_vecchi_screenshot_elimina_cartelle_giorno_vecchie() {
+        let dir = std::env::temp_dir().join(format!("aw-ss-retention-folders-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let cartella_vecchia = dir.join("01.01.2020");
+        std::fs::create_dir_all(&cartella_vecchia).unwrap();
+        std::fs::write(cartella_vecchia.join("20200101-120000-000.jpg"), b"x").unwrap();
+
+        let cartella_recente = dir.join(nome_cartella_giorno(&Utc::now()));
+        std::fs::create_dir_all(&cartella_recente).unwrap();
+        std::fs::write(cartella_recente.join("qualsiasi.jpg"), b"x").unwrap();
+
+        pulisci_vecchi_screenshot(&dir, 14);
+
+        assert!(!cartella_vecchia.exists(), "la cartella-giorno vecchia doveva essere eliminata");
+        assert!(cartella_recente.exists(), "la cartella-giorno recente NON doveva essere eliminata");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migra_screenshot_vecchi_sposta_file_sciolti_nella_cartella_giorno() {
+        let dir = std::env::temp_dir().join(format!("aw-ss-migrazione-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let file_sciolto = dir.join("20260809-153000-123.jpg");
+        std::fs::write(&file_sciolto, b"x").unwrap();
+        let non_conforme = dir.join("qualcosa-non-standard.jpg");
+        std::fs::write(&non_conforme, b"x").unwrap();
+
+        migra_screenshot_vecchi(&dir);
+
+        assert!(!file_sciolto.exists(), "il file sciolto doveva essere spostato");
+        assert!(non_conforme.exists(), "il file dal nome non standard NON doveva essere toccato");
+
+        let dt = chrono::DateTime::parse_from_rfc3339("2026-08-09T15:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let cartella_attesa = dir.join(nome_cartella_giorno(&dt));
+        assert!(
+            cartella_attesa.join("20260809-153000-123.jpg").exists(),
+            "il file doveva finire nella sua cartella-giorno"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
