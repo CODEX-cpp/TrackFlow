@@ -21,18 +21,29 @@
 //! comunque meno grave di dati frammentati o sbagliati.
 //!
 //! IMPORTANTE (2026-08-12): costruito e compilato su una macchina senza
-//! Excel installato — l'utente lo testerà sul PC di lavoro. Il parsing
-//! del titolo è quindi deliberatamente permissivo invece di provare a
-//! coprire ogni variante esatta di formato titolo (modalità
-//! compatibilità, sola lettura, cloud/OneDrive, ecc.), che non è stato
-//! possibile verificare empiricamente come già fatto per VS Code: cerca
-//! la sotto-stringa fissa " - Excel" e taglia lì, così qualunque testo
-//! aggiuntivo dopo (" (Modalità compatibilità)", " (Sola lettura)", ...)
-//! viene scartato senza bisogno di elencare ogni variante. Se il
-//! pattern non si trova (titolo mai visto), usa comunque il titolo
-//! intero come nome file invece di scartare l'evento — meglio un
-//! raggruppamento imperfetto che perdere dati. Da rivedere con dati
-//! reali alla prima sessione di test dell'utente.
+//! Excel installato — il parsing del titolo cerca la sotto-stringa
+//! fissa " - Excel" e taglia lì, così qualunque testo aggiuntivo dopo
+//! (" (Modalità compatibilità)", " (Sola lettura)", ...) viene scartato
+//! senza bisogno di elencare ogni variante.
+//!
+//! Bug reale segnalato da un utente (issue GitHub #4, con log e
+//! screenshot reali da Excel 2021 MSO/Microsoft 365): un titolo che NON
+//! contiene " - Excel" non è affatto un file mai visto prima — è quasi
+//! sempre una finestra di UTILITÀ di Excel (es. "Find and Replace"/
+//! "Trova e sostituisci", ma lo stesso vale per "Formato celle",
+//! "Imposta pagina", ecc.), un'altra finestra top-level separata dello
+//! stesso processo excel.exe, non un documento. La versione precedente
+//! di questa funzione trattava comunque quel titolo intero come nome
+//! file (v. commento storico rimosso da qui) "per non perdere dati" —
+//! risultato osservato dal vivo: "Find and Replace" compariva come una
+//! RIGA A SÉ nella corsia Excel della Timeline, con una sessione fasulla
+//! di pochi secondi, mentre il file vero continuava ad essere tracciato
+//! correttamente in parallelo sulla sua riga. Con dati reali da 6 file
+//! Excel diversi che rispettano tutti il pattern " - Excel" e UN solo
+//! caso di fallback che si è rivelato essere proprio una finestra di
+//! dialogo, il fallback permissivo fa più danni (falsi file) che
+//! benefici (dati salvati) — ora un titolo che non rispetta il pattern
+//! viene semplicemente ignorato, non trasformato in un file fantasma.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -59,24 +70,21 @@ fn is_excel_exe(app: &str) -> bool {
 /// - Excel (Sola lettura)", ecc. — taglia alla sotto-stringa fissa
 /// " - Excel" invece di elencare ogni variante di suffisso (vedi
 /// commento in cima al file sul perché). Nessun file aperto (titolo
-/// bare "Excel") o titolo vuoto -> None.
+/// bare "Excel"), titolo vuoto, o titolo che non rispetta il pattern
+/// (quasi sempre una finestra di utilità/dialogo, non un documento —
+/// vedi il commento in cima al file sul bug reale che questo evita)
+/// -> None.
 fn interpreta_titolo(titolo: &str) -> Option<String> {
     let pulito = titolo.trim();
     if pulito.is_empty() || pulito.eq_ignore_ascii_case("excel") {
         return None;
     }
-    match pulito.find(" - Excel") {
-        Some(pos) => {
-            let file = pulito[..pos].trim();
-            if file.is_empty() {
-                None
-            } else {
-                Some(file.to_string())
-            }
-        }
-        // Pattern non riconosciuto: usa comunque il titolo intero
-        // piuttosto che scartare l'evento.
-        None => Some(pulito.to_string()),
+    let pos = pulito.find(" - Excel")?;
+    let file = pulito[..pos].trim();
+    if file.is_empty() {
+        None
+    } else {
+        Some(file.to_string())
     }
 }
 
@@ -326,12 +334,22 @@ mod tests {
     }
 
     #[test]
-    fn interpreta_titolo_pattern_sconosciuto_usa_titolo_intero() {
-        // Formato titolo mai visto (non testabile su questa macchina,
-        // niente Excel installato) — fallback: meglio un raggruppamento
-        // imperfetto che perdere l'evento.
+    fn interpreta_titolo_pattern_sconosciuto_viene_ignorato() {
+        // Bug reale (issue GitHub #4): un titolo senza " - Excel" è
+        // quasi sempre una finestra di utilità/dialogo (es. "Find and
+        // Replace"), non un documento — va ignorato, non trattato come
+        // un file fantasma (vedi il commento in cima al file).
         let r = interpreta_titolo("Qualcosa di inatteso");
-        assert_eq!(r, Some("Qualcosa di inatteso".to_string()));
+        assert_eq!(r, None);
+    }
+
+    #[test]
+    fn interpreta_titolo_finestra_trova_e_sostituisci_viene_ignorata() {
+        // Caso reale osservato dal vivo nell'issue #4: la finestra
+        // "Find and Replace" compariva come una riga fasulla a sé nella
+        // corsia Excel della Timeline.
+        let r = interpreta_titolo("Find and Replace");
+        assert_eq!(r, None);
     }
 
     #[test]

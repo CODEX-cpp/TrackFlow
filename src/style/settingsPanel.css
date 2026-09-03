@@ -205,6 +205,15 @@ select.settings-field {
   color: var(--color-text);
 }
 
+/* Tono ambra invece del rosso di -danger — usata per un passaggio da
+   completare (es. autenticazione Claude Desktop mancante), non un vero
+   errore: rosso ovunque per qualunque avviso banalizzava la gravità
+   reale dei messaggi. */
+.settings-alert-warning {
+  background-color: rgba(217, 164, 65, 0.15);
+  color: var(--color-text);
+}
+
 .settings-alert-close {
   position: absolute;
   right: 12px;

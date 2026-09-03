@@ -1108,6 +1108,7 @@ pub fn run() {
             agent::ai_agent_new_conversation,
             agent::ai_agent_list_models,
             claude_subscription::claude_desktop_disponibile,
+            claude_subscription::claude_desktop_stato,
             categorization::elenca_app_conosciute,
             devtools::apri_devtools,
             diagnostics::log_frontend_diagnostica,

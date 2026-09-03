@@ -26,8 +26,27 @@ div
 
   template(v-else)
     div.settings-row-help.aiagent-claude-desktop-help {{ $t('settings.aiAgent.claudeDesktopHelp') }}
-    div.settings-alert.settings-alert-danger(v-if="verificatoDisponibilita && !claudeDesktopDisponibile")
+    div.settings-alert.settings-alert-danger(v-if="verificatoDisponibilita && !claudeDesktopTrovato")
       | {{ $t('settings.aiAgent.claudeDesktopNotFound') }}
+    //- Installata ma non ancora autenticata (bug reale: Claude Desktop
+    //- collegata non basta, il CLI bundlato ha un proprio login separato
+    //- da completare una tantum in un terminale — vedi claude_subscription.rs).
+    //- Istruzioni passo-passo invece di un errore generico: chi arriva
+    //- qui potrebbe non aver mai usato un terminale in vita sua.
+    div.settings-alert.settings-alert-warning(v-if="verificatoDisponibilita && claudeDesktopTrovato && !claudeDesktopAutenticato")
+      div.aiagent-auth-title {{ $t('settings.aiAgent.claudeDesktopNotAuthenticatedTitle') }}
+      div {{ $t('settings.aiAgent.claudeDesktopNotAuthenticatedBody') }}
+      ol.aiagent-auth-steps
+        li {{ $t('settings.aiAgent.claudeDesktopStep1') }}
+        li
+          | {{ $t('settings.aiAgent.claudeDesktopStep2') }}
+          div.aiagent-auth-command
+            code {{ comandoAutenticazione }}
+            div.pill-btn-ghost.aiagent-copy-btn(@click="copiaComandoAutenticazione")
+              | {{ comandoCopiato ? $t('settings.aiAgent.claudeDesktopCopyCommandCopied') : $t('settings.aiAgent.claudeDesktopCopyCommand') }}
+        li {{ $t('settings.aiAgent.claudeDesktopStep3') }}
+        li {{ $t('settings.aiAgent.claudeDesktopStep4') }}
+      div.pill-btn-ghost(@click="verificaClaudeDesktop") {{ $t('settings.aiAgent.claudeDesktopRecheck') }}
 
   div.settings-field-row
     label.settings-field-label {{ $t('settings.aiAgent.model') }}
@@ -87,11 +106,28 @@ export default {
       // claude_subscription.rs. Verificato una volta all'apertura della
       // pagina (e ogni volta che l'utente sceglie questo provider), così
       // un avviso chiaro compare SUBITO se Claude Desktop non è
-      // installata, invece di scoprirlo solo al primo messaggio mandato
-      // in chat.
-      claudeDesktopDisponibile: false,
+      // installata (o installata ma non ancora autenticata — bug reale
+      // segnalato da un utente: avere l'app Desktop collegata non basta,
+      // il CLI bundlato ha un proprio login separato da completare una
+      // tantum), invece di scoprirlo solo al primo messaggio mandato in
+      // chat.
+      claudeDesktopTrovato: false,
+      claudeDesktopAutenticato: false,
+      claudeDesktopPercorsoExe: '',
       verificatoDisponibilita: false,
+      comandoCopiato: false,
     };
+  },
+  computed: {
+    // Comando pronto da copiare in PowerShell — usa il percorso REALE
+    // trovato su questo PC (versione del CLI inclusa), non un
+    // placeholder generico da adattare a mano: l'utente lo incolla e
+    // basta. Racchiuso tra virgolette e preceduto da "&" per gestire
+    // correttamente eventuali spazi nel percorso (es. "Program Files"),
+    // sintassi PowerShell dell'operatore di chiamata.
+    comandoAutenticazione(this: any): string {
+      return this.claudeDesktopPercorsoExe ? `& "${this.claudeDesktopPercorsoExe}"` : '';
+    },
   },
   watch: {
     async provider(nuovo: string, precedente: string) {
@@ -140,11 +176,30 @@ export default {
   methods: {
     async verificaClaudeDesktop(this: any) {
       try {
-        this.claudeDesktopDisponibile = await invoke<boolean>('claude_desktop_disponibile');
+        const stato = await invoke<{ trovato: boolean; autenticato: boolean; percorso_exe: string | null }>(
+          'claude_desktop_stato',
+        );
+        this.claudeDesktopTrovato = stato.trovato;
+        this.claudeDesktopAutenticato = stato.autenticato;
+        this.claudeDesktopPercorsoExe = stato.percorso_exe ?? '';
+        this.comandoCopiato = false;
       } catch (e) {
         // Fuori da Tauri — non bloccante.
       } finally {
         this.verificatoDisponibilita = true;
+      }
+    },
+    async copiaComandoAutenticazione(this: any) {
+      try {
+        await navigator.clipboard.writeText(this.comandoAutenticazione);
+        this.comandoCopiato = true;
+        setTimeout(() => {
+          this.comandoCopiato = false;
+        }, 2000);
+      } catch (e) {
+        // Clipboard non disponibile (permesso negato, contesto non
+        // sicuro) — l'utente può comunque selezionare/copiare il testo
+        // mostrato a mano, non è bloccante.
       }
     },
     async aggiornaModelli() {
@@ -242,5 +297,42 @@ export default {
 
 .aiagent-claude-desktop-help {
   margin-bottom: 14px;
+}
+
+.aiagent-auth-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.aiagent-auth-steps {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.aiagent-auth-steps li {
+  margin-bottom: 8px;
+}
+
+.aiagent-auth-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.aiagent-auth-command code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  background-color: var(--color-bg-inset, rgba(0, 0, 0, 0.2));
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--font-size-sm);
+}
+
+.aiagent-copy-btn {
+  flex: none;
+  white-space: nowrap;
 }
 </style>

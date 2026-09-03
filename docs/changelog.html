@@ -43,6 +43,14 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.24</h2>
+      <ul>
+        <li>Excel: fixed a bug where utility windows like "Find and Replace" were tracked as if they were real files, showing up as fake rows in the Excel Timeline lane.</li>
+        <li>Settings → AI Agent: with the "Claude (Desktop subscription)" provider, TrackFlow now detects when the component it uses still needs its own separate sign-in (independent from signing into the Claude Desktop app itself) — with step-by-step instructions and a ready-to-copy command, instead of only surfacing as an unclear error in the chat.</li>
+        <li>The AI assistant chat now shows a clear message (with a direct link to settings) when that sign-in isn't complete yet, instead of the underlying component's raw error text.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.23</h2>
       <ul>
         <li>Fixed a bug where the AI assistant chat stayed stuck on "an API key is needed first" even with the "Claude (Desktop subscription)" provider correctly connected — that provider never needs a key, but the check required one anyway.</li>

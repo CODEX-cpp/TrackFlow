@@ -127,6 +127,46 @@ pub fn claude_desktop_disponibile() -> bool {
     trova_claude_exe().is_some()
 }
 
+/// Vero se il CLI Claude Code ha già completato il proprio login — bug
+/// reale segnalato da un utente (portatile di lavoro, issue interna
+/// 2026-09-03): avere Claude Desktop (l'app grafica) collegata al
+/// proprio abbonamento NON significa che il CLI bundlato (un processo
+/// separato, con una propria autenticazione OAuth) l'abbia già fatto —
+/// il CLI richiede un primo avvio interattivo una tantum (scelta tema,
+/// conferma di fiducia della cartella, login) prima di poter essere
+/// usato in modalità automatica (`-p`) come fa questo modulo. Verifica
+/// solo la presenza del file di credenziali che quel primo avvio scrive
+/// — non garantisce che siano ancora valide (potrebbero essere scadute),
+/// ma è lo stesso controllo che l'utente può fare da sé aprendo quella
+/// cartella, e costa zero (nessun processo da avviare).
+fn credenziali_presenti() -> bool {
+    std::env::var_os("USERPROFILE")
+        .map(|h| PathBuf::from(h).join(".claude").join(".credentials.json"))
+        .map(|p| p.is_file())
+        .unwrap_or(false)
+}
+
+/// Stato completo per le Impostazioni — sostituisce `claude_desktop_disponibile`
+/// (lasciata per compatibilità) con le due informazioni che servono per
+/// distinguere "non installata" da "installata ma non ancora autenticata"
+/// e per costruire il comando pronto da copiare (vedi `AiAgentSettings.vue`).
+#[derive(serde::Serialize)]
+pub struct StatoClaudeDesktop {
+    pub trovato: bool,
+    pub autenticato: bool,
+    pub percorso_exe: Option<String>,
+}
+
+#[tauri::command]
+pub fn claude_desktop_stato() -> StatoClaudeDesktop {
+    let percorso = trova_claude_exe();
+    StatoClaudeDesktop {
+        trovato: percorso.is_some(),
+        autenticato: credenziali_presenti(),
+        percorso_exe: percorso.map(|p| p.display().to_string()),
+    }
+}
+
 /// Genera un token casuale per proteggere il server MCP locale (vedi
 /// `avvia`) — nessuna dipendenza nuova solo per questo: ogni
 /// `RandomState` di libreria standard è seminato dal sistema operativo
@@ -817,9 +857,34 @@ async fn manda_turno(sessione: &mut SessioneAttiva, testo: &str) -> Result<Rispo
         "Nessuna risposta da Claude Code — verifica che Claude Desktop sia installata e connessa.".to_string()
     })?;
     if errore_finale {
-        return Err(testo_finale);
+        return Err(traduci_errore_cli(&testo_finale));
     }
     Ok(RispostaAgente { testo: testo_finale, strumenti_usati })
+}
+
+/// Marcatore stabile (non un messaggio in italiano) per il caso "CLI non
+/// autenticato" — bug reale segnalato da un utente (portatile di
+/// lavoro): Claude Desktop era collegata regolarmente, ma il CLI
+/// bundlato non aveva mai completato il proprio primo avvio (vedi
+/// `credenziali_presenti`), e il messaggio grezzo che restituisce ("Not
+/// logged in · Please run /login") non significa nulla per chi non sa
+/// cos'è un CLI o un comando "/login". Un CODICE invece di una frase
+/// già in italiano: il testo vero e proprio (con azione cliccabile verso
+/// Impostazioni) lo mostra il frontend, che sa già gestire lingua IT/EN
+/// — vedi `AiChatWidget.vue`.
+pub const ERRORE_NON_AUTENTICATO: &str = "CLAUDE_DESKTOP_NON_AUTENTICATO";
+
+/// Traduce l'errore grezzo del CLI — solo il pattern "non autenticato"
+/// viene riconosciuto e sostituito col marcatore sopra; qualunque altro
+/// errore del CLI passa invariato (meglio il testo originale, utile per
+/// una segnalazione, che nasconderlo dietro un messaggio generico
+/// sbagliato).
+fn traduci_errore_cli(testo: &str) -> String {
+    if testo.to_lowercase().contains("not logged in") {
+        ERRORE_NON_AUTENTICATO.to_string()
+    } else {
+        testo.to_string()
+    }
 }
 
 /// Punto di ingresso da `agent::ai_agent_send_message` quando il
@@ -1017,6 +1082,31 @@ pub async fn prewarm_se_configurato(app_handle: &AppHandle, app_data_dir: PathBu
             // invia_messaggio), l'utente non vede nessun errore ora.
             diagnostics::scrivi("claude_desktop_prewarm_fallito", json!({ "errore": errore }));
         }
+    }
+}
+
+#[cfg(test)]
+mod test_stato {
+    //! A differenza di `test_manuale` sotto, questo NON spawna alcun
+    //! processo né consuma l'abbonamento — solo controlli sul filesystem
+    //! locale (percorso claude.exe, file di credenziali). Non `#[ignore]`
+    //! apposta: economico, gira in ogni `cargo test` normale. I valori
+    //! esatti dipendono dalla macchina (qui solo stampati per verifica
+    //! visiva con --nocapture), l'unica cosa asserita è che la funzione
+    //! non va in panico e la forma del risultato è quella attesa.
+    use super::*;
+
+    #[test]
+    fn claude_desktop_stato_non_va_in_panico() {
+        let stato = claude_desktop_stato();
+        println!(
+            "trovato={} autenticato={} percorso_exe={:?}",
+            stato.trovato, stato.autenticato, stato.percorso_exe
+        );
+        // Coerenza minima: se non è stato trovato nessun claude.exe, il
+        // percorso deve essere None (mai un trovato=false con un percorso
+        // valorizzato, o viceversa).
+        assert_eq!(stato.trovato, stato.percorso_exe.is_some());
     }
 }
 

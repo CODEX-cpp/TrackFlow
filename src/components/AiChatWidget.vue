@@ -52,7 +52,15 @@ div.ai-chat-widget
       div.ai-chat-bubble.ai-chat-bubble-assistant.ai-chat-bubble-loading(v-if="inviando")
         | {{ $t('aiChat.thinking') }}
 
-    div.ai-chat-alert(v-if="errore") {{ errore }}
+    //- Caso specifico "CLI non autenticato" (vedi ERRORE_NON_AUTENTICATO
+    //- in claude_subscription.rs): stesso trattamento cliccabile della
+    //- chiave API mancante sopra, invece del testo d'errore grezzo —
+    //- l'utente deve poter arrivare in un clic alle istruzioni, non solo
+    //- leggere che qualcosa non va.
+    div.ai-chat-alert(v-if="erroreClaudeNonAutenticato")
+      | {{ $t('aiChat.claudeDesktopNotAuthenticated') }}
+      div.ai-chat-empty-action(@click="apriImpostazioniAgente") {{ $t('aiChat.claudeDesktopNotAuthenticatedAction') }}
+    div.ai-chat-alert(v-else-if="errore") {{ errore }}
 
     //- Wrapper unico attorno a citazione + campo di scrittura — quando la
     //- citazione è presente devono sembrare un solo "cubo" con due zone
@@ -136,6 +144,10 @@ export default {
       bozza: '',
       inviando: false,
       errore: '',
+      // Vedi ERRORE_NON_AUTENTICATO in claude_subscription.rs — quando
+      // l'errore ricevuto è quel marcatore, mostriamo il blocco cliccabile
+      // dedicato sopra invece del testo grezzo in `errore`.
+      erroreClaudeNonAutenticato: false,
       // null finché non è stata ancora controllata (primo apri()) — non
       // false di default, altrimenti lampeggerebbe per un istante l'avviso
       // "chiave mancante" anche quando è configurata, prima che la
@@ -312,6 +324,7 @@ export default {
       const testo = this.bozza.trim();
       if (!testo || this.inviando || this.apiConfigurata === false) return;
       this.errore = '';
+      this.erroreClaudeNonAutenticato = false;
       // La bolla mostrata in chat resta SOLO quello che l'utente ha
       // scritto (più l'etichetta, non i dati veri — vedi contestoLabel
       // sotto) — il testo coi dati veri viene anteposto solo alla
@@ -340,7 +353,12 @@ export default {
         });
         this.riavviaTimerInattivita();
       } catch (e: any) {
-        this.errore = e?.toString?.() ?? String(e);
+        const messaggio = e?.toString?.() ?? String(e);
+        if (messaggio.includes('CLAUDE_DESKTOP_NON_AUTENTICATO')) {
+          this.erroreClaudeNonAutenticato = true;
+        } else {
+          this.errore = messaggio;
+        }
       } finally {
         this.inviando = false;
         this.scrollToBottom();
@@ -349,6 +367,7 @@ export default {
     async nuovaConversazione() {
       this.messaggi = [];
       this.errore = '';
+      this.erroreClaudeNonAutenticato = false;
       try {
         await invoke('ai_agent_new_conversation');
       } catch (e) {

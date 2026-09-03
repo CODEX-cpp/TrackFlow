@@ -5,6 +5,18 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.24
+
+### it
+- Excel: corretto un bug per cui finestre di utilità come "Trova e sostituisci" venivano tracciate come se fossero file veri, comparendo come righe fasulle nella corsia Excel della Timeline.
+- Impostazioni → Agente AI: con il provider "Claude (abbonamento Desktop)", ora viene rilevato se manca ancora un login separato del componente usato da TrackFlow (indipendente da quello dell'app Claude Desktop stessa) — con istruzioni passo-passo e un comando pronto da copiare, invece di scoprirlo solo con un errore poco chiaro nella chat.
+- La chat dell'assistente AI mostra ora un messaggio comprensibile (con collegamento diretto alle impostazioni) quando quel collegamento non è ancora completo, invece del messaggio grezzo del componente sottostante.
+
+### en
+- Excel: fixed a bug where utility windows like "Find and Replace" were tracked as if they were real files, showing up as fake rows in the Excel Timeline lane.
+- Settings → AI Agent: with the "Claude (Desktop subscription)" provider, TrackFlow now detects when the component it uses still needs its own separate sign-in (independent from signing into the Claude Desktop app itself) — with step-by-step instructions and a ready-to-copy command, instead of only surfacing as an unclear error in the chat.
+- The AI assistant chat now shows a clear message (with a direct link to settings) when that sign-in isn't complete yet, instead of the underlying component's raw error text.
+
 ## 0.1.23
 
 ### it
