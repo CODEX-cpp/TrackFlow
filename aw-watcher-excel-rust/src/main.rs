@@ -47,6 +47,7 @@
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::Path;
 use std::thread;
 use std::time::Duration as StdDuration;
 
@@ -89,7 +90,7 @@ fn interpreta_titolo(titolo: &str) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn nome_processo(pid: u32) -> Option<String> {
+fn percorso_processo(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION};
@@ -102,23 +103,104 @@ fn nome_processo(pid: u32) -> Option<String> {
         if len == 0 {
             return None;
         }
-        let path = String::from_utf16_lossy(&path_buf[..len as usize]);
-        std::path::Path::new(&path)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
+        Some(String::from_utf16_lossy(&path_buf[..len as usize]))
     }
 }
 
-/// Elenca i nomi file di TUTTE le finestre Excel aperte in questo momento
-/// (indipendentemente da quale abbia il fuoco) — così un file resta
-/// "aperto" agli occhi del watcher finché la sua finestra esiste,
-/// esattamente come lo intende l'utente, non solo mentre lo si guarda.
+/// Versione del file (es. "16.0.20326.20072") letta dalle risorse
+/// dell'eseguibile — usata solo dal log diagnostico dettagliato (vedi
+/// `LogDettagliatoState`/`main`), per capire con precisione quale build
+/// di Excel un utente sta usando senza doverglielo chiedere a mano ogni
+/// volta (come fatto per issue GitHub #4). `None` se le informazioni di
+/// versione non sono presenti nel file o la lettura fallisce per
+/// qualunque motivo — mai un errore fatale per il watcher.
 #[cfg(windows)]
-fn file_excel_aperti() -> Vec<String> {
-    use windows::Win32::Foundation::{HWND, LPARAM};
+fn versione_file(percorso: &str) -> Option<String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    };
+
+    let percorso_wide: Vec<u16> = percorso.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let dimensione = GetFileVersionInfoSizeW(PCWSTR(percorso_wide.as_ptr()), None);
+        if dimensione == 0 {
+            return None;
+        }
+        let mut buffer = vec![0u8; dimensione as usize];
+        GetFileVersionInfoW(
+            PCWSTR(percorso_wide.as_ptr()),
+            None,
+            dimensione,
+            buffer.as_mut_ptr() as *mut core::ffi::c_void,
+        )
+        .ok()?;
+
+        let sotto_blocco: Vec<u16> = "\\".encode_utf16().chain(std::iter::once(0)).collect();
+        let mut ptr_info: *mut core::ffi::c_void = std::ptr::null_mut();
+        let mut lunghezza: u32 = 0;
+        let ok = VerQueryValueW(
+            buffer.as_ptr() as *const core::ffi::c_void,
+            PCWSTR(sotto_blocco.as_ptr()),
+            &mut ptr_info,
+            &mut lunghezza,
+        );
+        if !ok.as_bool() || ptr_info.is_null() {
+            return None;
+        }
+        let info = &*(ptr_info as *const VS_FIXEDFILEINFO);
+        let major = (info.dwFileVersionMS >> 16) & 0xffff;
+        let minor = info.dwFileVersionMS & 0xffff;
+        let build = (info.dwFileVersionLS >> 16) & 0xffff;
+        let revisione = info.dwFileVersionLS & 0xffff;
+        Some(format!("{major}.{minor}.{build}.{revisione}"))
+    }
+}
+
+/// Tutto quello che si può leggere di una finestra top-level di
+/// excel.exe via Win32 puro (nessuna API COM/Object Model — vedi il
+/// commento in cima al file sul perché) — sia che il suo titolo
+/// rappresenti un documento vero sia una finestra di utilità/dialogo.
+/// Usata per il tracciamento normale (via `file_interpretato`) E, per
+/// intero, dal log diagnostico dettagliato quando attivo (vedi `main`) —
+/// richiesta esplicita dell'utente dopo il bug "Trova e sostituisci"
+/// dell'issue #4: non fidarsi più di un singolo screenshot isolato, poter
+/// vedere riga per riga, durante un uso reale prolungato, esattamente
+/// cosa il watcher vede ad ogni controllo.
+#[derive(Debug, Clone)]
+struct InfoFinestraExcel {
+    hwnd: isize,
+    pid: u32,
+    titolo: String,
+    classe: String,
+    percorso_processo: Option<String>,
+    versione_file: Option<String>,
+    rect: Option<(i32, i32, i32, i32)>,
+    focalizzata: bool,
+    minimizzata: bool,
+    abilitata: bool,
+    owner_hwnd: Option<isize>,
+    /// Risultato di `interpreta_titolo(titolo)` — già calcolato qui
+    /// così sia il tracciamento normale sia il log diagnostico vedono
+    /// esattamente la stessa interpretazione, senza ricalcolarla in due
+    /// posti che potrebbero disallinearsi.
+    file_interpretato: Option<String>,
+}
+
+/// Elenca TUTTE le finestre top-level visibili di processi excel.exe in
+/// questo momento — documenti E finestre di utilità/dialogo insieme,
+/// indipendentemente da quale abbia il fuoco (un file resta "aperto"
+/// agli occhi del watcher finché la sua finestra esiste, non solo mentre
+/// lo si guarda). Il tracciamento apertura/chiusura in `main()` filtra
+/// da questo elenco solo quelle con `file_interpretato` valorizzato.
+#[cfg(windows)]
+fn elenca_finestre_excel() -> Vec<InfoFinestraExcel> {
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::core::BOOL;
+    use windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+        EnumWindows, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowRect,
+        GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, GW_OWNER,
     };
 
     unsafe extern "system" fn callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -137,31 +219,78 @@ fn file_excel_aperti() -> Vec<String> {
 
         let mut pid: u32 = 0;
         unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-        let Some(app) = nome_processo(pid) else {
+        let Some(percorso) = percorso_processo(pid) else {
             return BOOL(1);
         };
+        let app = Path::new(&percorso).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
         if !is_excel_exe(&app) {
             return BOOL(1);
         }
 
-        if let Some(file) = interpreta_titolo(&titolo) {
-            let risultati = unsafe { &mut *(lparam.0 as *mut Vec<String>) };
-            if !risultati.contains(&file) {
-                risultati.push(file);
-            }
-        }
+        let mut class_buf = [0u16; 256];
+        let class_len = unsafe { GetClassNameW(hwnd, &mut class_buf) };
+        let classe = if class_len > 0 {
+            String::from_utf16_lossy(&class_buf[..class_len as usize])
+        } else {
+            String::new()
+        };
+
+        let mut rect = RECT::default();
+        let rect = unsafe { GetWindowRect(hwnd, &mut rect) }
+            .ok()
+            .map(|_| (rect.left, rect.top, rect.right, rect.bottom));
+
+        let minimizzata = unsafe { IsIconic(hwnd) }.as_bool();
+        let abilitata = unsafe { IsWindowEnabled(hwnd) }.as_bool();
+        let focalizzata = unsafe { GetForegroundWindow() } == hwnd;
+        let owner_hwnd = unsafe { GetWindow(hwnd, GW_OWNER) }.ok().map(|h| h.0 as isize);
+        let versione_file = versione_file(&percorso);
+        let file_interpretato = interpreta_titolo(&titolo);
+
+        let risultati = unsafe { &mut *(lparam.0 as *mut Vec<InfoFinestraExcel>) };
+        risultati.push(InfoFinestraExcel {
+            hwnd: hwnd.0 as isize,
+            pid,
+            titolo,
+            classe,
+            percorso_processo: Some(percorso),
+            versione_file,
+            rect,
+            focalizzata,
+            minimizzata,
+            abilitata,
+            owner_hwnd,
+            file_interpretato,
+        });
         BOOL(1)
     }
 
-    let mut risultati: Vec<String> = Vec::new();
+    let mut risultati: Vec<InfoFinestraExcel> = Vec::new();
     let lparam = LPARAM(std::ptr::addr_of_mut!(risultati) as isize);
     let _ = unsafe { EnumWindows(Some(callback), lparam) };
     risultati
 }
 
 #[cfg(not(windows))]
-fn file_excel_aperti() -> Vec<String> {
+fn elenca_finestre_excel() -> Vec<InfoFinestraExcel> {
     compile_error!("aw-watcher-excel supporta solo Windows");
+}
+
+/// Elenco dei nomi file "aperti", derivato da `elenca_finestre_excel()`
+/// filtrando solo le finestre con `file_interpretato` valorizzato —
+/// stesso identico elenco che produceva la vecchia `file_excel_aperti()`,
+/// ora fattorizzato per essere calcolato una sola volta per giro e
+/// riusato anche dal log diagnostico (vedi `main`).
+fn file_aperti_da_finestre(finestre: &[InfoFinestraExcel]) -> Vec<String> {
+    let mut risultati: Vec<String> = Vec::new();
+    for f in finestre {
+        if let Some(file) = &f.file_interpretato {
+            if !risultati.contains(file) {
+                risultati.push(file.clone());
+            }
+        }
+    }
+    risultati
 }
 
 /// Separa un descrittore file come lo produce `interpreta_titolo` (es.
@@ -242,16 +371,94 @@ struct Args {
     /// Ogni quanti secondi controllare quali file Excel sono aperti —
     /// richiesta esplicita: non serve precisione al secondo, solo sapere
     /// apertura/chiusura di ogni file, quindi un intervallo più largo
-    /// (di sicuro non 2s) va benissimo e pesa meno sul sistema.
+    /// (di sicuro non 2s) va benissimo e pesa meno sul sistema. Usato
+    /// solo quando il log dettagliato (vedi sotto) è spento — con quello
+    /// attivo l'intervallo scende a 5s, richiesta esplicita dell'utente
+    /// per un'indagine più fine durante un uso reale.
     #[arg(long, default_value_t = 20.0)]
     poll_interval: f64,
 
-    /// Non usato da questo watcher (nessuno stato/file da leggere) —
-    /// accettato comunque per uniformità con gli altri watcher, che
-    /// vengono tutti lanciati con lo stesso set di argomenti da
-    /// src-tauri/src/lib.rs.
+    /// Cartella dati scrivibile condivisa — usata per rileggere ad ogni
+    /// giro il file di override del log dettagliato (vedi
+    /// `leggi_log_dettagliato`), scritto dalle Impostazioni → Sviluppatore
+    /// quando l'utente accende il toggle "Log dettagliato Excel".
     #[arg(long)]
     app_data_dir: Option<std::path::PathBuf>,
+}
+
+/// Nome del file di override scritto da `imposta_log_dettagliato_watcher`
+/// (src-tauri/src/watcher_status.rs) quando l'utente accende/spegne il
+/// toggle "Log dettagliato" per questo watcher dalle Impostazioni →
+/// Sviluppatore → Stato watcher. Stessa convenzione "true"/qualunque
+/// altra cosa = false già usata per gli altri override (vedi
+/// aw-watcher-screenshot-rust).
+const LOG_DETTAGLIATO_OVERRIDE_FILE: &str = "detailed-log-aw-watcher-excel-override.txt";
+
+fn leggi_log_dettagliato(app_data_dir: Option<&Path>) -> bool {
+    let Some(dir) = app_data_dir else { return false };
+    std::fs::read_to_string(dir.join(LOG_DETTAGLIATO_OVERRIDE_FILE))
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false)
+}
+
+/// Intervallo usato quando il log dettagliato è acceso — più breve del
+/// default (20s) per un'indagine più fine, richiesta esplicita
+/// dell'utente ("non ogni 20 secondi, ogni 5").
+const INTERVALLO_LOG_DETTAGLIATO_SECONDI: f64 = 5.0;
+
+/// Nome del file dedicato al log dettagliato — DELIBERATAMENTE separato
+/// da TrackFlow.log (dove finiscono tutte le righe di tutti i watcher
+/// insieme, vedi spawn_stdout_drain in lib.rs): richiesta esplicita
+/// dell'utente ("intendo il log di Excel solo"), un file dedicato invece
+/// di dover filtrare a mano tra migliaia di righe di screenshot/AFK/altro
+/// per trovare quelle di Excel. Stesso prefisso "detailed-log-<nome>"
+/// del file di override (vedi LOG_DETTAGLIATO_OVERRIDE_FILE) per
+/// restare facilmente associabili a colpo d'occhio nella cartella dati.
+const LOG_DETTAGLIATO_FILE: &str = "detailed-log-aw-watcher-excel.log";
+
+/// Scrive (append, un file testuale dedicato — MAI stdout: sia per
+/// tenerlo separato dal log generale sia perché una riga che per
+/// coincidenza avesse la forma di un envelope evento finirebbe inserita
+/// nel database dal meccanismo di forwarding di lib.rs) tutto il
+/// possibile su ogni finestra excel.exe vista in questo giro — richiesta
+/// esplicita dell'utente dopo il bug "Trova e sostituisci" dell'issue
+/// GitHub #4: poter vedere, riga per riga durante un uso reale
+/// prolungato, esattamente cosa il watcher vede ad ogni controllo, non
+/// dedurlo da un singolo screenshot isolato. Nessun errore fatale se la
+/// scrittura fallisce (es. cartella non ancora pronta): il watcher deve
+/// continuare a funzionare comunque, la diagnostica è un extra.
+fn log_dettagliato(app_data_dir: &Path, finestre: &[InfoFinestraExcel], aperti_ora: &[String]) {
+    use std::io::Write as _;
+    let Ok(mut file) =
+        std::fs::OpenOptions::new().create(true).append(true).open(app_data_dir.join(LOG_DETTAGLIATO_FILE))
+    else {
+        return;
+    };
+    let _ = writeln!(
+        file,
+        "[{}] === giro: {} finestre excel.exe trovate ===",
+        Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        finestre.len()
+    );
+    for f in finestre {
+        let _ = writeln!(
+            file,
+            "  hwnd={:#x} pid={} titolo={:?} classe={:?} interpretato={:?} focalizzata={} minimizzata={} abilitata={} owner_hwnd={:?} rect={:?} exe={:?} versione_exe={:?}",
+            f.hwnd,
+            f.pid,
+            f.titolo,
+            f.classe,
+            f.file_interpretato,
+            f.focalizzata,
+            f.minimizzata,
+            f.abilitata,
+            f.owner_hwnd,
+            f.rect,
+            f.percorso_processo,
+            f.versione_file,
+        );
+    }
+    let _ = writeln!(file, "  file considerati \"aperti\" questo giro: {aperti_ora:?}");
 }
 
 fn main() {
@@ -273,8 +480,17 @@ fn main() {
     let mut aperti_da: HashMap<String, DateTime<Utc>> = HashMap::new();
 
     loop {
-        let aperti_ora = file_excel_aperti();
+        let log_dettagliato_attivo = leggi_log_dettagliato(args.app_data_dir.as_deref());
+        let finestre = elenca_finestre_excel();
+        let aperti_ora = file_aperti_da_finestre(&finestre);
         let ora = Utc::now();
+
+        if log_dettagliato_attivo {
+            // Sicuro chiamare .unwrap() qui: leggi_log_dettagliato torna
+            // già false se args.app_data_dir è None, quindi
+            // log_dettagliato_attivo=true implica che la cartella esiste.
+            log_dettagliato(args.app_data_dir.as_deref().unwrap(), &finestre, &aperti_ora);
+        }
 
         for file in &aperti_ora {
             aperti_da.entry(file.clone()).or_insert(ora);
@@ -289,13 +505,74 @@ fn main() {
             }
         });
 
-        thread::sleep(StdDuration::from_secs_f64(args.poll_interval));
+        let intervallo =
+            if log_dettagliato_attivo { INTERVALLO_LOG_DETTAGLIATO_SECONDI } else { args.poll_interval };
+        thread::sleep(StdDuration::from_secs_f64(intervallo));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn finestra_di_prova(titolo: &str) -> InfoFinestraExcel {
+        InfoFinestraExcel {
+            hwnd: 0,
+            pid: 1234,
+            titolo: titolo.to_string(),
+            classe: "XLMAIN".to_string(),
+            percorso_processo: Some("C:\\Program Files\\Microsoft Office\\EXCEL.EXE".to_string()),
+            versione_file: None,
+            rect: None,
+            focalizzata: false,
+            minimizzata: false,
+            abilitata: true,
+            owner_hwnd: None,
+            file_interpretato: interpreta_titolo(titolo),
+        }
+    }
+
+    #[test]
+    fn file_aperti_da_finestre_filtra_solo_i_documenti_veri() {
+        let finestre = vec![
+            finestra_di_prova("Report.xlsx - Excel"),
+            finestra_di_prova("Find and Replace"),
+            finestra_di_prova("Cash Ledger.xlsx - Excel"),
+        ];
+        let aperti = file_aperti_da_finestre(&finestre);
+        assert_eq!(aperti, vec!["Report.xlsx".to_string(), "Cash Ledger.xlsx".to_string()]);
+    }
+
+    #[test]
+    fn file_aperti_da_finestre_deduplica_lo_stesso_file() {
+        // Es. "Visualizza affiancate" — due finestre per lo stesso file.
+        let finestre = vec![finestra_di_prova("Report.xlsx - Excel"), finestra_di_prova("Report.xlsx - Excel")];
+        let aperti = file_aperti_da_finestre(&finestre);
+        assert_eq!(aperti, vec!["Report.xlsx".to_string()]);
+    }
+
+    #[test]
+    fn leggi_log_dettagliato_false_senza_cartella_dati() {
+        assert!(!leggi_log_dettagliato(None));
+    }
+
+    #[test]
+    fn leggi_log_dettagliato_false_quando_il_file_manca() {
+        let dir = std::env::temp_dir().join(format!("aw-excel-diag-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!leggi_log_dettagliato(Some(&dir)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn leggi_log_dettagliato_true_quando_il_file_dice_true() {
+        let dir = std::env::temp_dir().join(format!("aw-excel-diag-true-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(LOG_DETTAGLIATO_OVERRIDE_FILE), "true\n").unwrap();
+        assert!(leggi_log_dettagliato(Some(&dir)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn interpreta_titolo_file_salvato() {

@@ -414,6 +414,10 @@ Clear all rules from the editor, leaving it as \`[]\` (or empty), and save.`,
         customHelp:
           "Buckets that exist on the server but aren't managed by this app — a hand-written watcher, or an official ActivityWatch extension (e.g. for the browser). No start/restart control available: these aren't processes we launch.",
         noCustom: 'No external buckets detected.',
+        detailedLog: 'Detailed log',
+        detailedLogHelp:
+          "Logs everything possible about every detected window (title, class, focused state, executable version...) to its own dedicated file (separate from the app's general log), every 5 seconds instead of the normal interval — for investigating a specific issue during real use. Don't leave it on longer than needed: it generates a lot of lines.",
+        detailedLogOpen: 'Open log',
       },
       logPanel: {
         title: 'Log',

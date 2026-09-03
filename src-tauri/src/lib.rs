@@ -1000,7 +1000,10 @@ fn spawn_watcher(
             return;
         }
     };
-    let cmd = if matches!(name, "aw-watcher-screenshot" | "aw-watcher-vpn" | "aw-watcher-claude-code") {
+    let cmd = if matches!(
+        name,
+        "aw-watcher-screenshot" | "aw-watcher-vpn" | "aw-watcher-claude-code" | "aw-watcher-excel"
+    ) {
         // Stessa cartella scrivibile condivisa delle icone. Screenshot ci
         // salva sotto <app-data-dir>/screenshots (vedi
         // ScreenshotGalleryModal.vue); vpn/claude-code ci leggono
@@ -1008,7 +1011,9 @@ fn spawn_watcher(
         // prima cercavano questi file "accanto all'exe", percorso che
         // cambia tra dev/release/installazione reale e in un'installazione
         // vera sarebbe di sola lettura (stesso problema già risolto per
-        // le icone).
+        // le icone). excel ci rilegge ad ogni giro il file di override
+        // del log dettagliato (vedi watcher_status.rs,
+        // WATCHER_CON_LOG_DETTAGLIATO).
         cmd.args(["--app-data-dir", &app_data_dir.to_string_lossy()])
     } else {
         cmd
@@ -1120,6 +1125,8 @@ pub fn run() {
             watcher_status::riavvia_watcher,
             watcher_status::imposta_moduli_iniziali,
             watcher_status::moduli_gia_configurati,
+            watcher_status::imposta_log_dettagliato_watcher,
+            watcher_status::apri_log_dettagliato_watcher,
             watcher_status::imposta_modulo_watcher,
             folder_shortcuts::apri_cartella_dati,
             folder_shortcuts::apri_cartella_log,

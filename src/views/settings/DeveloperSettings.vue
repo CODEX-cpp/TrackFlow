@@ -55,6 +55,21 @@ div
             div.dev-watcher-meta {{ w.metaText }}
           div.dev-watcher-lastevent {{ w.lastEventText }}
           span.dev-watcher-badge(:class="'dev-badge-' + w.badgeClass") {{ w.badgeLabel }}
+          //- Toggle "Log dettagliato" — solo per i watcher che lo
+          //- supportano (per ora solo Excel, vedi
+          //- WATCHER_CON_LOG_DETTAGLIATO in watcher_status.rs). Richiesta
+          //- esplicita dell'utente dopo il bug "Trova e sostituisci"
+          //- dell'issue #4: poter indagare a fondo un watcher specifico
+          //- durante un uso reale prolungato, senza dover attivare/capire
+          //- il log diagnostico generale dell'intera app.
+          div.dev-watcher-detailed-log(v-if="w.log_dettagliato_disponibile" :title="$t('settings.developer.watcherStatus.detailedLogHelp')")
+            span.dev-watcher-detailed-log-label {{ $t('settings.developer.watcherStatus.detailedLog') }}
+            div.settings-toggle.dev-watcher-detailed-log-toggle(
+              :class="{ 'settings-toggle-on': w.log_dettagliato_abilitato }"
+              @click="toggleLogDettagliato(w.name, !w.log_dettagliato_abilitato)"
+            )
+              div.settings-toggle-thumb
+            div.pill-btn-ghost.dev-watcher-detailed-log-open(@click="apriLogDettagliato(w.name)") {{ $t('settings.developer.watcherStatus.detailedLogOpen') }}
           div.dev-watcher-actions
             div.pill-btn-ghost.dev-watcher-btn(v-if="w.action === 'restart'" @click="riavvia(w.name)") {{ $t('settings.developer.watcherStatus.restart') }}
             div.pill-btn-ghost.dev-watcher-btn(v-if="w.action === 'start'" @click="avviaSessione(w.name)") {{ $t('settings.developer.watcherStatus.startSession') }}
@@ -189,6 +204,8 @@ interface WatcherStatusDto {
   running: boolean;
   pid: number | null;
   has_process: boolean;
+  log_dettagliato_disponibile: boolean;
+  log_dettagliato_abilitato: boolean;
 }
 
 // Alcuni moduli "virtuali" (VoiSpeed) usano un client diverso dal loro
@@ -391,6 +408,28 @@ export default {
         // Fuori da Tauri.
       }
       this.caricaStato();
+    },
+    async toggleLogDettagliato(this: any, name: string, abilitato: boolean) {
+      // Ottimistico: aggiorna subito la spunta invece di aspettare il
+      // prossimo giro di caricaStato() (fino a REFRESH_MS di ritardo,
+      // percepibile come "non ha funzionato" al primo click).
+      const w = this.watchers.find((x: WatcherStatusDto) => x.name === name);
+      if (w) w.log_dettagliato_abilitato = abilitato;
+      try {
+        await invoke('imposta_log_dettagliato_watcher', { nome: name, abilitato });
+      } catch (e) {
+        // Fuori da Tauri, o comando rifiutato — la prossima caricaStato()
+        // (max REFRESH_MS) riallinea comunque lo stato mostrato a quello
+        // vero letto dal backend.
+      }
+    },
+    async apriLogDettagliato(this: any, name: string) {
+      this.folderError = '';
+      try {
+        await invoke('apri_log_dettagliato_watcher', { nome: name });
+      } catch (e: any) {
+        this.folderError = `${this.$t('settings.developer.folderShortcuts.openError')} ${e?.message ?? e}`;
+      }
     },
     async avviaLog(this: any) {
       if (this.logUnlisten) return;
@@ -662,6 +701,30 @@ export default {
 .dev-badge-disabled {
   background-color: var(--color-surface2);
   color: var(--color-text-faint);
+}
+
+.dev-watcher-detailed-log {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dev-watcher-detailed-log-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  white-space: nowrap;
+}
+
+.dev-watcher-detailed-log-toggle {
+  transform: scale(0.75);
+  transform-origin: center;
+}
+
+.dev-watcher-detailed-log-open {
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+  white-space: nowrap;
 }
 
 .dev-watcher-actions {

@@ -340,14 +340,18 @@ export default {
     },
   },
   watch: {
-    // Only ever forces the submenu OPEN on arrival at a settings URL —
-    // never auto-closes it, so a manual collapse (chevron click) while
-    // already on the page sticks instead of springing back open on the
-    // next in-page settings navigation.
+    // Forces the submenu OPEN on arrival at a settings URL, and CLOSED
+    // again on leaving it (e.g. back to Home) — richiesta esplicita
+    // dell'utente: la tendina non deve restare aperta una volta usciti
+    // dalle Impostazioni. Un collasso manuale (click sulla freccia)
+    // mentre si è ancora sulla pagina resta comunque valido finché non
+    // se ne esce del tutto: dentro /settings/* questo watcher non
+    // scatta di nuovo (onSettings resta true), quindi non lo riapre da
+    // solo ad ogni navigazione interna tra le sezioni.
     isOnSettingsRoute: {
       immediate: true,
       handler(onSettings: boolean) {
-        if (onSettings) this.settingsExpanded = true;
+        this.settingsExpanded = onSettings;
       },
     },
   },

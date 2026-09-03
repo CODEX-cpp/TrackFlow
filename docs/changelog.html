@@ -48,6 +48,8 @@
         <li>Excel: fixed a bug where utility windows like "Find and Replace" were tracked as if they were real files, showing up as fake rows in the Excel Timeline lane.</li>
         <li>Settings → AI Agent: with the "Claude (Desktop subscription)" provider, TrackFlow now detects when the component it uses still needs its own separate sign-in (independent from signing into the Claude Desktop app itself) — with step-by-step instructions and a ready-to-copy command, instead of only surfacing as an unclear error in the chat.</li>
         <li>The AI assistant chat now shows a clear message (with a direct link to settings) when that sign-in isn't complete yet, instead of the underlying component's raw error text.</li>
+        <li>Settings → Developer → Watcher status: new "Detailed log" toggle for the Excel watcher — logs everything possible about every detected Excel window (title, window type, version, state) to its own dedicated file (separate from the general log), with a button to open it right away; useful for investigating tracking issues during real use.</li>
+        <li>The Settings dropdown in the side menu now collapses on its own when you navigate away to another page, instead of staying open.</li>
       </ul>
     </section>
     <section class="changelog-entry">

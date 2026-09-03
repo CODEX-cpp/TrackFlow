@@ -11,11 +11,15 @@ Non toccare questo formato senza aggiornare anche quel parser.
 - Excel: corretto un bug per cui finestre di utilità come "Trova e sostituisci" venivano tracciate come se fossero file veri, comparendo come righe fasulle nella corsia Excel della Timeline.
 - Impostazioni → Agente AI: con il provider "Claude (abbonamento Desktop)", ora viene rilevato se manca ancora un login separato del componente usato da TrackFlow (indipendente da quello dell'app Claude Desktop stessa) — con istruzioni passo-passo e un comando pronto da copiare, invece di scoprirlo solo con un errore poco chiaro nella chat.
 - La chat dell'assistente AI mostra ora un messaggio comprensibile (con collegamento diretto alle impostazioni) quando quel collegamento non è ancora completo, invece del messaggio grezzo del componente sottostante.
+- Impostazioni → Sviluppatore → Stato watcher: nuovo interruttore "Log dettagliato" per il watcher Excel — registra in un file dedicato (separato dal log generale) tutto il possibile su ogni finestra Excel rilevata (titolo, tipo di finestra, versione, stato), con un pulsante per aprirlo subito; utile per indagare eventuali problemi di tracciamento durante un uso reale.
+- La tendina delle Impostazioni nel menu laterale ora si richiude da sola quando si torna a un'altra pagina, invece di restare aperta.
 
 ### en
 - Excel: fixed a bug where utility windows like "Find and Replace" were tracked as if they were real files, showing up as fake rows in the Excel Timeline lane.
 - Settings → AI Agent: with the "Claude (Desktop subscription)" provider, TrackFlow now detects when the component it uses still needs its own separate sign-in (independent from signing into the Claude Desktop app itself) — with step-by-step instructions and a ready-to-copy command, instead of only surfacing as an unclear error in the chat.
 - The AI assistant chat now shows a clear message (with a direct link to settings) when that sign-in isn't complete yet, instead of the underlying component's raw error text.
+- Settings → Developer → Watcher status: new "Detailed log" toggle for the Excel watcher — logs everything possible about every detected Excel window (title, window type, version, state) to its own dedicated file (separate from the general log), with a button to open it right away; useful for investigating tracking issues during real use.
+- The Settings dropdown in the side menu now collapses on its own when you navigate away to another page, instead of staying open.
 
 ## 0.1.23
 

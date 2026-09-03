@@ -416,6 +416,10 @@ Cancella tutte le regole dall'editor, lasciandolo con \`[]\` (o vuoto), e salva.
         customHelp:
           'Bucket presenti sul server ma non gestiti da questa app — un watcher scritto a mano, o un\'estensione ufficiale ActivityWatch (es. per il browser). Nessun controllo di avvio/riavvio disponibile: non sono processi che avviamo noi.',
         noCustom: 'Nessun bucket esterno rilevato.',
+        detailedLog: 'Log dettagliato',
+        detailedLogHelp:
+          'Registra in un file dedicato (separato da quello generale dell\'app) tutto il possibile su ogni finestra rilevata (titolo, classe, finestra a fuoco, versione dell\'eseguibile...), ogni 5 secondi invece del normale intervallo — per indagare un problema specifico durante un uso reale. Non lasciarlo acceso più del necessario: genera molte righe.',
+        detailedLogOpen: 'Apri log',
       },
       logPanel: {
         title: 'Log',

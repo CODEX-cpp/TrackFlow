@@ -22,6 +22,55 @@ use crate::{
     MODULES_CONFIG_FILE,
 };
 
+/// Watcher che sanno leggere il proprio file di override "log
+/// dettagliato" (vedi `imposta_log_dettagliato_watcher` sotto) — solo
+/// Excel per ora (richiesta esplicita dell'utente dopo il bug "Trova e
+/// sostituisci" dell'issue GitHub #4, per poter indagare a fondo durante
+/// un uso reale prolungato invece di dedurre da uno screenshot isolato).
+/// Un nuovo watcher che implementa la stessa lettura (stesso nome file,
+/// `detailed-log-<nome>-override.txt`, contenuto "true"/altro) si
+/// aggiunge qui, nient'altro da toccare in questo modulo.
+const WATCHER_CON_LOG_DETTAGLIATO: &[&str] = &["aw-watcher-excel"];
+
+fn percorso_override_log_dettagliato(app_data_dir: &std::path::Path, nome: &str) -> std::path::PathBuf {
+    app_data_dir.join(format!("detailed-log-{nome}-override.txt"))
+}
+
+/// Stesso prefisso "detailed-log-<nome>" del file di override — il
+/// watcher scrive qui (vedi LOG_DETTAGLIATO_FILE in
+/// aw-watcher-excel-rust/src/main.rs), MAI nel log generale
+/// TrackFlow.log: richiesta esplicita dell'utente per non dover
+/// filtrare a mano tra le righe di tutti gli altri watcher.
+fn percorso_file_log_dettagliato(app_data_dir: &std::path::Path, nome: &str) -> std::path::PathBuf {
+    app_data_dir.join(format!("detailed-log-{nome}.log"))
+}
+
+/// Apre Esplora risorse con il file di log dettagliato già selezionato
+/// (`explorer /select,`, non solo la cartella) — più comodo di dover
+/// scorrere la cartella dati piena di altri file per trovarlo. Se il
+/// file non esiste ancora (mai attivato, o attivato ma senza ancora aver
+/// scritto nulla) lo crea vuoto prima di selezionarlo, così il pulsante
+/// non fallisce silenziosamente al primo utilizzo — stesso principio di
+/// create_dir_all in apri_in_esplora_risorse (folder_shortcuts.rs).
+#[tauri::command]
+pub fn apri_log_dettagliato_watcher(app_handle: AppHandle, nome: String) -> Result<(), String> {
+    if !WATCHER_CON_LOG_DETTAGLIATO.contains(&nome.as_str()) {
+        return Err(format!("'{nome}' non supporta il log dettagliato"));
+    }
+    let dir = app_handle
+        .try_state::<AppDataDirState>()
+        .ok_or_else(|| "Cartella dati non ancora pronta, riprova tra poco".to_string())?;
+    let percorso = percorso_file_log_dettagliato(&dir.0, &nome);
+    if !percorso.exists() {
+        std::fs::write(&percorso, b"").map_err(|e| e.to_string())?;
+    }
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{}", percorso.display()))
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct WatcherStatus {
     pub name: String,
@@ -36,6 +85,13 @@ pub struct WatcherStatus {
     /// ogni evento, non un processo: niente PID, niente pulsanti
     /// avvia/riavvia/ferma per quella riga.
     pub has_process: bool,
+    /// Questo watcher supporta un toggle "log dettagliato" — vedi
+    /// `WATCHER_CON_LOG_DETTAGLIATO`. Il frontend mostra il controllo
+    /// solo quando questo è vero.
+    pub log_dettagliato_disponibile: bool,
+    /// Stato attuale del toggle (letto dal file di override) — ha senso
+    /// solo se `log_dettagliato_disponibile` è vero.
+    pub log_dettagliato_abilitato: bool,
 }
 
 #[tauri::command]
@@ -43,6 +99,7 @@ pub fn stato_watcher(app_handle: AppHandle) -> Vec<WatcherStatus> {
     let modules_config = app_handle.try_state::<ModulesConfigState>();
     let processes = app_handle.try_state::<SidecarProcesses>();
     let icons = app_handle.try_state::<IconsHandle>();
+    let app_data_dir = app_handle.try_state::<AppDataDirState>();
 
     ALL_MODULES
         .iter()
@@ -71,6 +128,17 @@ pub fn stato_watcher(app_handle: AppHandle) -> Vec<WatcherStatus> {
                 }
             };
 
+            let log_dettagliato_disponibile = WATCHER_CON_LOG_DETTAGLIATO.contains(name);
+            let log_dettagliato_abilitato = log_dettagliato_disponibile
+                && app_data_dir
+                    .as_ref()
+                    .map(|d| {
+                        std::fs::read_to_string(percorso_override_log_dettagliato(&d.0, name))
+                            .map(|s| s.trim() == "true")
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+
             WatcherStatus {
                 name: (*name).to_string(),
                 label: (*label).to_string(),
@@ -78,6 +146,8 @@ pub fn stato_watcher(app_handle: AppHandle) -> Vec<WatcherStatus> {
                 running,
                 pid,
                 has_process,
+                log_dettagliato_disponibile,
+                log_dettagliato_abilitato,
             }
         })
         .collect()
@@ -224,4 +294,25 @@ pub fn moduli_gia_configurati(app_handle: AppHandle) -> bool {
         Some(dir) => dir.0.join(MODULES_CONFIG_FILE).exists(),
         None => false,
     }
+}
+
+/// Accende/spegne il log dettagliato di un watcher (Impostazioni →
+/// Sviluppatore → Stato watcher) — scrive lo stesso file di override che
+/// il watcher stesso rilegge ad ogni giro (vedi
+/// `leggi_log_dettagliato` in aw-watcher-excel-rust/src/main.rs), niente
+/// da riavviare: il cambiamento si vede dal giro successivo. Rifiutato
+/// (nessun file scritto) per un nome che non risulta in
+/// `WATCHER_CON_LOG_DETTAGLIATO` — fail-closed, non c'è nessun altro
+/// watcher che sappia leggere questo file oggi, scriverlo per uno
+/// sbagliato non farebbe nulla di utile.
+#[tauri::command]
+pub fn imposta_log_dettagliato_watcher(app_handle: AppHandle, nome: String, abilitato: bool) -> Result<(), String> {
+    if !WATCHER_CON_LOG_DETTAGLIATO.contains(&nome.as_str()) {
+        return Err(format!("'{nome}' non supporta il log dettagliato"));
+    }
+    let dir = app_handle
+        .try_state::<AppDataDirState>()
+        .ok_or_else(|| "Cartella dati non ancora pronta, riprova tra poco".to_string())?;
+    std::fs::write(percorso_override_log_dettagliato(&dir.0, &nome), if abilitato { "true" } else { "false" })
+        .map_err(|e| e.to_string())
 }
