@@ -21,7 +21,7 @@ div.vis-card(v-if="visibile")
     div(v-if="!has_prerequisites")
       div.vis-alert.vis-alert-warning
         | {{ $t('visualizations.missingWatcher') }}
-        | {{ $t('visualizations.missingWatcherHint') }} #[a.vis-alert-link(href="https://docs.activitywatch.net/en/latest/watchers.html") {{ $t('visualizations.docLink') }}].
+        | {{ $t('visualizations.missingWatcherHint') }} #[a.vis-alert-link(href="https://codex-cpp.github.io/TrackFlow/guides/built-in-watchers.html") {{ $t('visualizations.docLink') }}].
 
     div(v-if="type == 'top_apps'")
       aw-top-summary(:fields="top_apps_filtered",

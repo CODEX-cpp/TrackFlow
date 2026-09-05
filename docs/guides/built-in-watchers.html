@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Built-in watchers: how they work — TrackFlow Documentation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="What each of TrackFlow's built-in watchers tracks, how often, and where to turn it on or off.">
+<link rel="icon" href="../assets/img/favicon-32.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container">
+    <a class="nav-brand" href="../index.html">
+      <img src="../assets/img/logo.png" alt="">
+      TrackFlow
+    </a>
+    <div class="nav-links">
+      <a href="../index.html#features">Features</a>
+      <a href="../changelog.html">Changelog</a>
+      <a href="../documentation.html">Documentation</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow">GitHub</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="docs-page container">
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <h2>Guides</h2>
+
+        <details class="docs-nav-group" open>
+          <summary>Privacy</summary>
+          <ul>
+            <li><a href="privacy-filters.html">How privacy filters work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in watchers</summary>
+          <ul>
+            <li><a href="built-in-watchers.html" class="active">How they work</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Custom watchers</summary>
+          <ul>
+            <li><a href="custom-watchers-overview.html">How they work</a></li>
+            <li><a href="custom-watchers-script.html">Writing the watcher script</a></li>
+            <li><a href="custom-watchers-create.html">Creating one in the app</a></li>
+            <li><a href="custom-watchers-templates.html">Visualization templates</a></li>
+            <li><a href="custom-watchers-manage.html">Managing one afterwards</a></li>
+          </ul>
+        </details>
+
+        <details class="docs-nav-group" open>
+          <summary>Built-in modules</summary>
+          <ul>
+            <li><a href="new-module.html">Writing a new tracking module</a></li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+
+    <div class="docs-content">
+      <a href="../documentation.html" class="docs-back">← All guides</a>
+      <article class="docs-guide">
+        <h2>Built-in watchers: how they work</h2>
+        <p class="docs-guide-lede">TrackFlow ships with a set of watchers already built in — small background processes that start automatically and need no setup. This page explains what each one tracks, how often it checks, and where to turn it on or off.</p>
+
+        <p>If you want to track something these don't cover, see <a href="custom-watchers-overview.html" style="color:var(--color-accent1)">Custom watchers</a> instead — no code changes to TrackFlow required.</p>
+        <p>All of this data stays on your computer. Nothing described here is ever sent anywhere over the network.</p>
+        <p>You can turn any of these on or off from <strong>Watchers → Data sources</strong>.</p>
+
+        <h3>Active window (<code>aw-watcher-window</code>)</h3>
+        <p>The foundation almost everything else is built on. Checks which app and window title is in the foreground about once a second and records it. Powers the <strong>General</strong> lane in the Timeline and most of the Home summary modules (Top Applications, categories, and so on).</p>
+        <p>If you'd rather not have certain window titles recorded verbatim (e.g. a password manager showing an account name in its title bar), see <a href="privacy-filters.html" style="color:var(--color-accent1)">Privacy filters</a> — they strip sensitive titles before anything is saved, not just hide them afterward.</p>
+
+        <h3>Away from keyboard (<code>aw-watcher-afk</code>)</h3>
+        <p>Watches keyboard and mouse input (never <em>what</em> you type or click, only <em>whether</em> you're doing so) to tell whether you're actually at your computer. After 3 minutes without any input, you're marked "away" until the next keystroke or click.</p>
+        <p>This is what "Time active" on the Home page actually means — active time, not just "app open" time. It also determines which parts of the Timeline count toward your work hours.</p>
+        <p>Some activities don't need any typing or clicking — reading a long document, being on a call, watching something. For those, mark specific apps as "always active" in <strong>Settings → Active pattern</strong>, so the away-detection doesn't wrongly discount time spent in them.</p>
+
+        <h3>App icons and names (<code>aw-watcher-app-icons</code>)</h3>
+        <p>Not a tracker in its own right — it doesn't record any time. Runs quietly in the background extracting the icon, a friendlier display name, and a representative color for every app TrackFlow sees, so the Timeline and Home modules show something nicer than a bare <code>.exe</code> filename.</p>
+
+        <h3>VPN sessions (<code>aw-watcher-vpn</code>)</h3>
+        <p>Detects when an <strong>OpenVPN Connect</strong> or <strong>ZyWALL SecuExtender</strong> connection is active and records it as a session. On its own it only knows an IP address — to see a client's real name in the Timeline, map that address to a name once in <strong>Settings → VPN</strong> (for OpenVPN Connect, the name is often picked up automatically from the profiles already configured in the program itself). New mappings apply retroactively to sessions already recorded, and the mapping itself refreshes every 15 seconds, so a newly added client shows up almost immediately.</p>
+        <p><em>The list of recognized VPN clients may grow over time.</em></p>
+
+        <h3>Excel files (<code>aw-watcher-excel</code>)</h3>
+        <p>Tracks which Excel files you have open — from the moment a file opens to the moment it closes, independent of which window currently has focus, and correctly handling several files open side by side. Updates in real time (no need to close a file before it shows up).</p>
+        <p>Turn this off in <strong>Watchers → Data sources</strong> if you'd rather have Excel tracked like any other app (foreground time only, no per-file detail in its own lane) — it'll then show up in the General lane instead, and the "Top Excel Files" Home module keeps working either way (built from window titles if the dedicated watcher is off).</p>
+
+        <h3>VS Code (<code>aw-watcher-vscode</code>, official extension)</h3>
+        <p>Unlike the others, this one isn't a TrackFlow process — it's the official "ActivityWatch for VSCode" extension, which you install separately from the VS Code marketplace. Once installed, it sends TrackFlow the project and file you're editing, checking roughly every 2 seconds. Powers the "Top Editor Projects/Files" Home modules and the VS Code Timeline lane.</p>
+
+        <h3>Claude (<code>aw-watcher-claude-code</code>)</h3>
+        <p>Records which project you're working on when you use Claude to write code, and for how long.</p>
+        <ul>
+          <li><strong>From the terminal</strong> (Claude Code CLI): always tracked.</li>
+          <li><strong>From the Claude Desktop app</strong>: tracked for both Claude Code and Claude Cowork.</li>
+          <li><strong>Claude Desktop's regular chat</strong> (the normal conversation, not for coding) can't be tracked.</li>
+        </ul>
+
+        <h3>Screenshots (<code>aw-watcher-screenshot</code>)</h3>
+        <p>Takes a screenshot every 30 seconds by default (configurable in <strong>Settings → Screenshot</strong>, along with quality and how long to keep them — 14 days by default, older ones deleted automatically). Captures either all monitors combined or only the active window, your choice. Saved into a folder-per-day under TrackFlow's own data folder, viewable from the Screenshot gallery.</p>
+
+        <h3>Background apps (<code>aw-watcher-tray</code>) — off by default</h3>
+        <p>Meant to detect apps running quietly in the system tray. Currently disabled by default: reading hidden tray icons reliably isn't possible yet on Windows 11's newer taskbar. Left in place for when a reliable way to read them is found.</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <span>© 2026 TrackFlow — MIT licensed, fork of ActivityWatch</span>
+    <div class="footer-links">
+      <a href="https://github.com/CODEX-cpp/TrackFlow">Repository</a>
+      <a href="https://github.com/CODEX-cpp/TrackFlow/releases/latest">Latest release</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
