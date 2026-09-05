@@ -79,15 +79,20 @@ struct Defaults {
     poll_time: f64,
 }
 
-/// Path del file di config: platformdirs.user_config_dir("activitywatch")
-/// su Windows usa "activitywatch" sia come "author" che come "appname",
-/// producendo %LOCALAPPDATA%\activitywatch\activitywatch\<modulo>\ (cartella
-/// annidata due volte — non è una particolarità di questa macchina, è
-/// così che platformdirs costruisce il percorso quando gli si passa un
-/// solo nome). Stesso path che l'utente ha già usato per personalizzare
-/// il timeout (300s invece del default 180s) — va rispettato, non solo
-/// letto in astratto.
-fn config_file_path() -> std::path::PathBuf {
+/// Vecchio percorso "platformdirs.user_config_dir('activitywatch')": su
+/// Windows usa "activitywatch" sia come "author" che come "appname",
+/// producendo %LOCALAPPDATA%\activitywatch\activitywatch\aw-watcher-afk\
+/// (cartella annidata due volte — non è una particolarità di questa
+/// macchina, è così che platformdirs costruisce il percorso quando gli
+/// si passa un solo nome). Questa cartella NON è creata da TrackFlow —
+/// è la stessa che userebbe una vera installazione di ActivityWatch
+/// (Python) sulla stessa macchina, condivisa per compatibilità: non è
+/// nostra da possedere o eliminare, anche se non ci scriviamo più nulla
+/// (vedi MIGRA_DA_PERCORSO_CONDIVISO sotto). Bug reale notato
+/// dall'utente: leggere la configurazione da lì, invece che dalla
+/// cartella di TrackFlow, rendeva l'app dipendente da una cartella
+/// esterna non sua.
+fn vecchio_percorso_condiviso() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_default()
         .join("activitywatch")
@@ -96,14 +101,42 @@ fn config_file_path() -> std::path::PathBuf {
         .join("aw-watcher-afk.toml")
 }
 
-fn load_defaults(testing: bool) -> Defaults {
+/// Percorso nuovo, dentro la cartella scrivibile di TrackFlow — nessuna
+/// sottocartella per un file solo, a differenza del vecchio percorso.
+fn config_file_path(app_data_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    match app_data_dir {
+        Some(dir) => dir.join("aw-watcher-afk.toml"),
+        None => vecchio_percorso_condiviso(),
+    }
+}
+
+/// Migrazione una tantum: se TrackFlow non ha ancora una sua copia della
+/// configurazione ma esiste quella (condivisa, non nostra) di una vera
+/// installazione ActivityWatch, ne copia il CONTENUTO (mai spostato/
+/// cancellato l'originale — potrebbe ancora servire a quell'altra
+/// installazione) — così il timeout già personalizzato dall'utente lì
+/// non va perso passando a leggere solo dalla cartella di TrackFlow da
+/// qui in poi. Nessun errore fatale se la copia fallisce: si procede
+/// comunque con gli hardcoded/i valori letti dal vecchio percorso quel
+/// giro, ritentando al prossimo avvio.
+fn migra_da_percorso_condiviso(app_data_dir: &std::path::Path) {
+    let nuovo = app_data_dir.join("aw-watcher-afk.toml");
+    if nuovo.exists() {
+        return;
+    }
+    if let Ok(contenuto) = std::fs::read_to_string(vecchio_percorso_condiviso()) {
+        let _ = std::fs::write(&nuovo, contenuto);
+    }
+}
+
+fn load_defaults(testing: bool, app_data_dir: Option<&std::path::Path>) -> Defaults {
     let hardcoded = if testing {
         Defaults { timeout: 20.0, poll_time: 1.0 }
     } else {
         Defaults { timeout: 180.0, poll_time: 5.0 }
     };
 
-    let Ok(content) = std::fs::read_to_string(config_file_path()) else {
+    let Ok(content) = std::fs::read_to_string(config_file_path(app_data_dir)) else {
         return hardcoded;
     };
     let Ok(parsed) = toml::from_str::<ConfigFile>(&content) else {
@@ -139,6 +172,13 @@ struct Args {
     /// config, o 5s/1s testing se assente)
     #[arg(long)]
     poll_time: Option<f64>,
+
+    /// Cartella dati scrivibile condivisa — dove legge/scrive la propria
+    /// configurazione (aw-watcher-afk.toml), migrandola una tantum dal
+    /// vecchio percorso condiviso se presente (vedi
+    /// migra_da_percorso_condiviso).
+    #[arg(long)]
+    app_data_dir: Option<std::path::PathBuf>,
 }
 
 /// Nome con cui questo watcher si annuncia (usato solo per popolare il
@@ -220,7 +260,10 @@ impl AfkWatcher {
 
 fn main() {
     let args = Args::parse();
-    let defaults = load_defaults(args.testing);
+    if let Some(dir) = &args.app_data_dir {
+        migra_da_percorso_condiviso(dir);
+    }
+    let defaults = load_defaults(args.testing, args.app_data_dir.as_deref());
     let timeout = args.timeout.unwrap_or(defaults.timeout);
     let poll_time = args.poll_time.unwrap_or(defaults.poll_time);
     assert!(timeout >= poll_time, "timeout deve essere >= poll_time");
@@ -253,9 +296,10 @@ mod tests {
     fn defaults_match_python_hardcoded_values() {
         // Nessun file di config: devono valere gli hardcoded default di
         // Python (180/5 produzione, 20/1 testing).
-        let d = load_defaults(false);
+        let d = load_defaults(false, None);
         // Non verifichiamo qui il valore esatto perché su questa macchina
-        // il file di config REALE esiste (timeout personalizzato) — vedi
+        // il file di config REALE (nel vecchio percorso condiviso) può
+        // esistere (timeout personalizzato) — vedi
         // config_overrides_are_merged_with_defaults per quel caso.
         assert!(d.timeout > 0.0 && d.poll_time > 0.0);
     }
@@ -277,11 +321,35 @@ mod tests {
 
     #[test]
     fn missing_config_file_falls_back_to_hardcoded_defaults() {
-        let d = load_defaults(true);
+        let d = load_defaults(true, None);
         // In testing mode, se non troviamo/parsiamo un file valido,
         // torniamo comunque a valori sensati (>0), mai a zero/negativi.
         assert!(d.timeout > 0.0);
         assert!(d.poll_time > 0.0);
         assert!(d.timeout >= d.poll_time);
+    }
+
+    #[test]
+    fn config_file_path_usa_la_cartella_di_trackflow_quando_fornita() {
+        let dir = std::env::temp_dir().join(format!("aw-afk-config-path-{}", std::process::id()));
+        assert_eq!(config_file_path(Some(&dir)), dir.join("aw-watcher-afk.toml"));
+    }
+
+    #[test]
+    fn migra_da_percorso_condiviso_non_tocca_niente_se_gia_migrato() {
+        // Bug da evitare: se la cartella di TrackFlow ha già una sua
+        // copia, la migrazione non deve sovrascriverla con l'eventuale
+        // (diverso) contenuto del vecchio percorso condiviso — quella
+        // copia potrebbe già riflettere una modifica fatta DOPO la prima
+        // migrazione.
+        let dir = std::env::temp_dir().join(format!("aw-afk-migrazione-noop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let nuovo = dir.join("aw-watcher-afk.toml");
+        std::fs::write(&nuovo, "già migrato").unwrap();
+
+        migra_da_percorso_condiviso(&dir);
+
+        assert_eq!(std::fs::read_to_string(&nuovo).unwrap(), "già migrato");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

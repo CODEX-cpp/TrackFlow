@@ -195,7 +195,21 @@ export default {
       // Tauri, quindi mostrarla di nuovo non generava sempre un evento
       // di "cambio" (bug reale segnalato dall'utente: lasciando l'app in
       // tray, il controllo aggiornamenti non ripartiva mai).
-      await listen('trackflow://finestra-mostrata', () => controllaSeOpportuno());
+      await listen('trackflow://finestra-mostrata', () => {
+        controllaSeOpportuno();
+        // Richiesta esplicita dell'utente: chiudere l'app nella tray
+        // mentre si è su un'altra pagina (es. Impostazioni) e riaprirla
+        // dopo la riportava esattamente dov'era rimasta — nascondere la
+        // finestra con hide() non distrugge mai la webview, quindi lo
+        // stato del router (l'ultima rotta visitata) sopravvive da solo
+        // finché non lo si azzera esplicitamente. "/" fa scattare da
+        // sola la stessa logica di redirect già usata all'avvio
+        // dell'app (route.js: verso l'Activity view se ci sono dati,
+        // altrimenti verso Watchers), non un semplice "torna alla home
+        // e basta". Nessun effetto se si è già su Home (stessa rotta,
+        // nessuna navigazione reale).
+        if (this.$route.path !== '/') this.$router.push('/');
+      });
     } catch (e) {
       // Fuori da Tauri (dev server puro nel browser) — stesso pattern
       // già usato altrove (vedi CategorizationSettings.vue).

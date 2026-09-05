@@ -373,9 +373,14 @@ export default {
     alwaysActiveIntervals(): { start: moment.Moment; end: moment.Moment }[] {
       const apps = this.settingsStore.always_active_apps;
       if (!apps || !apps.length || !this.rawWindowEvents.length) return [];
-      const set = new Set(apps);
+      // Bug reale (stesso fix in HomeTimelineSection.vue/queries.ts):
+      // `always_active_apps` salva i nomi in minuscolo, ma l'evento
+      // finestra reale rispetta la maiuscola/minuscola del file su
+      // disco ("EXCEL.EXE", non "excel.exe") — confronto case-sensitive
+      // diretto non trovava mai corrispondenza per Excel.
+      const set = new Set(apps.map((a: string) => a.toLowerCase()));
       return (this.rawWindowEvents as any[])
-        .filter(e => e.data && set.has(e.data.app))
+        .filter(e => e.data && set.has((e.data.app || '').toLowerCase()))
         .map(e => ({
           start: moment(e.timestamp),
           end: moment(e.timestamp).add(e.duration || 0, 'seconds'),

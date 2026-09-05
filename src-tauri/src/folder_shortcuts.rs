@@ -65,21 +65,6 @@ pub fn apri_cartella_watcher() -> Result<(), String> {
     apri_in_esplora_risorse(dir)
 }
 
-/// Cartella del vero database SQLite (`sqlite.db`) usato da aw-server —
-/// stesso percorso restituito da `aw_server::dirs::get_data_dir()`, la
-/// funzione che `build_app_server()` in lib.rs usa già per calcolare
-/// `db_path`. Diversa da "Cartella dati" qui sopra: quella è la
-/// cartella scrivibile di TrackFlow (icone, screenshot, mappature),
-/// questa è quella di ActivityWatch upstream (`%APPDATA%\activitywatch\
-/// aw-server-rust\`, non `%LOCALAPPDATA%`) da cui arriva `aw_server`
-/// come libreria.
-#[tauri::command]
-pub fn apri_cartella_database() -> Result<(), String> {
-    let dir = aw_server::dirs::get_data_dir()
-        .map_err(|_| "Impossibile risolvere la cartella del database".to_string())?;
-    apri_in_esplora_risorse(&dir)
-}
-
 /// Stesso percorso che aw-watcher-screenshot-rust usa per salvare
 /// (`<app-data-dir>/screenshots`, vedi la sua `default_app_data_dir()`
 /// e l'argomento `--screenshots-dir`) — richiesta esplicita dell'utente:

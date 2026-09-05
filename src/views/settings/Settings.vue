@@ -159,7 +159,6 @@ export default {
         label: this.$t('settings.groups.about'),
         components: [{ name: 'AboutSettings' }],
       };
-
       const notifications: Group = {
         id: 'notifications',
         label: this.$t('settings.groups.notifications'),

@@ -876,6 +876,45 @@ pub fn imposta_file_watcher(app_handle: tauri::AppHandle, id: String, nome_file:
     Ok(())
 }
 
+/// Cambia se un watcher personalizzato ha una propria corsia dedicata
+/// nella Timeline della Home — la stessa scelta fatta alla creazione nel
+/// wizard (campo `timeline_lane` del manifest, letto da
+/// HomeTimelineSection.vue::loadCustomLanes via elenca_watcher_personalizzati),
+/// ora modificabile anche dopo dalla pagina di dettaglio del bucket.
+/// Nessun riavvio del processo necessario: il campo non cambia come o
+/// quando il watcher raccoglie dati, solo se la Timeline li mostra in
+/// una corsia propria. Nessuna migrazione di dati serve nemmeno: la
+/// Timeline legge sempre dal vivo gli eventi reali già nel bucket (mai
+/// una copia separata), quindi accendendo il toggle compaiono subito
+/// nella nuova corsia anche gli eventi già raccolti in passato, non
+/// solo quelli futuri.
+#[tauri::command]
+pub fn imposta_timeline_lane_watcher(app_handle: tauri::AppHandle, id: String, attivo: bool) -> Result<(), String> {
+    let dir = app_handle
+        .try_state::<AppDataDirState>()
+        .ok_or_else(|| "Cartella dati non ancora pronta, riprova tra poco".to_string())?;
+    let cartella = cartella_custom_watchers(&dir.0).join(&id);
+    let percorso_manifest = cartella.join(NOME_FILE_MANIFEST);
+    let contenuto = std::fs::read_to_string(&percorso_manifest).map_err(|e| e.to_string())?;
+    let mut manifest: WatcherManifest = serde_json::from_str(&contenuto).map_err(|e| e.to_string())?;
+
+    manifest.timeline_lane = attivo;
+
+    std::fs::write(
+        &percorso_manifest,
+        serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    nascondi_manifest(&percorso_manifest);
+    scrivi_log_watcher(
+        &cartella,
+        "INFO",
+        &format!("Corsia Timeline dedicata: {}", if attivo { "attivata" } else { "disattivata" }),
+    );
+
+    Ok(())
+}
+
 /// Elimina un watcher personalizzato per intero: ferma il processo (se in
 /// esecuzione) e cancella la sua cartella da disco. Chiamata separatamente
 /// dall'eliminazione del bucket (endpoint HTTP esistente, invariato) — se

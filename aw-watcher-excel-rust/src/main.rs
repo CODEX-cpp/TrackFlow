@@ -6,19 +6,30 @@
 //!
 //! Richiesta esplicita dell'utente: non interessa QUALE file abbia il
 //! fuoco in un dato momento, né una precisione al secondo — interessa
-//! solo sapere quando un file è stato aperto, quando è stato chiuso, e
-//! per quanto tempo è rimasto aperto, anche con più file Excel aperti
-//! insieme in parallelo. Per questo il watcher non manda heartbeat
-//! continui (che nel backend si fondono in un unico evento per bucket,
-//! bene per UN file alla volta ma frammenterebbero la durata di ognuno
-//! se più file fossero tracciati in parallelo) — invece tiene lui stesso
-//! il conto di apertura/chiusura per ogni file e, alla chiusura, manda
-//! UN SOLO evento completo (timestamp di apertura + durata reale). Il
-//! prezzo di questo approccio: se l'intera app viene chiusa mentre un
-//! file è ancora aperto, quella sessione non viene registrata affatto
-//! (non c'è mai una chiusura da rilevare) — accettabile per un dato che
-//! non deve essere preciso al secondo, per data una sessione persa è
-//! comunque meno grave di dati frammentati o sbagliati.
+//! sapere quando un file è aperto e per quanto tempo resta tale, anche
+//! con più file Excel aperti insieme in parallelo.
+//!
+//! STORIA (rivista 2026-09-04): la primissima versione aspettava la
+//! CHIUSURA del file prima di mandare qualunque dato (un solo evento
+//! completo, apertura→chiusura) — scelta presa apposta per evitare il
+//! meccanismo di fusione heartbeat del backend, che tiene un solo
+//! "ultimo evento" per bucket: bene per UN file alla volta, ma capace
+//! di frammentare la durata se più file venissero tracciati in
+//! parallelo (heartbeat di file diversi alternati tra un giro e
+//! l'altro non si fondono con la propria occorrenza precedente). Bug
+//! reale segnalato dall'utente: con un file tenuto aperto per ore (il
+//! caso comune, un solo file alla volta), in Timeline non si vedeva
+//! NULLA finché non veniva chiuso. Il prezzo di aspettare la chiusura
+//! era quindi molto più alto del rischio di frammentazione col caso
+//! meno comune (più file in parallelo) — motivo per cui anche
+//! aw-watcher-vscode-rust, esposto alla stessa identica scelta, usa già
+//! da sempre gli heartbeat senza problemi noti. Passato quindi anche
+//! qui a `op: "heartbeat"` (vedi `emit_heartbeat`): ogni file aperto
+//! riceve un heartbeat ad ogni giro, il backend estende da solo la
+//! barra finché i dati (file + eventuale modalità) restano gli stessi.
+//! Con più file in parallelo la durata di ciascuno può finire
+//! suddivisa in più segmenti adiacenti invece di un'unica barra pulita
+//! — nessun dato viene MAI perso, solo eventualmente più frammentato.
 //!
 //! IMPORTANTE (2026-08-12): costruito e compilato su una macchina senza
 //! Excel installato — il parsing del titolo cerca la sotto-stringa
@@ -45,13 +56,12 @@
 //! benefici (dati salvati) — ora un titolo che non rispetta il pattern
 //! viene semplicemente ignorato, non trasformato in un file fantasma.
 
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use std::thread;
 use std::time::Duration as StdDuration;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{SecondsFormat, Utc};
 use clap::Parser;
 use serde_json::{json, Map};
 
@@ -245,7 +255,15 @@ fn elenca_finestre_excel() -> Vec<InfoFinestraExcel> {
         let focalizzata = unsafe { GetForegroundWindow() } == hwnd;
         let owner_hwnd = unsafe { GetWindow(hwnd, GW_OWNER) }.ok().map(|h| h.0 as isize);
         let versione_file = versione_file(&percorso);
-        let file_interpretato = interpreta_titolo(&titolo);
+        // Bug reale trovato col log dettagliato (PC di lavoro, Excel
+        // 2021 MSO): la finestra di splash mostrata durante l'apertura
+        // di un file ("Apertura - Excel", classe "MsoSplash") ha
+        // anch'essa " - Excel" nel titolo e veniva quindi trattata come
+        // se "Apertura" fosse un vero nome file — comparsa 4 volte nel
+        // log reale. Non è mai un documento: esclusa a prescindere dal
+        // titolo, indipendentemente da cosa dica in quel momento (in
+        // altre lingue/situazioni potrebbe non essere "Apertura").
+        let file_interpretato = if classe == "MsoSplash" { None } else { interpreta_titolo(&titolo) };
 
         let risultati = unsafe { &mut *(lparam.0 as *mut Vec<InfoFinestraExcel>) };
         risultati.push(InfoFinestraExcel {
@@ -295,62 +313,89 @@ fn file_aperti_da_finestre(finestre: &[InfoFinestraExcel]) -> Vec<String> {
 
 /// Separa un descrittore file come lo produce `interpreta_titolo` (es.
 /// "RipeilogoDati_Renergy.xlsx [Sola lettura]") nel nome file pulito e,
-/// se presente, il testo tra le parentesi quadre finali. Bug reale
-/// segnalato dall'utente: il titolo REALE di Excel mette l'indicatore
-/// di modalità (Sola lettura, Modalità protetta, ...) PRIMA di
-/// " - Excel" e tra QUADRE, non dopo e tra tonde come ipotizzato in
-/// `interpreta_titolo` (mai verificato empiricamente finché l'utente
-/// non ha testato su un'installazione Excel vera, vedi commento in cima
-/// al file) — quel testo restava quindi dentro il nome file stesso,
-/// facendo trattare lo stesso identico file aperto in sola lettura e in
-/// modifica come due file COMPLETAMENTE DIVERSI nella Timeline (due
-/// blocchi separati invece di uno solo con la modalità come dettaglio).
+/// se presente, il testo tra le parentesi quadre. Bug reale segnalato
+/// dall'utente: il titolo REALE di Excel mette l'indicatore di modalità
+/// (Sola lettura, Modalità protetta, ...) PRIMA di " - Excel" e tra
+/// QUADRE, non dopo e tra tonde come ipotizzato in `interpreta_titolo`
+/// (mai verificato empiricamente finché l'utente non ha testato su
+/// un'installazione Excel vera, vedi commento in cima al file) — quel
+/// testo restava quindi dentro il nome file stesso, facendo trattare lo
+/// stesso identico file aperto in sola lettura e in modifica come due
+/// file COMPLETAMENTE DIVERSI nella Timeline (due blocchi separati
+/// invece di uno solo con la modalità come dettaglio).
 ///
-/// Usato solo al momento di mandare l'evento — il tracciamento
-/// apertura/chiusura in `main()` continua a usare il descrittore intero
-/// invariato come chiave, così un cambio di modalità a runtime (es.
-/// sblocco di un file in sola lettura) resta un confine di sessione
-/// come già osservato nei dati reali, invece di dover gestire un
-/// cambio di modalità a metà sessione.
+/// Bug reale trovato col log dettagliato (PC di lavoro): possono
+/// comparire PIÙ tag tra quadre in sequenza (es. "file.xlsx  [Gruppo]
+/// [Sola lettura]" per un file condiviso aperto in sola lettura) — la
+/// prima versione toglieva solo l'ULTIMO tag (`rfind`, una sola volta),
+/// lasciando "[Gruppo]" incollato al nome file: lo stesso identico file
+/// finiva tracciato sotto 3-4 nomi diversi a seconda di quali tag erano
+/// presenti in un dato momento. Ora toglie TUTTI i tag finali in
+/// sequenza, non solo l'ultimo, unendoli in un solo dettaglio modalità.
+///
+/// Usato solo al momento di mandare l'evento — il tracciamento in
+/// `main()` continua a usare il descrittore intero invariato come dato
+/// dell'heartbeat, così un cambio di modalità a runtime (es. sblocco di
+/// un file in sola lettura) resta un confine di sessione come già
+/// osservato nei dati reali (l'heartbeat successivo, con `data` diverso,
+/// non si fonde col precedente), invece di dover gestire un cambio di
+/// modalità a metà sessione.
 fn dividi_file_e_modalita(descrittore: &str) -> (String, Option<String>) {
-    if descrittore.ends_with(']') {
-        if let Some(apertura_parentesi) = descrittore.rfind('[') {
-            if apertura_parentesi > 0 {
-                let file = descrittore[..apertura_parentesi].trim();
-                let modalita = descrittore[apertura_parentesi + 1..descrittore.len() - 1].trim();
-                if !file.is_empty() && !modalita.is_empty() {
-                    return (file.to_string(), Some(modalita.to_string()));
-                }
-            }
+    let mut resto = descrittore.trim();
+    let mut modalita_raccolte: Vec<String> = Vec::new();
+
+    while resto.ends_with(']') {
+        let Some(apertura_parentesi) = resto.rfind('[') else { break };
+        if apertura_parentesi == 0 {
+            // Il "file" prima della parentesi sarebbe vuoto — non un
+            // caso valido di tag modalità, ferma qui senza toglierlo.
+            break;
         }
+        let prima = resto[..apertura_parentesi].trim_end();
+        let contenuto = resto[apertura_parentesi + 1..resto.len() - 1].trim();
+        if prima.is_empty() || contenuto.is_empty() {
+            break;
+        }
+        modalita_raccolte.push(contenuto.to_string());
+        resto = prima;
     }
-    (descrittore.to_string(), None)
+
+    if modalita_raccolte.is_empty() {
+        (descrittore.to_string(), None)
+    } else {
+        // Raccolti dal fondo verso l'inizio (l'ultimo tag per primo) —
+        // invertiti per restituirli nell'ordine in cui comparivano nel
+        // titolo originale.
+        modalita_raccolte.reverse();
+        (resto.to_string(), Some(modalita_raccolte.join(", ")))
+    }
 }
 
-/// Manda UN evento completo (non un heartbeat) per una sessione appena
-/// chiusa: `apertura` è quando il file è comparso per la prima volta tra
-/// le finestre aperte, `chiusura` è adesso (non più trovato). Op
-/// "event", non "heartbeat" — inserisce la riga così com'è, senza
-/// passare dal meccanismo di fusione heartbeat del backend (che tiene un
-/// solo "ultimo evento" per bucket: andrebbe benissimo per un file alla
-/// volta ma frammenterebbe la durata se più file venissero tracciati in
-/// parallelo, vedi commento in cima al file).
-fn emit_sessione_chiusa(bucket_id: &str, descrittore: &str, apertura: DateTime<Utc>, chiusura: DateTime<Utc>) {
+/// Manda un heartbeat per un file trovato aperto in QUESTO giro — vedi
+/// il commento in cima al file per il perché del passaggio da un unico
+/// evento "a chiusura" a heartbeat continui (stesso pattern già usato
+/// da `aw-watcher-vscode-rust`, `pulsetime` calcolato allo stesso modo:
+/// abbastanza largo da coprire un giro mancato senza spezzare la barra,
+/// abbastanza stretto da non fondere due sessioni davvero separate nel
+/// tempo). `duration: 0.0`: è il backend a farla crescere da solo
+/// fondendo heartbeat consecutivi con la stessa `data` — vedi
+/// `aw-transform::heartbeat`.
+fn emit_heartbeat(bucket_id: &str, pulsetime: f64, descrittore: &str) {
     let (file, modalita) = dividi_file_e_modalita(descrittore);
     let mut data = Map::new();
     data.insert("file".to_string(), file.into());
     if let Some(modalita) = modalita {
         data.insert("modalita".to_string(), modalita.into());
     }
-    let durata_secondi = (chiusura - apertura).num_milliseconds() as f64 / 1000.0;
     let envelope = json!({
         "bucket_id": bucket_id,
         "bucket_type": BUCKET_TYPE,
         "client": CLIENT_NAME,
-        "op": "event",
+        "op": "heartbeat",
+        "pulsetime": pulsetime,
         "event": {
-            "timestamp": apertura.to_rfc3339_opts(SecondsFormat::Millis, true),
-            "duration": durata_secondi,
+            "timestamp": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            "duration": 0.0,
             "data": data,
         },
     });
@@ -474,16 +519,10 @@ fn main() {
     );
     println!("Bucket: {bucket_id}");
 
-    // Indirizzo di apertura di ogni file attualmente aperto — un file
-    // "chiude" (e manda il suo evento) nel primo giro in cui non compare
-    // più tra le finestre trovate.
-    let mut aperti_da: HashMap<String, DateTime<Utc>> = HashMap::new();
-
     loop {
         let log_dettagliato_attivo = leggi_log_dettagliato(args.app_data_dir.as_deref());
         let finestre = elenca_finestre_excel();
         let aperti_ora = file_aperti_da_finestre(&finestre);
-        let ora = Utc::now();
 
         if log_dettagliato_attivo {
             // Sicuro chiamare .unwrap() qui: leggi_log_dettagliato torna
@@ -492,21 +531,18 @@ fn main() {
             log_dettagliato(args.app_data_dir.as_deref().unwrap(), &finestre, &aperti_ora);
         }
 
-        for file in &aperti_ora {
-            aperti_da.entry(file.clone()).or_insert(ora);
-        }
-
-        aperti_da.retain(|file, apertura| {
-            if aperti_ora.contains(file) {
-                true
-            } else {
-                emit_sessione_chiusa(&bucket_id, file, *apertura, ora);
-                false
-            }
-        });
-
         let intervallo =
             if log_dettagliato_attivo { INTERVALLO_LOG_DETTAGLIATO_SECONDI } else { args.poll_interval };
+        // Stesso calcolo di aw-watcher-vscode-rust: abbastanza largo da
+        // coprire un giro (quasi) mancato senza spezzare la barra,
+        // abbastanza stretto da non fondere due sessioni davvero
+        // separate nel tempo. Ricalcolato ad ogni giro perché
+        // l'intervallo stesso può cambiare (log dettagliato acceso/spento).
+        let pulsetime = (intervallo * 1.5).max(intervallo + 1.0);
+        for file in &aperti_ora {
+            emit_heartbeat(&bucket_id, pulsetime, file);
+        }
+
         thread::sleep(StdDuration::from_secs_f64(intervallo));
     }
 }
@@ -682,5 +718,40 @@ mod tests {
         let (file, modalita) = dividi_file_e_modalita(&descrittore);
         assert_eq!(file, "RipeilogoDati_Renergy.xlsx");
         assert_eq!(modalita, Some("Sola lettura".to_string()));
+    }
+
+    // Bug reale trovato col log dettagliato sul PC di lavoro: più tag
+    // tra quadre in sequenza (file condiviso in sola lettura) — la
+    // versione precedente toglieva solo l'ultimo, lasciando "[Gruppo]"
+    // incollato al nome file.
+    #[test]
+    fn dividi_file_e_modalita_piu_tag_in_sequenza() {
+        let (file, modalita) =
+            dividi_file_e_modalita("RiepilogoDatiInterporto.xlsx  [Gruppo]  [Sola lettura]");
+        assert_eq!(file, "RiepilogoDatiInterporto.xlsx");
+        assert_eq!(modalita, Some("Gruppo, Sola lettura".to_string()));
+    }
+
+    #[test]
+    fn dividi_file_e_modalita_tre_tag_in_sequenza() {
+        let (file, modalita) = dividi_file_e_modalita("Report.xlsx [A] [B] [C]");
+        assert_eq!(file, "Report.xlsx");
+        assert_eq!(modalita, Some("A, B, C".to_string()));
+    }
+
+    // Bug reale: la finestra di splash "Apertura - Excel" (classe
+    // MsoSplash, mostrata mentre Excel apre un file) ha " - Excel" nel
+    // titolo come un vero documento — comparsa 4 volte nel log reale
+    // del PC di lavoro come se "Apertura" fosse un file. Il filtro vero
+    // e proprio è sulla classe finestra (vedi elenca_finestre_excel,
+    // non testabile qui senza un vero HWND) — interpreta_titolo da sola
+    // non può distinguerla da un file davvero chiamato "Apertura.xlsx",
+    // quindi questo test non verifica quel filtro, solo che
+    // interpreta_titolo continui a comportarsi in modo prevedibile su
+    // quell'input isolato.
+    #[test]
+    fn interpreta_titolo_apertura_isolato_dal_filtro_classe() {
+        let r = interpreta_titolo("Apertura - Excel");
+        assert_eq!(r, Some("Apertura".to_string()));
     }
 }

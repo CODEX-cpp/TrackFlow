@@ -14,6 +14,7 @@ mod about;
 mod agent;
 mod autostart;
 mod categorization;
+mod export_import;
 mod claude_subscription;
 mod custom_modules;
 mod custom_watchers;
@@ -618,7 +619,22 @@ fn attach_navigation_retry(window: &tauri::WebviewWindow) {
 /// BLUEPRINT.md, Fase 5, per il perché e la verifica di fattibilità.
 async fn build_app_server(app_data_dir: &Path, webui_dir: &Path, watcher_templates_dir: &Path) -> AppServer {
     let testing = false;
-    let mut config = aw_server::config::create_config(testing, None);
+    // `aw_server::config::create_config()` leggerebbe/scriverebbe un
+    // config.toml sotto %APPDATA%\activitywatch\aw-server-rust\ (nome
+    // del progetto originale, mai aggiornato al rebrand — bug reale
+    // notato dall'utente guardando dentro AppData) — creato APPOSTA per
+    // quella sola cartella, un file per sé. Verificato che non serve
+    // affatto a TrackFlow: l'unico campo che usiamo (`custom_static`)
+    // viene comunque sovrascritto subito sotto a prescindere dal
+    // contenuto del file, e indirizzo/porta/CORS non contano nulla dato
+    // che questo Rocket gira solo in-process (`rocket::local::
+    // asynchronous::Client`), mai su una vera porta TCP. `AWConfig::
+    // default()` costruisce la stessa identica struttura senza toccare
+    // il disco — `set_testing()` replica l'unico effetto collaterale
+    // rilevante di create_config (il flag globale che decide config di
+    // debug/release per Rocket).
+    aw_server::config::set_testing(testing);
+    let mut config = aw_server::config::AWConfig::default();
     config
         .custom_static
         .insert("app-data".to_string(), app_data_dir.to_string_lossy().to_string());
@@ -662,7 +678,17 @@ async fn build_app_server(app_data_dir: &Path, webui_dir: &Path, watcher_templat
     let server_state = aw_server::endpoints::ServerState {
         datastore,
         asset_resolver: aw_server::endpoints::AssetResolver::new(Some(webui_dir.to_path_buf())),
-        device_id: aw_server::device_id::get_device_id(),
+        // `aw_server::device_id::get_device_id()` genererebbe/leggerebbe
+        // un altro file (`device_id`) nella stessa cartella
+        // %APPDATA%\activitywatch\... di cui sopra — verificato che è
+        // dato morto per TrackFlow: finisce nei metadati di un bucket
+        // SOLO quando questo viene creato con hostname "!local"
+        // (bucket.rs, endpoint /api/0/buckets/<id>), un valore che
+        // TrackFlow non passa mai (`ensure_bucket` in questo stesso
+        // file manda sempre l'hostname vero) — nessun altro punto del
+        // codice (né qui né nel frontend) legge mai questo campo.
+        // Stringa fissa invece di generare/persistere un UUID inutile.
+        device_id: "trackflow-local".to_string(),
     };
 
     // Registro nome->cartella dei moduli personalizzati (vedi
@@ -1002,7 +1028,12 @@ fn spawn_watcher(
     };
     let cmd = if matches!(
         name,
-        "aw-watcher-screenshot" | "aw-watcher-vpn" | "aw-watcher-claude-code" | "aw-watcher-excel"
+        "aw-watcher-screenshot"
+            | "aw-watcher-vpn"
+            | "aw-watcher-claude-code"
+            | "aw-watcher-excel"
+            | "aw-watcher-afk"
+            | "aw-watcher-window"
     ) {
         // Stessa cartella scrivibile condivisa delle icone. Screenshot ci
         // salva sotto <app-data-dir>/screenshots (vedi
@@ -1013,7 +1044,12 @@ fn spawn_watcher(
         // vera sarebbe di sola lettura (stesso problema già risolto per
         // le icone). excel ci rilegge ad ogni giro il file di override
         // del log dettagliato (vedi watcher_status.rs,
-        // WATCHER_CON_LOG_DETTAGLIATO).
+        // WATCHER_CON_LOG_DETTAGLIATO). afk/window ci leggono/migrano la
+        // loro configurazione (timeout AFK, esclusione titoli finestra),
+        // prima letta da %LOCALAPPDATA%\activitywatch\activitywatch\...
+        // — stesso percorso di una vera installazione ActivityWatch,
+        // condiviso e non nostro da possedere (vedi commento su
+        // MIGRA_DA_PERCORSO_CONDIVISO nei rispettivi main.rs).
         cmd.args(["--app-data-dir", &app_data_dir.to_string_lossy()])
     } else {
         cmd
@@ -1132,7 +1168,6 @@ pub fn run() {
             folder_shortcuts::apri_cartella_log,
             folder_shortcuts::apri_cartella_config_afk,
             folder_shortcuts::apri_cartella_watcher,
-            folder_shortcuts::apri_cartella_database,
             folder_shortcuts::apri_cartella_screenshot,
             folder_shortcuts::dimensione_cartella_screenshot,
             folder_shortcuts::elimina_tutti_screenshot,
@@ -1144,6 +1179,10 @@ pub fn run() {
             custom_watchers::elimina_watcher_personalizzato,
             custom_watchers::leggi_log_watcher,
             custom_watchers::imposta_file_watcher,
+            custom_watchers::imposta_timeline_lane_watcher,
+            export_import::esporta_dati,
+            export_import::sezioni_disponibili_in_import,
+            export_import::importa_dati,
             custom_watchers::elenca_modelli_visualizzazione_watcher,
             custom_modules::elenca_moduli_personalizzati,
             custom_modules::ricarica_moduli_personalizzati,
@@ -1236,6 +1275,23 @@ pub fn run() {
             // (richiesta esplicita dell'utente: le cartelle di versione
             // si accumulavano all'infinito, mai ripulite).
             updater::pulisci_versioni_vecchie();
+
+            // Cartella orfana lasciata da versioni precedenti di
+            // TrackFlow (che chiamavano aw_server::config::create_config()/
+            // device_id::get_device_id(), entrambi scrivevano qui — vedi
+            // build_app_server) — bug reale notato dall'utente guardando
+            // dentro AppData: %APPDATA%\activitywatch\ (nome del
+            // progetto originale, mai aggiornato al rebrand), con dentro
+            // un config.toml inutilizzato e un device_id mai letto da
+            // nessuna parte del codice. Ora che nessuno dei due viene
+            // più scritto lì, questa cartella non si ricrea da sola —
+            // ripulita una tantum qui per chi l'ha già creata in
+            // passato. Best-effort: se fallisce (permessi, in uso da
+            // un'altra istanza) non è un problema bloccante, ci si
+            // riprova al prossimo avvio.
+            if let Some(base) = std::env::var_os("APPDATA") {
+                let _ = std::fs::remove_dir_all(std::path::PathBuf::from(base).join("activitywatch"));
+            }
 
             let hostname = gethostname::gethostname().to_string_lossy().to_string();
 

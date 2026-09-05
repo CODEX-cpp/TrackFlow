@@ -55,11 +55,7 @@ div.bucket-page
         span.bucket-info-value {{ comandoCompleto }}
       div.bucket-info-row
         span.bucket-info-label {{ $t('visualizations.bucketPage.separateTimeline') }}
-        div.settings-toggle(:class="{ 'settings-toggle-on': timelineLaneToggle }" @click="timelineLaneToggle = !timelineLaneToggle")
-          div.settings-toggle-thumb
-      div.bucket-info-row
-        span.bucket-info-label {{ $t('visualizations.bucketPage.excludeFromModules') }}
-        div.settings-toggle(:class="{ 'settings-toggle-on': excludeFromModulesToggle }" @click="excludeFromModulesToggle = !excludeFromModulesToggle")
+        div.settings-toggle(:class="{ 'settings-toggle-on': timelineLaneToggle }" @click="toggleTimelineLane")
           div.settings-toggle-thumb
 
   input-timeinterval(v-model="selectedDurationSeconds")
@@ -235,12 +231,11 @@ export default {
       // "informazioni sviluppatore" solo in quel caso, resta null per i
       // bucket dei moduli integrati.
       customWatcherInfo: null,
-      // TEMPORANEO — solo UI, richiesta esplicita: "per ora mettili e
-      // basta poi li collegheremo". Non letti/scritti da nessuna parte,
-      // nessuna persistenza finché non vengono collegati a una vera
-      // funzionalità.
+      // Riflette customWatcherInfo.timeline_lane (stesso campo scelto
+      // alla creazione nel wizard) — sincronizzato ad ogni
+      // loadCustomWatcherInfo(), cambiato per davvero (non solo
+      // visivamente) da toggleTimelineLane().
       timelineLaneToggle: false,
-      excludeFromModulesToggle: false,
       // Contenuto del log dedicato del watcher (creazione, avvio, dati
       // letti, timeout, chiusura...), riletto a intervalli regolari per
       // dare l'effetto di una finestra "in tempo reale" senza dover
@@ -339,12 +334,30 @@ export default {
       try {
         const lista = await invoke('elenca_watcher_personalizzati');
         this.customWatcherInfo = (lista || []).find(w => w.bucket_id === this.id) || null;
+        this.timelineLaneToggle = !!(this.customWatcherInfo && this.customWatcherInfo.timeline_lane);
         if (this.customWatcherInfo && this.customWatcherInfo.mode === 'interval') {
           const args = this.customWatcherInfo.args || [];
           this.fileAssociatoInput = args.length > 0 ? args[args.length - 1] : '';
         }
       } catch (e) {
         this.customWatcherInfo = null;
+      }
+    },
+    // Accende/spegne la corsia dedicata nella Timeline per questo
+    // watcher — stesso campo (timeline_lane) scelto alla creazione nel
+    // wizard, ora modificabile anche dopo. Nessuna migrazione di dati:
+    // la Timeline legge sempre dal vivo il bucket reale, quindi anche
+    // gli eventi già raccolti in passato compaiono subito nella nuova
+    // corsia al prossimo caricamento.
+    toggleTimelineLane: async function () {
+      if (!this.customWatcherInfo) return;
+      const nuovoStato = !this.timelineLaneToggle;
+      try {
+        await invoke('imposta_timeline_lane_watcher', { id: this.customWatcherInfo.id, attivo: nuovoStato });
+        this.timelineLaneToggle = nuovoStato;
+        this.customWatcherInfo.timeline_lane = nuovoStato;
+      } catch (e) {
+        console.error(e);
       }
     },
     // Cambia il file lanciato ad ogni giro dal watcher (solo modalità

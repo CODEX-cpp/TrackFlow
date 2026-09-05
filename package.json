@@ -2,8 +2,8 @@
   "name": "aw-webui",
   "version": "1.0.0",
   "private": true,
-  "description": "A webui for ActivityWatch built in Vue.js",
-  "author": "ActivityWatch Developers",
+  "description": "TrackFlow desktop app web UI",
+  "author": "trackflow",
   "license": "MPL-2.0",
   "type": "module",
   "scripts": {

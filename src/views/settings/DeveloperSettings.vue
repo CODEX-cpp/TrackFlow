@@ -161,11 +161,6 @@ div
           div.settings-row-title {{ $t('settings.developer.folderShortcuts.watcherFolder') }}
           div.settings-row-help {{ $t('settings.developer.folderShortcuts.watcherFolderHelp') }}
         div.pill-btn-ghost(@click="apriCartella('apri_cartella_watcher')") {{ $t('settings.developer.folderShortcuts.open') }}
-      div.dev-folder-row
-        div
-          div.settings-row-title {{ $t('settings.developer.folderShortcuts.databaseFolder') }}
-          div.settings-row-help {{ $t('settings.developer.folderShortcuts.databaseFolderHelp') }}
-        div.pill-btn-ghost(@click="apriCartella('apri_cartella_database')") {{ $t('settings.developer.folderShortcuts.open') }}
 
   div.settings-commit-hash {{ $t('settings.developer.commitHash') }} {{ COMMIT_HASH }}
 

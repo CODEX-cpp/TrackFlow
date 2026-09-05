@@ -107,9 +107,32 @@ fn sorgente_da_entrypoint(entrypoint: Option<&str>) -> &'static str {
     }
 }
 
+/// Nome (non percorso completo) della cartella di lavoro dedicata usata
+/// dalla chat dell'assistente AI di TrackFlow quando il provider è
+/// "Claude (abbonamento Desktop)" (vedi claude_subscription.rs) — e
+/// prefisso condiviso da quella usata per la categorizzazione
+/// automatica delle app (categorization.rs, "claude-agent-workdir-
+/// categorizzazione"). Claude Code sanitizza il percorso di lavoro
+/// completo in un nome di cartella sotto ~/.claude/projects/
+/// sostituendo i separatori con trattini, ma preservando i nomi delle
+/// cartelle originali — quindi basta cercare questo prefisso come
+/// sottostringa, indipendentemente da utente/percorso della macchina.
+const PREFISSO_CARTELLA_CHAT_INTERNA: &str = "claude-agent-workdir";
+
 /// Un file per sessione, dentro una sottocartella per progetto — vanno
 /// ri-scoperti a ogni giro perché Claude Code ne crea di nuovi ogni volta
 /// che parte una sessione nuova.
+///
+/// Bug reale trovato scrivendo la documentazione per gli utenti: la
+/// chat dell'assistente AI di TrackFlow (e la categorizzazione
+/// automatica delle app) passano anch'esse dal CLI di Claude Code,
+/// quindi scrivono transcript nella STESSA cartella condivisa che
+/// questo watcher legge — finivano tracciate in Timeline come se
+/// fossero sessioni di lavoro su un progetto vero (es. "Claude Desktop:
+/// claude-agent-workdir-categorizzazione" invece di un nome di
+/// progetto). Escluse qui, alla scoperta dei file, così non generano
+/// alcun evento — mai un problema di visualizzazione da correggere a
+/// valle, il dato semplicemente non viene mai prodotto.
 fn trova_file_transcript(progetti_dir: &Path) -> Vec<PathBuf> {
     if !progetti_dir.exists() {
         return Vec::new();
@@ -122,6 +145,14 @@ fn trova_file_transcript(progetti_dir: &Path) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
+        .filter(|percorso| {
+            let cartella_progetto = percorso
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            !cartella_progetto.contains(PREFISSO_CARTELLA_CHAT_INTERNA)
+        })
         .collect();
     trovati.sort();
     trovati
@@ -386,6 +417,30 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Bug reale: la chat dell'assistente AI e la categorizzazione
+    // automatica di TrackFlow passano dal CLI di Claude Code nella loro
+    // cartella di lavoro dedicata — vanno escluse, non trattate come
+    // progetti veri.
+    #[test]
+    fn trova_file_transcript_esclude_la_cartella_di_lavoro_della_chat_interna() {
+        let base = std::env::temp_dir().join(format!("aw-cc-esclusione-{}", std::process::id()));
+        let progetto_vero = base.join("C--Users-bandi-Documents-TrackFlow-src-tauri");
+        let chat_interna = base.join("C--Users-bandi-AppData-Local-TrackFlow-app-data-claude-agent-workdir");
+        let categorizzazione =
+            base.join("C--Users-bandi-AppData-Local-TrackFlow-app-data-claude-agent-workdir-categorizzazione");
+        for dir in [&progetto_vero, &chat_interna, &categorizzazione] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("sessione.jsonl"), "").unwrap();
+        }
+
+        let trovati = trova_file_transcript(&base);
+
+        assert_eq!(trovati.len(), 1, "solo il progetto vero deve restare: {trovati:?}");
+        assert!(trovati[0].starts_with(&progetto_vero));
+
+        std::fs::remove_dir_all(&base).ok();
+    }
 
     #[test]
     fn parses_message_line_with_cwd_and_entrypoint() {

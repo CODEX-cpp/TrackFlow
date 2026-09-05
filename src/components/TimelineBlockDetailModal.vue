@@ -4,19 +4,31 @@ div
   div.edit-modal.block-detail-modal.themed-scroll(:class="{ 'block-detail-modal-wide': occurrencesTimeline.length }")
     div.edit-modal-title-row
       div.edit-modal-title {{ displayName }}
-      // Solo per le corsie "generiche" (non VPN/Excel/VoiSpeed/VSCode/
-      // Claude, vedi mostraBottoneAi) e solo se una chiave API è
-      // configurata — altrimenti il pulsante non compare affatto invece
-      // di aprire una chat che fallirebbe subito. Apre la chat AI con
-      // questa attività allegata al prossimo messaggio, come rispondere
-      // a un messaggio su WhatsApp — vedi apriConversazioneAi().
-      button.block-detail-ai-btn(
-        v-if="mostraBottoneAi"
-        type="button"
-        @click="apriConversazioneAi"
-        :title="$t('home.timelineBlockDetail.askAi')"
-      )
-        icon(name="comments")
+      // Raggruppati insieme (non due figli separati della riga con
+      // space-between) — con tre elementi nella riga quello di mezzo
+      // finiva centrato nello spazio libero invece che accanto alla ×,
+      // bug reale segnalato dall'utente dopo l'aggiunta del pulsante di
+      // chiusura.
+      div.block-detail-title-actions
+        // Solo per le corsie "generiche" (non VPN/Excel/VoiSpeed/VSCode/
+        // Claude, vedi mostraBottoneAi) e solo se una chiave API è
+        // configurata — altrimenti il pulsante non compare affatto invece
+        // di aprire una chat che fallirebbe subito. Apre la chat AI con
+        // questa attività allegata al prossimo messaggio, come rispondere
+        // a un messaggio su WhatsApp — vedi apriConversazioneAi().
+        button.block-detail-ai-btn(
+          v-if="mostraBottoneAi"
+          type="button"
+          @click="apriConversazioneAi"
+          :title="$t('home.timelineBlockDetail.askAi')"
+        )
+          icon(name="comments")
+        button.block-detail-close-btn(
+          type="button"
+          @click="$emit('close')"
+          :title="$t('home.timelineBlockDetail.close')"
+        )
+          icon(name="times")
     div.block-detail-meta
       div.block-detail-row
         span.block-detail-label {{ $t('home.timelineBlockDetail.lane') }}
@@ -28,21 +40,29 @@ div
         span.block-detail-label {{ $t('home.timelineBlockDetail.duration') }}
         span.block-detail-value {{ formatDuration(block.end.diff(block.start, 'seconds')) }}
 
+    // Riquadro ricapitolativo unico — sostituisce i vecchi pulsanti "N
+    // foto" sparsi (uno per vista, e nessuno per la vista raggruppata
+    // per titolo) con un solo punto d'ingresso valido per tutte e tre le
+    // viste, richiesta esplicita dell'utente dopo il redesign in Claude
+    // Design. Vedi apriGalleriaBlocco() per come sceglie la sorgente
+    // giusta.
+    div.block-detail-photos-card(
+      v-if="mostraFoto && screenshotsBlocco.length"
+      @click="apriGalleriaBlocco"
+    )
+      div.block-detail-photos-text
+        div.block-detail-photos-title {{ $t('home.timelineBlockDetail.photosCardTitle', { count: screenshotsBlocco.length }) }}
+        div.block-detail-photos-subtitle {{ photosCardSubtitle }}
+      icon.block-detail-photos-chevron(name="angle-right")
+
     template(v-if="occurrencesTimeline.length")
       // Elenco cronologico dentro il SOLO blocco cliccato (non l'intera
       // giornata) — attivo quando non c'è nessuna evidenziazione app
       // già in corso, vedi appInteroSelezionato()/
       // selectedOccurrencesTimeline() in HomeTimelineSection.vue per il
-      // perché. Niente pulsante foto qui per ora, richiesta esplicita
-      // dell'utente ("vediamo quanti dati uscirebbero prima così").
+      // perché.
       div.block-detail-subhead-row
         span.block-detail-subhead {{ $t('home.timelineBlockDetail.duringThisBlock') }}
-      // Sotto al sottotitolo, allineato a sinistra come lui — non a
-      // destra come il pulsante delle altre viste — richiesta estetica
-      // esplicita per questa vista in particolare.
-      div.block-detail-photos-row(v-if="mostraFoto && timelineScreenshots.length")
-        span.block-detail-photos-btn(@click="openGalleryTimeline")
-          | {{ $t('home.timelineBlockDetail.viewPhotos', { count: timelineScreenshots.length }) }}
       table.block-detail-table.block-detail-timeline-table
         tbody
           tr(v-for="(occ, i) in occurrencesTimeline" :key="i")
@@ -51,12 +71,6 @@ div
     template(v-else)
       div.block-detail-subhead-row(v-if="occurrencesByTitle.length || occurrences.length > 1")
         span.block-detail-subhead {{ $t('home.timelineBlockDetail.otherOccurrences') }}
-        // Solo nel caso non raggruppato — quando i titoli sono raggruppati,
-        // il pulsante vive accanto a ciascun titolo invece che qui.
-        span.block-detail-photos-btn(
-          v-if="mostraFoto && !occurrencesByTitle.length && screenshotsFor(occurrences).length"
-          @click="openGallery(displayName, occurrences)"
-        ) {{ $t('home.timelineBlockDetail.viewPhotos', { count: screenshotsFor(occurrences).length }) }}
       template(v-if="occurrencesByTitle.length")
         div.block-detail-title-group(v-for="group in occurrencesByTitle" :key="group.title")
           div.block-detail-title-group-head
@@ -79,6 +93,7 @@ div
     v-if="showGallery"
     :screenshots="galleryScreenshots"
     :title-segments="galleryTitleSegments"
+    :finestre-reali="eventiFinestraReale"
     :display-name="galleryTitle"
     @close="showGallery = false"
   )
@@ -119,6 +134,13 @@ div
   }
 }
 
+.block-detail-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 // Stesso stile pieno-giallo del FAB della chat AI in basso a destra
 // (AiChatWidget.vue's .ai-chat-fab) — richiesta esplicita, per far
 // riconoscere subito che porta allo stesso posto. Ingrandito da 30 a
@@ -140,6 +162,29 @@ div
 
   &:hover {
     filter: brightness(1.08);
+  }
+}
+
+// Stesso pattern di AiChatWidget.vue's .ai-chat-icon-btn — un pulsante
+// icona neutro, non pieno-colore come quello AI accanto (questo chiude,
+// non porta da nessuna parte, non merita lo stesso risalto).
+.block-detail-close-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-faint);
+  cursor: pointer;
+  font-size: 14px;
+
+  &:hover {
+    background-color: var(--color-surface2);
+    color: var(--color-text);
   }
 }
 
@@ -179,32 +224,47 @@ div
   color: var(--color-text-dim);
 }
 
-// Vero pulsante a pillola a destra del titolo (non più un link a
-// testo semplice, giudicato brutto) — apre la galleria filtrata solo
-// agli orari di QUEL titolo (vedi screenshotsFor()/openGallery()
-// sotto), non a tutto il blocco.
-.block-detail-photos-row {
-  margin: -2px 0 8px;
-}
-
-.block-detail-photos-btn {
-  display: inline-flex;
+// Riquadro ricapitolativo unico (sostituisce i vecchi pulsanti a
+// pillola sparsi) — stesso sfondo/bordo neutro delle altre righe
+// informative del popup, si distingue come cliccabile per il cursore e
+// l'hover, non per un bordo colorato a parte.
+.block-detail-photos-card {
+  display: flex;
   align-items: center;
-  flex-shrink: 0;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-dim);
-  background-color: var(--color-surface2);
+  gap: 12px;
+  margin: 14px 0 6px;
+  padding: 8px 14px;
+  background-color: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: 3px 10px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.block-detail-photos-btn:hover {
+.block-detail-photos-card:hover {
+  background-color: var(--color-surface2);
+}
+
+.block-detail-photos-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.block-detail-photos-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text);
-  border-color: var(--color-accent1);
+}
+
+.block-detail-photos-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  margin-top: 2px;
+}
+
+.block-detail-photos-chevron {
+  flex-shrink: 0;
+  color: var(--color-accent1);
+  font-size: 14px;
 }
 
 .block-detail-table {
@@ -325,6 +385,8 @@ div
 // and just hands this component the finished data to display, same
 // pattern as ProjectDetailModal.vue.
 import 'vue-awesome/icons/comments';
+import 'vue-awesome/icons/times';
+import 'vue-awesome/icons/angle-right';
 import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '~/util/projectTime';
@@ -378,6 +440,12 @@ export default {
       // per titolo al volo in screenshotsFor() invece di rifare una
       // richiesta di rete ad ogni click su un pulsante diverso.
       screenshots: [] as Screenshot[],
+      // Eventi veri del bucket "Finestra attiva" (aw-watcher-window) per
+      // lo stesso intervallo — passati alla galleria SOLO per la barra
+      // cronologica della vista a schermo intero (spiega cosa occupava
+      // un buco), mai per etichettare le miniature/i gruppi di QUESTA
+      // corsia: quelli restano "Sconosciuto" nei buchi, come prima.
+      eventiFinestraReale: [] as { app: string; start: moment.Moment; end: moment.Moment }[],
       showGallery: false,
       galleryTitle: '',
       galleryScreenshots: [] as Screenshot[],
@@ -435,6 +503,35 @@ export default {
         (s: Screenshot) => !s.timestamp.isBefore(start) && s.timestamp.isBefore(end)
       );
     },
+    // Tutti gli screenshot del blocco, indipendentemente da come sono
+    // organizzate le occorrenze — alimenta il SINGOLO riquadro
+    // ricapitolativo qui sotto (sostituisce i pulsanti "N foto" sparsi,
+    // uno per vista/titolo, con un unico punto d'ingresso valido per
+    // tutte e tre le viste).
+    screenshotsBlocco(): Screenshot[] {
+      return this.occurrencesTimeline.length
+        ? this.timelineScreenshots
+        : this.screenshotsFor(this.occurrences);
+    },
+    // Numero di finestre distinte comparse nel blocco, mostrato nel
+    // sottotitolo del riquadro — 1 quando non c'è nessun raggruppamento
+    // per titolo (la vista è già su una sola "finestra" concettuale).
+    finestreBlocco(): number {
+      if (this.occurrencesTimeline.length) {
+        return new Set((this.occurrencesTimeline as { title: string }[]).map(o => o.title)).size;
+      }
+      if (this.occurrencesByTitle.length) {
+        return this.occurrencesByTitle.length;
+      }
+      return 1;
+    },
+    photosCardSubtitle(): string {
+      const chiave =
+        this.finestreBlocco === 1
+          ? 'home.timelineBlockDetail.photosCardSubtitleWindow'
+          : 'home.timelineBlockDetail.photosCardSubtitleWindows';
+      return this.$t(chiave, { windows: this.finestreBlocco }) as string;
+    },
   },
   watch: {
     block: {
@@ -442,6 +539,7 @@ export default {
       handler() {
         this.showGallery = false;
         this.loadScreenshots();
+        this.caricaFinestreReali();
       },
     },
   },
@@ -482,6 +580,40 @@ export default {
         occs.some(o => !s.timestamp.isBefore(o.start) && s.timestamp.isBefore(o.end))
       );
     },
+    // Stesso bucket "Finestra attiva" che alimenta la corsia Generale
+    // della Timeline — passato alla galleria come prop a parte
+    // (finestreReali), MAI unito a galleryTitleSegments: quest'ultimo
+    // continua a etichettare le miniature/i gruppi solo con i titoli
+    // di QUESTO blocco (comportamento invariato, "Sconosciuto" per i
+    // buchi). La vera finestra a fuoco durante un buco va mostrata SOLO
+    // dentro la barra cronologica della vista a schermo intero — vedi
+    // ScreenshotGalleryModal.vue — non come una finestra/gruppo a sé
+    // nella galleria a miniature (bug reale segnalato dall'utente: un
+    // blocco "Zen Browser" mostrava "Claude" come se fosse una scheda
+    // del browser).
+    async caricaFinestreReali() {
+      let events = [];
+      try {
+        events = await getHomeClient().getEvents('aw-watcher-window', {
+          start: this.screenshotRange.start.toDate(),
+          end: this.screenshotRange.end.toDate(),
+          limit: -1,
+        });
+      } catch {
+        events = [];
+      }
+      this.eventiFinestraReale = events
+        .filter(e => e.data)
+        .map(e => {
+          const inizio = moment(e.timestamp);
+          return {
+            app: displayNameForApp(e.data.app || e.data.title || (this.$t('home.screenshotGallery.unknown') as string)),
+            start: inizio,
+            end: inizio.clone().add(e.duration || 0, 'seconds'),
+          };
+        })
+        .reverse();
+    },
     openGallery(title: string, occs: { start: moment.Moment; end: moment.Moment }[]) {
       this.galleryTitle = title;
       this.galleryScreenshots = this.screenshotsFor(occs);
@@ -498,6 +630,36 @@ export default {
       this.galleryScreenshots = this.timelineScreenshots;
       this.galleryTitleSegments = this.occurrencesTimeline as { title: string; start: moment.Moment; end: moment.Moment }[];
       this.showGallery = true;
+    },
+    // Punto d'ingresso UNICO per il riquadro ricapitolativo — prima
+    // c'erano due pulsanti diversi (uno per la vista cronologica, uno
+    // per quella piatta) e NESSUNO per la vista raggruppata per titolo
+    // (occurrencesByTitle), una lacuna reale. Qui si sceglie la sorgente
+    // giusta in base a quale delle tre viste è attiva, così un solo
+    // riquadro copre tutti i casi.
+    apriGalleriaBlocco() {
+      if (this.occurrencesTimeline.length) {
+        this.openGalleryTimeline();
+        return;
+      }
+      if (this.occurrencesByTitle.length) {
+        // Segmenti titolo/orario da TUTTI i gruppi (non solo il primo),
+        // così la galleria raggruppa ogni foto sotto il titolo davvero
+        // attivo in quel momento invece di appiattirle tutte sotto un
+        // unico nome generico.
+        const segmenti = (
+          this.occurrencesByTitle as {
+            title: string;
+            occurrences: { start: moment.Moment; end: moment.Moment }[];
+          }[]
+        ).flatMap(gruppo => gruppo.occurrences.map(o => ({ title: gruppo.title, start: o.start, end: o.end })));
+        this.galleryTitle = this.displayName;
+        this.galleryScreenshots = this.screenshotsFor(this.occurrences);
+        this.galleryTitleSegments = segmenti;
+        this.showGallery = true;
+        return;
+      }
+      this.openGallery(this.displayName, this.occurrences);
     },
     async verificaConfigurazioneAi() {
       try {

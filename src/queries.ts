@@ -83,9 +83,21 @@ function queryBucket(bid: string): string {
 // Puts it's results in `events` and `not_afk` (if not_afk available for platform).
 export function canonicalEvents(params: DesktopQueryParams | AndroidQueryParams): string {
   const always_active_apps = isDesktopParams(params) ? params.always_active_apps : undefined;
-  const always_active_apps_str =
+  // Bug reale segnalato dall'utente ("avevo Excel nelle app sempre attive
+  // ma non funzionava"): `always_active_apps` salva i nomi in minuscolo
+  // (vengono dall'elenco app conosciute, sempre lowercase — vedi
+  // registra_app_se_nuova in lib.rs), ma il campo "app" di un evento
+  // finestra reale rispetta la maiuscola/minuscola del file vero su
+  // disco — per Excel è "EXCEL.EXE", non "excel.exe". `filter_keyvals`
+  // fa un confronto ESATTO, case-sensitive — non trovava mai
+  // corrispondenza per qualunque app il cui eseguibile non sia già tutto
+  // minuscolo. Fix: `filter_keyvals_regex` con un pattern case-insensitive
+  // (`(?i)`) invece del confronto esatto per lista — stesso identico fix
+  // lato client in HomeTimelineSection.vue's alwaysActiveIntervals().
+  const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const always_active_apps_regex =
     always_active_apps && always_active_apps.length > 0
-      ? JSON.stringify(always_active_apps)
+      ? JSON.stringify(`(?i)^(${always_active_apps.map(escapeRegex).join('|')})$`)
       : undefined;
   const cat_filter_str = JSON.stringify(params.filter_categories);
 
@@ -101,8 +113,8 @@ export function canonicalEvents(params: DesktopQueryParams | AndroidQueryParams)
     isDesktopParams(params)
       ? `not_afk = flood(${queryBucket(params.bid_afk)});
          not_afk = filter_keyvals(not_afk, "status", ["not-afk"]);` +
-        (always_active_apps_str
-          ? `not_treat_as_afk = filter_keyvals(events, "app", ${always_active_apps_str});
+        (always_active_apps_regex
+          ? `not_treat_as_afk = filter_keyvals_regex(events, "app", ${always_active_apps_regex});
              not_afk = period_union(not_afk, not_treat_as_afk);`
           : '')
       : '',

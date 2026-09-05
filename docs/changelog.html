@@ -43,6 +43,23 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.25</h2>
+      <ul>
+        <li>Completely redesigned Screenshot section: the photo summary in a block's detail, the gallery ("Chronological"/"By window" tabs) and the full-screen viewer all have a cleaner design now, with a new draggable timeline at the bottom of the viewer to quickly jump between photos.</li>
+        <li>In the full-screen viewer, stretches with no screenshot now show the real app that was focused at that moment instead of "Unknown" — only there: the tabbed/thumbnail gallery still shows only the selected app's own titles.</li>
+        <li>Data export/import: the "Absence History" section now actually exports the recorded presence/absence periods (not just the watcher's configuration), and is re-imported correctly without duplicating anything if run again.</li>
+        <li>Fixed a bug where, in Home, clicking a title in the "Claude Usage" module always selected the entire Claude lane in the Timeline instead of just the clicked title.</li>
+        <li>The "shape of the day" bar above the Timeline now enlarges and shows a popup with the start/end time on hover, just like Timeline blocks; also fixed two minor bugs: hover didn't work over the lunch-break band, and sometimes only part of what looked like one continuous bar would enlarge.</li>
+        <li>Fixed a bug where clicking, dragging or moving the mouse inside the Timeline could leave label text (app names, titles) selected like ordinary text.</li>
+        <li>Custom watchers: deleting a watcher now also deletes its linked Home module, which used to stay empty forever.</li>
+        <li>Fixed a bug where the "always active apps" option (Settings) didn't work for apps whose executable isn't all lowercase (e.g. Excel/EXCEL.EXE) — the comparison is now case-insensitive.</li>
+        <li>Excel: tracking an open file now shows up in the Timeline right away instead of only appearing when the file is closed; also fixed two title-recognition bugs (the "Opening" splash window treated as a real file, and multiple concatenated mode indicators like "[Shared] [Read-only]" making the same file show up as different files).</li>
+        <li>AFK detection and Active window: their configuration now lives in TrackFlow's own data folder instead of a shared folder from a real ActivityWatch installation — migrated automatically on first launch, without losing customizations already made (e.g. the AFK timeout). Also cleaned up a leftover orphan folder from previous versions.</li>
+        <li>Settings → Developer: removed the "Database folder" shortcut, which due to a bug opened an unrelated folder (from a real ActivityWatch installation, never used by TrackFlow) instead of the app's real database.</li>
+        <li>TrackFlow's own AI assistant (chat and automatic categorization) no longer creates fake rows in the Timeline's Claude lane for its own internal sessions.</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.24</h2>
       <ul>
         <li>Excel: fixed a bug where utility windows like "Find and Replace" were tracked as if they were real files, showing up as fake rows in the Excel Timeline lane.</li>

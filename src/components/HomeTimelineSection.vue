@@ -25,6 +25,9 @@ div.timeline-section
             v-for="(seg, i) in afkStatusSegments"
             :key="'afk-' + i"
             :style="{ left: seg.left + 'px', width: seg.width + 'px', backgroundColor: seg.color }"
+            @mouseenter="hoverAfkSegment(seg, $event)"
+            @mousemove="moveTooltip($event)"
+            @mouseleave="hoveredBlock = null"
           )
         div.time-ruler
           div.time-tick(v-for="t in hourTicks" :key="t.hour" :style="{ left: t.left + 'px' }")
@@ -188,6 +191,15 @@ div.timeline-section
   border-radius: var(--radius-xl);
   padding: 16px 0 12px;
   cursor: grab;
+  // Always off, not just while isDragging (see .timeline-scroll-dragging
+  // below) — explicit bug report: clicking, hovering or dragging ANY
+  // element inside the Timeline (block labels, the AFK bar, the ruler's
+  // time labels, tooltips, …) could highlight its text as a native
+  // browser text selection. A plain click/double-click doesn't need to
+  // hold the mouse still long enough to look like a deliberate select,
+  // but the browser doesn't know that — same reasoning already applied
+  // to .lightbox-scrubber in ScreenshotGalleryModal.vue.
+  user-select: none;
 
   // Themed scrollbar instead of the browser default — Firefox via the
   // scrollbar-* properties, Chrome/Edge/Zen via the ::-webkit-* pseudo
@@ -213,14 +225,12 @@ div.timeline-section
   }
 }
 
-// Active only while a real drag is in progress (see isDragging) — the
-// resting "grab" hand above signals the track is draggable at all;
-// swapping to "grabbing" while it's actually held is the standard
-// affordance for telling the two states apart. user-select: none stops
-// the drag from also highlighting the ruler's time labels as text.
+// Active only while a real pan-drag of the track is in progress (see
+// isDragging) — the resting "grab" hand above signals the track is
+// draggable at all; swapping to "grabbing" while it's actually held is
+// the standard affordance for telling the two states apart.
 .timeline-scroll-dragging {
   cursor: grabbing;
-  user-select: none;
 }
 
 .timeline-inner {
@@ -243,6 +253,17 @@ div.timeline-section
   top: 0;
   height: 100%;
   border-radius: var(--radius-pill);
+  transform-origin: center;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+// Bar hover treatment (explicit request): same idea as .lane-block:hover
+// (brightness bump), plus a slight scale-up since the bar itself is only
+// 3px tall and a brightness change alone is easy to miss there.
+.afk-status-segment:hover {
+  filter: brightness(1.2);
+  transform: scaleY(2.5);
+  z-index: 1;
 }
 
 .time-ruler {
@@ -270,6 +291,9 @@ div.timeline-section
   bottom: 0;
   border-left: 1px solid var(--color-border);
   opacity: 0.5;
+  // Same reasoning as .lunch-break just below: purely decorative, must
+  // never steal hover from the AFK bar/blocks it overlaps.
+  pointer-events: none;
 }
 
 // Decorative lunch-break band (13:00–14:00) — diagonal stripes, same
@@ -287,6 +311,13 @@ div.timeline-section
     transparent 14px
   );
   opacity: 0.5;
+  // Was missing despite the comment above already promising "never
+  // affects interaction" — being absolutely positioned top:0/bottom:0
+  // and declared AFTER .afk-status-bar in the template, it painted (and
+  // caught hover) on top of the AFK bar wherever the two overlapped
+  // (13:00–14:00), silently swallowing the mouseenter there. Explicit
+  // bug report: AFK hover didn't work over the lunch-break stripes.
+  pointer-events: none;
 }
 
 .now-line {
@@ -606,6 +637,7 @@ import {
   iconColorForApp,
   isVSCodeApp,
   isExcelApp,
+  nomeFileDaTitoloExcel,
   isBrowserApp,
   vscodeTitleDisplayName,
   iconUrlForApp,
@@ -1273,9 +1305,19 @@ export default {
     alwaysActiveIntervals(): { start: moment.Moment; end: moment.Moment }[] {
       const apps = this.settingsStore.always_active_apps;
       if (!apps || !apps.length || !this.rawWindowEventsUnclipped.length) return [];
-      const set = new Set(apps);
+      // Bug reale segnalato dall'utente ("avevo Excel nelle app sempre
+      // attive ma non funzionava"): `always_active_apps` salva i nomi in
+      // minuscolo (vengono dall'elenco app conosciute, sempre lowercase —
+      // vedi registra_app_se_nuova in lib.rs), ma il nome REALE riportato
+      // dall'evento della finestra rispetta la maiuscola/minuscola del
+      // file vero su disco — per Excel è "EXCEL.EXE", non "excel.exe".
+      // Un confronto case-sensitive (Set.has diretto) non trovava quindi
+      // mai corrispondenza per qualunque app il cui eseguibile non sia
+      // già scritto tutto minuscolo. Stesso identico fix necessario nella
+      // query AQL lato server — vedi canonicalEvents() in queries.ts.
+      const set = new Set(apps.map((a: string) => a.toLowerCase()));
       return this.rawWindowEventsUnclipped
-        .filter((e: any) => e.data && set.has(e.data.app))
+        .filter((e: any) => e.data && set.has((e.data.app || '').toLowerCase()))
         .map((e: any) => ({
           start: moment(e.timestamp),
           end: moment(e.timestamp).add(e.duration || 0, 'seconds'),
@@ -1314,7 +1356,7 @@ export default {
     // Empty when the day has no activity, or no AFK data exists for
     // this host (nothing to color, same "unknown, don't guess"
     // reasoning as clipEventsToIntervals() in load()).
-    afkStatusSegments(): { left: number; width: number; color: string }[] {
+    afkStatusSegments(): { left: number; width: number; color: string; start: moment.Moment; end: moment.Moment; status: string }[] {
       if (!this.activityStart || !this.activityEnd) return [];
       const overrideActive = (t: moment.Moment) =>
         this.alwaysActiveIntervals.some((iv: any) => !t.isBefore(iv.start) && !t.isAfter(iv.end));
@@ -1356,8 +1398,26 @@ export default {
         }
       }
 
-      const result: { left: number; width: number; color: string }[] = [];
+      // Merges consecutive same-status events that now touch (or overlap)
+      // after the gap-bridging above into ONE span — the raw watcher data
+      // is one event per poll, so a long stretch of "not-afk" is really
+      // many back-to-back same-color events. Left unmerged, each stayed
+      // its own DOM element/hover target below: visually one continuous
+      // green strip, but hovering it only ever enlarged whichever tiny
+      // sub-segment happened to be under the cursor — explicit bug
+      // report ("il mouse hover seleziona solo parte della linea").
+      const merged: typeof events = [];
       for (const e of events) {
+        const last = merged[merged.length - 1];
+        if (last && last.status === e.status && !e.start.isAfter(last.end)) {
+          if (e.end.isAfter(last.end)) last.end = e.end;
+        } else {
+          merged.push(e);
+        }
+      }
+
+      const result: { left: number; width: number; color: string; start: moment.Moment; end: moment.Moment; status: string }[] = [];
+      for (const e of merged) {
         const clampedStart = moment.max(e.start, this.activityStart);
         const clampedEnd = moment.min(e.end, this.activityEnd);
         if (!clampedEnd.isAfter(clampedStart)) continue;
@@ -1376,6 +1436,9 @@ export default {
           left: left + LANE_LABEL_WIDTH,
           width,
           color: e.status === 'not-afk' ? 'var(--color-success)' : 'var(--color-danger)',
+          start: clampedStart,
+          end: clampedEnd,
+          status: e.status,
         });
       }
       return result;
@@ -2242,7 +2305,22 @@ export default {
           // matching app icon) still falls back cleanly.
           blocks: this.buildBlocks(
             windowEvents,
-            e => e.data.app || e.data.title || 'Sconosciuto',
+            // Excel: richiesta esplicita dell'utente — quando compare qui
+            // (watcher dedicato spento, vedi isExcelWindow più sopra),
+            // il file va indicato nel tooltip esattamente come già
+            // avviene per Claude Desktop ("Claude Desktop: <progetto>",
+            // corsia claude) invece di mostrare solo "Excel" senza
+            // nessun dettaglio. Stessa funzione di parsing titolo già
+            // usata dal modulo Home "File Excel principali" per lo stesso
+            // scenario (watcher spento). Nessun file riconoscibile nel
+            // titolo (bare "Excel", vedi nomeFileDaTitoloExcel) -> resta
+            // il solo nome app, non un "Excel: " vuoto o fuorviante.
+            e => {
+              const app = e.data.app || e.data.title || 'Sconosciuto';
+              if (!isExcelApp(app)) return app;
+              const file = nomeFileDaTitoloExcel(e.data.title || '');
+              return file ? `Excel: ${file}` : app;
+            },
             key => iconColorForApp(key) || colorVarForName(key)
           ),
         },
@@ -2486,6 +2564,17 @@ export default {
     // matching instead of comparing individual block keys.
     highlightMatchesLaneByProcessName(lane: Lane): boolean {
       if (!this.highlightedKey) return false;
+      // Se la chiave combacia ESATTAMENTE con la key di un blocco vero
+      // di questa corsia, è già una selezione precisa (es. dal modulo
+      // "Uso Claude"/Top Editor Projects, che chiavano già come la
+      // corsia stessa) — usa il confronto normale per singolo blocco,
+      // non il fallback sull'intera corsia qui sotto. Bug reale
+      // segnalato dall'utente: isClaudeAppName/isVSCodeApp/isExcelApp
+      // fanno un controllo "contiene claude/vscode/excel" molto largo,
+      // che scattava (erroneamente) anche per queste chiavi precise —
+      // ogni voce di "Uso Claude" cliccata illuminava l'intera corsia
+      // invece della sola sessione scelta.
+      if (lane.blocks.some(b => b.key === this.highlightedKey)) return false;
       if (lane.key === 'claude') return isClaudeAppName(this.highlightedKey);
       if (lane.key === 'vscode') return isVSCodeApp(this.highlightedKey);
       if (lane.key === 'excel') return isExcelApp(this.highlightedKey);
@@ -2550,6 +2639,31 @@ export default {
     },
     moveTooltip(evt: MouseEvent) {
       if (!this.hoveredBlock) return;
+      this.tooltipX = evt.clientX;
+      this.tooltipY = evt.clientY;
+    },
+    // Same idea as hoverBlock()/hoverSubBlock(), for the thin AFK "shape
+    // of the day" status bar — explicit request: hovering a segment
+    // there should enlarge it and show the same tooltip style as the
+    // Timeline blocks, with that segment's start/end time. The key is
+    // already the final Italian/English label ("Attivo"/"Assente", via
+    // i18n), not a raw app name — displayForKey() (== displayNameForApp)
+    // falls through to its input unchanged for anything it doesn't
+    // recognize, so passing it through the shared tooltip template is
+    // safe without special-casing there.
+    hoverAfkSegment(
+      seg: { left: number; width: number; color: string; start: moment.Moment; end: moment.Moment; status: string },
+      evt: MouseEvent
+    ) {
+      this.hoveredBlock = {
+        key: seg.status === 'not-afk' ? this.$t('home.timeline.afkActive') : this.$t('home.timeline.afkAway'),
+        start: seg.start,
+        end: seg.end,
+        row: 0,
+        left: seg.left,
+        width: seg.width,
+        color: seg.color,
+      };
       this.tooltipX = evt.clientX;
       this.tooltipY = evt.clientY;
     },

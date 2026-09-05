@@ -131,9 +131,13 @@ impl Default for Defaults {
     }
 }
 
-/// Stessa convenzione "platformdirs" di aw-watcher-afk (vedi commento
-/// lì): %LOCALAPPDATA%\activitywatch\activitywatch\<modulo>\<modulo>.toml.
-fn config_file_path() -> std::path::PathBuf {
+/// Vecchio percorso condiviso "platformdirs" (stessa convenzione di
+/// aw-watcher-afk, vedi il commento su vecchio_percorso_condiviso() lì):
+/// %LOCALAPPDATA%\activitywatch\activitywatch\aw-watcher-window\. NON
+/// creato da TrackFlow — è lo stesso percorso di una vera installazione
+/// ActivityWatch, condiviso per compatibilità, non nostro da possedere
+/// o eliminare.
+fn vecchio_percorso_condiviso() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_default()
         .join("activitywatch")
@@ -142,9 +146,31 @@ fn config_file_path() -> std::path::PathBuf {
         .join("aw-watcher-window.toml")
 }
 
-fn load_defaults() -> Defaults {
+/// Percorso nuovo, dentro la cartella scrivibile di TrackFlow.
+fn config_file_path(app_data_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    match app_data_dir {
+        Some(dir) => dir.join("aw-watcher-window.toml"),
+        None => vecchio_percorso_condiviso(),
+    }
+}
+
+/// Migrazione una tantum — stessa identica logica/motivazione di
+/// aw-watcher-afk-rust::migra_da_percorso_condiviso: copia (mai sposta/
+/// cancella l'originale) il contenuto dal vecchio percorso condiviso
+/// solo se TrackFlow non ha ancora una sua copia.
+fn migra_da_percorso_condiviso(app_data_dir: &std::path::Path) {
+    let nuovo = app_data_dir.join("aw-watcher-window.toml");
+    if nuovo.exists() {
+        return;
+    }
+    if let Ok(contenuto) = std::fs::read_to_string(vecchio_percorso_condiviso()) {
+        let _ = std::fs::write(&nuovo, contenuto);
+    }
+}
+
+fn load_defaults(app_data_dir: Option<&std::path::Path>) -> Defaults {
     let hardcoded = Defaults::default();
-    let Ok(content) = std::fs::read_to_string(config_file_path()) else {
+    let Ok(content) = std::fs::read_to_string(config_file_path(app_data_dir)) else {
         return hardcoded;
     };
     let Ok(parsed) = toml::from_str::<ConfigFile>(&content) else {
@@ -180,6 +206,12 @@ struct Args {
 
     #[arg(long)]
     poll_time: Option<f64>,
+
+    /// Cartella dati scrivibile condivisa — dove legge/scrive la propria
+    /// configurazione (aw-watcher-window.toml), migrandola una tantum
+    /// dal vecchio percorso condiviso se presente.
+    #[arg(long)]
+    app_data_dir: Option<std::path::PathBuf>,
 }
 
 fn transform_title(app: &str, title: String, exclude_title: bool, exclude_titles: &[Regex]) -> String {
@@ -197,7 +229,10 @@ fn transform_title(app: &str, title: String, exclude_title: bool, exclude_titles
 
 fn main() {
     let args = Args::parse();
-    let defaults = load_defaults();
+    if let Some(dir) = &args.app_data_dir {
+        migra_da_percorso_condiviso(dir);
+    }
+    let defaults = load_defaults(args.app_data_dir.as_deref());
 
     let exclude_title = args.exclude_title || defaults.exclude_title;
     let exclude_titles_raw = if args.exclude_titles.is_empty() {
@@ -263,6 +298,25 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_file_path_usa_la_cartella_di_trackflow_quando_fornita() {
+        let dir = std::env::temp_dir().join(format!("aw-window-config-path-{}", std::process::id()));
+        assert_eq!(config_file_path(Some(&dir)), dir.join("aw-watcher-window.toml"));
+    }
+
+    #[test]
+    fn migra_da_percorso_condiviso_non_tocca_niente_se_gia_migrato() {
+        let dir = std::env::temp_dir().join(format!("aw-window-migrazione-noop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let nuovo = dir.join("aw-watcher-window.toml");
+        std::fs::write(&nuovo, "già migrato").unwrap();
+
+        migra_da_percorso_condiviso(&dir);
+
+        assert_eq!(std::fs::read_to_string(&nuovo).unwrap(), "già migrato");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn pulsetime_formula_matches_python_reference_values() {

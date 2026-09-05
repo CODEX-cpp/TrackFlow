@@ -168,8 +168,17 @@ export function nomeFileDaTitoloExcel(titolo: string): string | null {
   const pulito = titolo.trim();
   if (!pulito || pulito.toLowerCase() === 'excel') return null;
 
+  // Bug reale (issue GitHub #4, corretto lato Rust in
+  // aw-watcher-excel-rust — vedi interpreta_titolo): un titolo senza
+  // " - Excel" è quasi sempre una finestra di utilità/dialogo (es.
+  // "Find and Replace"/"Trova e sostituisci"), non un documento — va
+  // ignorato, non trattato come un file fantasma. Stessa correzione
+  // qui per restare coerenti: questa funzione alimenta sia il modulo
+  // Home "File Excel principali" (watcher spento) sia il tooltip della
+  // corsia Generale della Timeline.
   const idx = pulito.indexOf(' - Excel');
-  const descrittore = idx !== -1 ? pulito.slice(0, idx).trim() : pulito;
+  if (idx === -1) return null;
+  const descrittore = pulito.slice(0, idx).trim();
   if (!descrittore) return null;
 
   if (descrittore.endsWith(']')) {

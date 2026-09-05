@@ -100,7 +100,7 @@ div.raw-data-page
         div.pill-btn(v-else-if="exportState === 'ready'" @click="downloadExportedJson()")
           icon.mr-1(name="download")
           | {{ $t('buckets.downloadExport') }}
-        div.pill-btn-ghost(v-else @click="startExportAllBuckets()")
+        div.pill-btn-ghost(v-else @click="apriExportPicker()")
           icon.mr-1(name="download")
           | {{ $t('buckets.exportAllJson') }}
       div.io-card-bottom
@@ -138,6 +138,49 @@ div.raw-data-page
     @close="showWatcherWizard = false"
     @done="showWatcherWizard = false; refreshWatchersAndBuckets()"
   )
+
+  //- Popup con caselle di spunta per scegliere cosa includere
+  //- nell'esportazione, oltre ai soli eventi grezzi già gestiti sopra —
+  //- richiesta esplicita: lo stesso pulsante "Esporta" di questa pagina
+  //- deve offrire anche impostazioni/progetti/moduli Home/icone/config
+  //- AFK, non un pulsante separato altrove nell'app.
+  confirm-modal(
+    v-if="showExportPicker"
+    :title="$t('settings.exportImport.exportTitle')"
+    :confirm-label="$t('settings.exportImport.exportButton')"
+    :cancel-label="$t('common.cancel')"
+    confirm-variant="primary"
+    @confirm="confermaExportPicker()"
+    @cancel="showExportPicker = false"
+  )
+    div.field-hint.io-picker-notice {{ $t('settings.exportImport.screenshotsNotice') }}
+    div.io-picker-list
+      label.io-picker-check
+        input(type="checkbox" v-model="exportSelEventi")
+        span {{ $t('settings.exportImport.sectionEvents') }}
+      label.io-picker-check(v-for="s in sezioniEsportabili" :key="'exp-' + s.id")
+        input(type="checkbox" v-model="exportSelSezioni" :value="s.id")
+        span {{ s.label }}
+
+  //- Simmetrico all'esportazione: compare SOLO dopo che un file scelto/
+  //- trascinato si è rivelato valido (vedi processImportFile), con le
+  //- caselle limitate a ciò che il file contiene davvero.
+  confirm-modal(
+    v-if="showImportPicker"
+    :title="$t('settings.exportImport.importTitle')"
+    :confirm-label="$t('settings.exportImport.importButton')"
+    :cancel-label="$t('common.cancel')"
+    confirm-variant="primary"
+    @confirm="confermaImportPicker()"
+    @cancel="cancelImportPicker()"
+  )
+    div.io-picker-list
+      label.io-picker-check(v-if="importAvailableEventi")
+        input(type="checkbox" v-model="importSelEventi")
+        span {{ $t('settings.exportImport.sectionEvents') }}
+      label.io-picker-check(v-for="s in sezioniImportabili" :key="'imp-' + s.id")
+        input(type="checkbox" v-model="importSelSezioni" :value="s.id")
+        span {{ s.label }}
 </template>
 
 <style lang="scss" scoped>
@@ -518,6 +561,31 @@ div.raw-data-page
   color: var(--color-text-faint);
   margin-top: 6px;
 }
+
+.io-picker-notice {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.io-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.io-picker-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.io-picker-check input {
+  margin-top: 3px;
+}
 </style>
 
 <script lang="ts">
@@ -534,7 +602,9 @@ import { readTextFile } from '@tauri-apps/plugin-fs';
 
 import { useBucketsStore } from '~/stores/buckets';
 import { useSettingsStore } from '~/stores/settings';
+import { useViewsStore } from '~/stores/views';
 import { downloadFile } from '~/util/export';
+import { refreshModulesConfig } from '~/util/modulesConfig';
 
 // Stesso schema di src/views/settings/DeveloperSettings.vue — solo
 // VoiSpeed scrive sotto un client diverso dal proprio nome modulo (gira
@@ -662,6 +732,22 @@ export default {
       exportState: 'idle' as 'idle' | 'loading' | 'ready',
       exportedJsonData: null as string | null,
       exportError: null as string | null,
+      // Popup di scelta sezioni per l'esportazione — richiesta esplicita:
+      // lo stesso pulsante "Esporta come JSON" qui in Watchers deve poter
+      // includere, oltre agli eventi grezzi, anche impostazioni/progetti/
+      // moduli Home/icone/config AFK (vedi export_import.rs).
+      showExportPicker: false,
+      exportSelEventi: true,
+      exportSelSezioni: [] as string[],
+      // Popup simmetrico per l'importazione — compare solo dopo che
+      // processImportFile ha già letto il file e capito cosa contiene.
+      showImportPicker: false,
+      importPendingFilename: '',
+      importPendingText: '',
+      importAvailableEventi: false,
+      importAvailableSezioni: [] as string[],
+      importSelEventi: false,
+      importSelSezioni: [] as string[],
       delete_bucket_selected: null,
       delete_watcher_selected: null,
       delete_display_label: null,
@@ -788,6 +874,21 @@ export default {
 
       return [...daWatcher, ...altri];
     },
+    // Etichette delle 5 sezioni di export_import.rs, condivise dai due
+    // popup — stessi identificativi (SEZIONE_IMPOSTAZIONI/PROGETTI/
+    // MODULI_HOME/ICONE/AFK_FINESTRA) usati lato Rust.
+    sezioniEsportabili(this: any) {
+      return [
+        { id: 'impostazioni', label: this.$t('settings.exportImport.sectionSettings') },
+        { id: 'progetti', label: this.$t('settings.exportImport.sectionProjects') },
+        { id: 'moduli_home', label: this.$t('settings.exportImport.sectionHomeModules') },
+        { id: 'icone', label: this.$t('settings.exportImport.sectionIcons') },
+        { id: 'afk_finestra', label: this.$t('settings.exportImport.sectionAfkWindow') },
+      ];
+    },
+    sezioniImportabili(this: any) {
+      return this.sezioniEsportabili.filter((s: any) => this.importAvailableSezioni.includes(s.id));
+    },
   },
   mounted: async function () {
     await this.bucketsStore.loadBuckets();
@@ -851,6 +952,16 @@ export default {
         await invoke('imposta_modulo_watcher', { nome: row.key, attivo: nuovoStato });
         const w = this.watcherStatuses.find((w: WatcherStatusDto) => w.name === row.key);
         if (w) w.enabled_in_config = nuovoStato;
+        // Bug reale segnalato dall'utente (issue GitHub #4): senza
+        // questo, disattivare un watcher qui non aveva alcun effetto
+        // visibile su Home/Timeline finché l'app non veniva riavviata —
+        // isWatcherEnabled() (usata per decidere se mostrare Excel/VPN/
+        // Claude/VSCode nella corsia Generale) legge una copia di
+        // modules-config.json caricata una sola volta all'avvio
+        // dell'app (vedi App.vue), mai più aggiornata dopo. Rilettura
+        // esplicita qui, appena il cambiamento è confermato scritto sul
+        // file da imposta_modulo_watcher.
+        await refreshModulesConfig();
       } catch {
         // Fuori da Tauri: nessuna azione possibile, lo stato resta quello reale.
       }
@@ -880,27 +991,93 @@ export default {
       }
     },
     // Punto d'ingresso condiviso tra l'input file nativo (scelto tramite
-    // Esplora risorse) e il trascinamento diretto nella dropzone — stessa
-    // identica logica in entrambi i casi, solo la provenienza del file cambia.
-    // Punto d'ingresso condiviso tra l'input file nativo (scelto tramite
     // Esplora risorse) e il trascinamento (via onTauriDragDropEvent) — in
     // entrambi i casi si arriva qui già con testo in mano, non un File:
     // il trascinamento reale usa l'API nativa di Tauri, che dà un
     // percorso su disco letto con readTextFile(), non un oggetto File.
+    // Un CSV è sempre e solo eventi grezzi di un singolo watcher (vedi
+    // export_csv/importCsvFile) — importato subito come prima, nessun
+    // popup di scelta necessario. Un JSON invece può contenere, oltre
+    // agli eventi, anche una o più delle sezioni di export_import.rs
+    // (impostazioni/progetti/moduli Home/icone/config AFK): qui si
+    // analizza soltanto cosa contiene, poi si apre il popup con le
+    // caselle corrispondenti — l'importazione vera parte solo dopo
+    // conferma (vedi confermaImportPicker), mai da qui.
     processImportFile: async function (filename: string, text: string) {
       this.import_file = filename;
       this.import_success = false;
       this.import_stats = null;
+      this.import_error = null;
+
+      if (filename.toLowerCase().endsWith('.csv')) {
+        try {
+          const response = await this.importCsvFile(text);
+          this.import_stats = response?.data || { added: 0, skipped: 0 };
+          this.import_success = true;
+        } catch (err: any) {
+          this.import_error = err?.message || 'Import failed, see aw-server logs for more info';
+        }
+        await this.bucketsStore.loadBuckets();
+        this.import_file = null;
+        return;
+      }
+
+      let parsed: any = null;
       try {
-        const response = filename.toLowerCase().endsWith('.csv')
-          ? await this.importCsvFile(text)
-          : await this.importBuckets(text);
-        this.import_stats = response?.data || { added: 0, skipped: 0 };
+        parsed = JSON.parse(text);
+      } catch {
+        this.import_error = this.$t('buckets.dropzoneUnsupported') as string;
+        this.import_file = null;
+        return;
+      }
+      const haEventi = !!(parsed && parsed.buckets && typeof parsed.buckets === 'object');
+      let sezioniDisponibili: string[] = [];
+      try {
+        const info = await invoke<{ sezioni_disponibili: string[] }>('sezioni_disponibili_in_import', {
+          contenuto: text,
+        });
+        sezioniDisponibili = info.sezioni_disponibili;
+      } catch {
+        // File non riconosciuto dal backend come DatiEsportati — resta
+        // comunque importabile se contiene almeno gli eventi grezzi.
+        sezioniDisponibili = [];
+      }
+      this.import_file = null;
+      if (!haEventi && sezioniDisponibili.length === 0) {
+        this.import_error = this.$t('settings.exportImport.noSectionsFound') as string;
+        return;
+      }
+      this.importPendingFilename = filename;
+      this.importPendingText = text;
+      this.importAvailableEventi = haEventi;
+      this.importAvailableSezioni = sezioniDisponibili;
+      this.importSelEventi = haEventi;
+      this.importSelSezioni = [...sezioniDisponibili];
+      this.showImportPicker = true;
+    },
+    cancelImportPicker: function () {
+      this.showImportPicker = false;
+      this.importPendingText = '';
+    },
+    confermaImportPicker: async function () {
+      if (!this.importSelEventi && this.importSelSezioni.length === 0) return;
+      const testo = this.importPendingText;
+      this.import_file = this.importPendingFilename;
+      this.showImportPicker = false;
+      try {
+        if (this.importSelEventi) {
+          const response = await this.importBuckets(testo);
+          this.import_stats = response?.data || { added: 0, skipped: 0 };
+        }
+        if (this.importSelSezioni.length) {
+          await invoke('importa_dati', { contenuto: testo, sezioni: this.importSelSezioni });
+        }
         this.import_error = null;
         this.import_success = true;
       } catch (err: any) {
         this.import_error = err?.message || 'Import failed, see aw-server logs for more info';
       }
+      this.importPendingText = '';
       await this.bucketsStore.loadBuckets();
       this.import_file = null;
     },
@@ -977,6 +1154,15 @@ export default {
       try {
         if (this.delete_watcher_selected) {
           await invoke('elimina_watcher_personalizzato', { id: this.delete_watcher_selected });
+          // Il wizard (CustomWatcherWizard.vue::submitSimple) crea in
+          // automatico il modulo "custom_watcher_view" in Home legato a
+          // questo bucket — senza rimuoverlo qui, eliminare il watcher
+          // lasciava in Home un modulo orfano, vuoto per sempre (nessun
+          // bucket da cui leggere dati). Richiesta esplicita dell'utente:
+          // eliminare il watcher deve eliminare anche il suo modulo.
+          if (this.delete_bucket_selected) {
+            await this.removeCustomWatcherHomeModule(this.delete_bucket_selected);
+          }
         }
         if (this.delete_bucket_selected) {
           await this.bucketsStore.deleteBucket({ bucketId: this.delete_bucket_selected });
@@ -984,6 +1170,30 @@ export default {
       } finally {
         this.cancelDeleteBucket();
         await this.refreshWatchersAndBuckets();
+      }
+    },
+    // Rimuove, da TUTTE le view (non solo la prima: stesso principio
+    // difensivo di viewsStore.load(), niente ipotesi su quale sia quella
+    // mostrata), ogni modulo "custom_watcher_view" il cui props.bucketId
+    // corrisponde al bucket appena eliminato. Filtra per bucketId invece
+    // che per indice (removeVisualization() esistente vuole un el_id
+    // posizionale, scomodo qui dove serve trovare l'elemento per
+    // contenuto, non per posizione) e salva una volta sola.
+    removeCustomWatcherHomeModule: async function (bucketId) {
+      const viewsStore = useViewsStore();
+      await viewsStore.load();
+      let modificato = false;
+      for (const view of viewsStore.views) {
+        const rimasti = view.elements.filter(
+          el => !(el.type === 'custom_watcher_view' && el.props && el.props.bucketId === bucketId)
+        );
+        if (rimasti.length !== view.elements.length) {
+          view.elements = rimasti;
+          modificato = true;
+        }
+      }
+      if (modificato) {
+        await viewsStore.save();
       }
     },
     importBuckets: async function (text: string) {
@@ -1064,30 +1274,49 @@ export default {
       );
     },
 
-    // Passo 1: raccoglie i dati di TUTTI i bucket (integrati e
-    // personalizzati — il server non li distingue, sono tutti bucket
-    // nel datastore, vedi export.rs) in memoria. Nessun limite di tempo
-    // sulla richiesta: con uno storico molto lungo può richiedere
-    // minuti. Notifica di sistema al termine, per chi nel frattempo ha
-    // cambiato pagina o messo l'app in background.
-    async startExportAllBuckets() {
+    apriExportPicker() {
+      this.exportSelEventi = true;
+      this.exportSelSezioni = ['impostazioni', 'progetti', 'moduli_home', 'icone', 'afk_finestra'];
+      this.exportError = null;
+      this.showExportPicker = true;
+    },
+    // Passo 1: raccoglie tutto ciò che è stato spuntato nel popup —
+    // eventi grezzi di TUTTI i bucket (integrati e personalizzati, il
+    // server non li distingue, vedi export.rs) e/o una o più sezioni di
+    // export_import.rs (impostazioni/progetti/moduli Home/icone/config
+    // AFK) — in un unico oggetto, unendo le due fonti in un solo file
+    // JSON finale invece di produrne due separati. Nessun limite di
+    // tempo sulla richiesta eventi: con uno storico molto lungo può
+    // richiedere minuti. Notifica di sistema al termine, per chi nel
+    // frattempo ha cambiato pagina o messo l'app in background.
+    async confermaExportPicker() {
+      if (!this.exportSelEventi && this.exportSelSezioni.length === 0) return;
+      this.showExportPicker = false;
       this.exportState = 'loading';
       this.exportError = null;
       try {
-        const response = await this.$aw.req.get('/0/export', { timeout: 0 });
-        const data = response.data;
-        // Esclude i bucket dei watcher in WATCHER_ESCLUSI_DA_EXPORT (es.
-        // screenshot: solo nomi di file, inutili fuori dall'app) — le
-        // immagini vere restano su disco in ogni caso, non erano mai
-        // incluse nel bucket.
-        if (data && data.buckets) {
-          data.buckets = Object.fromEntries(
-            Object.entries(data.buckets).filter(
-              ([, bucket]: [string, any]) => !WATCHER_ESCLUSI_DA_EXPORT.has(bucket.client)
-            )
-          );
+        let combinato: any = {};
+        if (this.exportSelSezioni.length) {
+          const json = await invoke<string>('esporta_dati', { sezioni: this.exportSelSezioni });
+          combinato = JSON.parse(json);
         }
-        this.exportedJsonData = JSON.stringify(data, null, 2);
+        if (this.exportSelEventi) {
+          const response = await this.$aw.req.get('/0/export', { timeout: 0 });
+          const data = response.data;
+          // Esclude i bucket dei watcher in WATCHER_ESCLUSI_DA_EXPORT (es.
+          // screenshot: solo nomi di file, inutili fuori dall'app) — le
+          // immagini vere restano su disco in ogni caso, non erano mai
+          // incluse nel bucket.
+          if (data && data.buckets) {
+            data.buckets = Object.fromEntries(
+              Object.entries(data.buckets).filter(
+                ([, bucket]: [string, any]) => !WATCHER_ESCLUSI_DA_EXPORT.has(bucket.client)
+              )
+            );
+          }
+          combinato.buckets = data.buckets;
+        }
+        this.exportedJsonData = JSON.stringify(combinato, null, 2);
         this.exportState = 'ready';
         try {
           await invoke('invia_notifica_generica', {
