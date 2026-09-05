@@ -9,10 +9,9 @@ Non toccare questo formato senza aggiornare anche quel parser.
 
 ### it
 - Sezione Screenshot completamente ridisegnata: il riepilogo foto nel dettaglio di un blocco, la galleria (schede "Cronologica"/"Per finestra") e il visualizzatore a schermo intero hanno ora un design più pulito, con una nuova timeline trascinabile in basso nel visualizzatore per saltare rapidamente da una foto all'altra.
-- Nel visualizzatore a schermo intero, i tratti senza screenshot mostrano ora la vera app che era in focus in quel momento invece di "Sconosciuto" — solo lì: la galleria a schede/thumbnail continua a mostrare solo i titoli dell'app selezionata.
-- Esportazione/importazione dati: la sezione "Cronologia Assenza" ora esporta davvero i periodi di presenza/assenza registrati (non solo la configurazione del watcher), e viene reimportata correttamente senza duplicare nulla se rieseguita più volte.
+- **Nuova funzionalità**: Esportazione/Importazione dati (pagina Watchers) — porta su un altro PC (o tieni come backup) eventi tracciati, impostazioni generali, progetti, moduli e disposizione della Home, icone/nomi riconosciuti delle app e la cronologia AFK (quando e quanto sei stato assente), scegliendo quali sezioni includere; gli screenshot restano sempre esclusi (troppo pesanti). L'importazione evita duplicati anche se ripetuta più volte.
 - Corretto un bug per cui, in Home, cliccare un titolo nel modulo "Uso Claude" selezionava sempre l'intera corsia Claude nella Timeline invece del solo titolo cliccato.
-- La barra "andamento della giornata" sopra la Timeline ora si ingrandisce e mostra un popup con l'orario di inizio/fine al passaggio del mouse, come i blocchi della Timeline; corretti anche due bug minori: l'hover non funzionava sopra la fascia della pausa pranzo, e a volte si ingrandiva solo un pezzo di quella che sembrava una singola barra continua.
+- La barra AFK sopra la Timeline (l'andamento presenza/assenza della giornata) ora si ingrandisce e mostra un popup con l'orario di inizio/fine al passaggio del mouse, come i blocchi della Timeline.
 - Corretto un bug per cui cliccando, trascinando o muovendo il mouse dentro la Timeline il testo delle etichette (nomi app, titoli) poteva rimanere selezionato come un normale testo.
 - Watcher personalizzati: eliminare un watcher ora elimina anche il modulo collegato in Home, che prima restava vuoto per sempre.
 - Corretto un bug per cui l'opzione "app sempre attive" (Impostazioni) non funzionava per app il cui eseguibile non è tutto minuscolo (es. Excel/EXCEL.EXE) — il confronto ora ignora maiuscole/minuscole.
@@ -23,10 +22,9 @@ Non toccare questo formato senza aggiornare anche quel parser.
 
 ### en
 - Completely redesigned Screenshot section: the photo summary in a block's detail, the gallery ("Chronological"/"By window" tabs) and the full-screen viewer all have a cleaner design now, with a new draggable timeline at the bottom of the viewer to quickly jump between photos.
-- In the full-screen viewer, stretches with no screenshot now show the real app that was focused at that moment instead of "Unknown" — only there: the tabbed/thumbnail gallery still shows only the selected app's own titles.
-- Data export/import: the "Absence History" section now actually exports the recorded presence/absence periods (not just the watcher's configuration), and is re-imported correctly without duplicating anything if run again.
+- **New feature**: Data export/import (Watchers page) — take to another PC (or keep as a backup) tracked events, general settings, projects, Home modules and layout, recognized app icons/names, and AFK history (when and how long you were away), choosing which sections to include; screenshots are always excluded (too heavy). Re-importing avoids duplicates even if run more than once.
 - Fixed a bug where, in Home, clicking a title in the "Claude Usage" module always selected the entire Claude lane in the Timeline instead of just the clicked title.
-- The "shape of the day" bar above the Timeline now enlarges and shows a popup with the start/end time on hover, just like Timeline blocks; also fixed two minor bugs: hover didn't work over the lunch-break band, and sometimes only part of what looked like one continuous bar would enlarge.
+- The AFK bar above the Timeline (the day's presence/absence shape) now enlarges and shows a popup with the start/end time on hover, just like Timeline blocks.
 - Fixed a bug where clicking, dragging or moving the mouse inside the Timeline could leave label text (app names, titles) selected like ordinary text.
 - Custom watchers: deleting a watcher now also deletes its linked Home module, which used to stay empty forever.
 - Fixed a bug where the "always active apps" option (Settings) didn't work for apps whose executable isn't all lowercase (e.g. Excel/EXCEL.EXE) — the comparison is now case-insensitive.
