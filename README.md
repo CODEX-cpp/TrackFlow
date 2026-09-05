@@ -8,6 +8,8 @@
   [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-3178c6)](LICENSE.txt)
   [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](#)
   [![Latest release](https://img.shields.io/github/v/release/CODEX-cpp/TrackFlow?label=release)](https://github.com/CODEX-cpp/TrackFlow/releases/latest)
+  [![Downloads](https://img.shields.io/github/downloads/CODEX-cpp/TrackFlow/total?label=downloads)](https://github.com/CODEX-cpp/TrackFlow/releases)
+  [![Website](https://img.shields.io/badge/website-codex--cpp.github.io%2FTrackFlow-3178c6)](https://codex-cpp.github.io/TrackFlow/)
   [![Fork of ActivityWatch](https://img.shields.io/badge/fork%20of-ActivityWatch-e67635)](https://activitywatch.net/)
 </div>
 
