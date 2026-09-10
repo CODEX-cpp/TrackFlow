@@ -176,9 +176,12 @@ export default {
       if (this.vpnModuleEnabled) {
         integrationsComponents.push({ name: 'VpnMappingSettings' });
       }
-      if (this.voispeedModuleEnabled) {
-        integrationsComponents.push({ name: 'VoiSpeedSettings' });
-      }
+      // VoiSpeed disattivato in questa versione (vedi CHANGELOG 0.1.26):
+      // la card resta SEMPRE visibile per mostrare l'avviso e il pulsante
+      // "Collega" disabilitato — VoiSpeedSettings.vue gestisce da sé lo
+      // stato disabilitato. Rimettere `if (this.voispeedModuleEnabled)`
+      // quando la feature verrà riabilitata.
+      integrationsComponents.push({ name: 'VoiSpeedSettings' });
       integrationsComponents.push({ name: 'AiAgentSettings' });
       groups.push(
         {

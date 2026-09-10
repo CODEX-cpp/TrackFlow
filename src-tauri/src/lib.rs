@@ -206,6 +206,16 @@ fn load_modules_config(app_data_dir: &Path) -> HashMap<String, bool> {
         );
         map.entry((*name).to_string()).or_insert(default_attivo);
     }
+    // Disattivato forzatamente in questa versione (vedi CHANGELOG 0.1.26):
+    // un problema ne compromette l'affidabilità. Sovrascrive qualunque
+    // valore salvato — chi lo aveva acceso se lo ritrova spento — e lo
+    // riscrive su disco, così anche la webui (che rilegge il file, vedi
+    // util/modulesConfig.ts) lo vede spento. Rimuovere questo blocco per
+    // riabilitare la feature.
+    if map.get("aw-watcher-voispeed") != Some(&false) {
+        map.insert("aw-watcher-voispeed".to_string(), false);
+        save_modules_config(app_data_dir, &map);
+    }
     map
 }
 
@@ -1773,13 +1783,17 @@ pub fn run() {
             let mut module_items: HashMap<String, CheckMenuItem<tauri::Wry>> = HashMap::new();
             let mut module_item_list: Vec<CheckMenuItem<tauri::Wry>> = Vec::new();
             for (name, label_it, label_en) in ALL_MODULES {
-                let checked = *modules_config.get(*name).unwrap_or(&true);
+                // VoiSpeed disattivato in questa versione (vedi CHANGELOG
+                // 0.1.26): voce sempre spenta e non cliccabile finché la
+                // feature non verrà riabilitata.
+                let voispeed_off = *name == "aw-watcher-voispeed";
+                let checked = !voispeed_off && *modules_config.get(*name).unwrap_or(&true);
                 let label = if lingua_tray == "en" { *label_en } else { *label_it };
                 let item = CheckMenuItem::with_id(
                     app,
                     format!("module:{name}"),
                     label,
-                    true,
+                    !voispeed_off,
                     checked,
                     None::<&str>,
                 )?;
@@ -1807,6 +1821,12 @@ pub fn run() {
                     let id = event.id.as_ref();
 
                     if let Some(module_name) = id.strip_prefix("module:") {
+                        // VoiSpeed disattivato in questa versione — la voce
+                        // è già non cliccabile, questo è solo un guscio in
+                        // più (es. invocazione da devtools).
+                        if module_name == "aw-watcher-voispeed" {
+                            return;
+                        }
                         let new_value = {
                             let config_state = app.state::<ModulesConfigState>();
                             let current = *config_state.0.lock().unwrap().get(module_name).unwrap_or(&true);

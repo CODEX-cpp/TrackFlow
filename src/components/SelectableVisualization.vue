@@ -34,6 +34,8 @@ div.vis-card(v-if="visibile")
                  :title="visualizations[type].title",
                  highlightable
                  :highlighted-key="highlightStore.highlightedKey"
+                 :detail-context="detailContext"
+                 :day-range="usage_query_range"
                  @select="onSelectRow"
                  with_limit)
     div(v-if="type == 'top_titles' && !activityStore.android.available")
@@ -47,6 +49,8 @@ div.vis-card(v-if="visibile")
                  :title="visualizations[type].title",
                  highlightable
                  :highlighted-key="highlightStore.highlightedTitle"
+                 :detail-context="detailContext"
+                 :day-range="usage_query_range"
                  @select="onSelectTitleRow"
                  with_limit)
     div(v-if="type == 'top_domains'")
@@ -104,6 +108,8 @@ div.vis-card(v-if="visibile")
                  :title="visualizations[type].title",
                  highlightable
                  :highlighted-key="highlightStore.highlightedKey"
+                 :detail-context="detailContext"
+                 :day-range="usage_query_range"
                  @select="onSelectRow"
                  with_limit)
     div(v-if="type == 'top_voispeed_contacts'")
@@ -389,6 +395,45 @@ export default {
     };
   },
   computed: {
+    // Contesto per il pannello di dettaglio a destra della lista "Vedi
+    // elenco completo" (TopSummary.vue): quale corsia/bucket interrogare
+    // e quali campi dell'evento grezzo usano il modulo per la chiave e
+    // per il titolo delle occorrenze. null = nessun dettaglio per questo
+    // tipo (rimane la sola lista, come prima). Coperti i moduli le cui
+    // righe usano un campo grezzo dell'evento come nome (title/app/file)
+    // e che hanno un legame sensato con gli screenshot; VPN/VoiSpeed/
+    // editor/Claude restano da fare a parte (nomi trasformati o nessun
+    // legame foto).
+    detailContext: function () {
+      switch (this.type) {
+        case 'top_apps':
+          return {
+            laneKey: 'general',
+            laneName: this.$t('home.timeline.laneGeneral'),
+            bucket: 'aw-watcher-window',
+            keyField: 'app',
+            titleField: 'title',
+          };
+        case 'top_titles':
+          return {
+            laneKey: 'general',
+            laneName: this.$t('home.timeline.laneGeneral'),
+            bucket: 'aw-watcher-window',
+            keyField: 'title',
+            titleField: 'title',
+          };
+        case 'top_excel_files':
+          return {
+            laneKey: 'excel',
+            laneName: this.$t('home.timeline.laneExcel'),
+            bucket: 'aw-watcher-excel',
+            keyField: 'file',
+            titleField: 'file',
+          };
+        default:
+          return null;
+      }
+    },
     visualizations: function () {
       return {
         top_apps: {

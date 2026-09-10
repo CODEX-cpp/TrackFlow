@@ -2564,6 +2564,20 @@ export default {
     // matching instead of comparing individual block keys.
     highlightMatchesLaneByProcessName(lane: Lane): boolean {
       if (!this.highlightedKey) return false;
+      // Una riga di "Titoli finestra principali" / "File editor
+      // principali" porta con sé un titolo/file SPECIFICO
+      // (highlightedTitle / highlightedFile) accanto al nome grezzo del
+      // processo in highlightedKey: l'utente ha scelto UN titolo, non
+      // l'intera app. Il fallback sul nome processo qui sotto
+      // (isClaudeAppName/isVSCodeApp/isExcelApp) serve SOLO al caso "app
+      // intera da Applicazioni principali", dove highlightedKey è l'unica
+      // cosa impostata. Bug reale segnalato dall'utente: con due file
+      // Excel aperti, cliccare un singolo titolo in "Titoli finestra
+      // principali" illuminava TUTTA la corsia Excel invece del solo file
+      // di quel titolo (isExcelApp("EXCEL.EXE") → true → intera corsia).
+      // Il match preciso per quel caso è gestito in shouldDimBlock/
+      // isBlockSelected (Excel: per nome file ricavato dal titolo).
+      if (this.highlightedTitle || this.highlightedFile) return false;
       // Se la chiave combacia ESATTAMENTE con la key di un blocco vero
       // di questa corsia, è già una selezione precisa (es. dal modulo
       // "Uso Claude"/Top Editor Projects, che chiavano già come la
@@ -2599,6 +2613,17 @@ export default {
     shouldDimBlock(lane: Lane, block: Block): boolean {
       if (!this.highlightedKey) return false;
       if (this.highlightMatchesLaneByProcessName(lane)) return false;
+      // Excel + click su una riga di "Titoli finestra principali": il
+      // titolo grezzo ("Dettagli spese.xlsx - Excel (…)") non combacia
+      // mai con highlightedKey ("EXCEL.EXE"), e i blocchi della corsia
+      // Excel sono chiavati per NOME FILE. Ricava il file dal titolo con
+      // la stessa funzione del watcher e attenua tutti i blocchi tranne
+      // quello di quel file (gli altri file aperti restano attenuati) —
+      // vedi bug: prima si illuminava l'intera corsia.
+      if (lane.key === 'excel' && this.highlightedTitle) {
+        const file = nomeFileDaTitoloExcel(this.highlightedTitle);
+        return !file || block.key !== file;
+      }
       if (block.key !== this.highlightedKey) return true;
       if (lane.key === 'general') return !!this.highlightedTitle;
       if (lane.key === 'vscode') return !!this.highlightedFile;
@@ -2620,6 +2645,12 @@ export default {
     isBlockSelected(lane: Lane, block: Block): boolean {
       if (!this.highlightedKey) return false;
       if (this.highlightMatchesLaneByProcessName(lane)) return true;
+      // Excel + titolo selezionato: il match è per nome file (vedi
+      // shouldDimBlock), non block.key === highlightedKey — il blocco non
+      // attenuato è quello del file di quel titolo.
+      if (lane.key === 'excel' && this.highlightedTitle) {
+        return !this.shouldDimBlock(lane, block);
+      }
       return block.key === this.highlightedKey && !this.shouldDimBlock(lane, block);
     },
     // Re-lays out already-fetched blocks for the new zoom level

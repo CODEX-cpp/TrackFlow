@@ -42,6 +42,16 @@ const CLIENT_NAME: &str = "trackflow-voispeed";
 const LOGIN_POLL_INTERVAL_SECONDS: u64 = 2;
 const LOGIN_POLL_TIMEOUT_SECONDS: u64 = 600;
 
+/// Timeout del rinnovo automatico (finestra NASCOSTA, login col solo
+/// cookie "ricordami"): o la pagina espone il token in pochi secondi o
+/// non lo farà mai. I 600s sopra servono solo al primo login manuale,
+/// dove serve tempo per digitare le credenziali. Bug reale: al timeout
+/// lungo la finestra nascosta restava viva 10 minuti su 30 a caricare
+/// la SPA di VoiSpeed (+ connessione SSE) sui portatili dove il cookie
+/// era scaduto — un processo WebView2 in più che arrivava a divorare
+/// ~4 GB di RAM.
+const RENEW_POLL_TIMEOUT_SECONDS: u64 = 45;
+
 /// Ogni quanto interrogare di nuovo l'elenco chiamate una volta connessi.
 /// Alzato da 5 a 30 minuti — richiesta esplicita dell'utente, bug reale:
 /// ogni giro riesegue per pochi secondi la pagina VERA di VoiSpeed (vedi
@@ -159,12 +169,25 @@ fn estrai_identita_da_html(html: &str) -> Option<(String, VoiSpeedIdentity)> {
 /// canale IPC dedicato in questa finestra separata (che carica un sito
 /// esterno, non la nostra webui).
 const EXTRACT_MARKER: &str = "VOISPEED_HTML_READY::";
+// Prima scandisce solo il testo degli <script> (cheap) per la stringa
+// `Controller(`; serializza l'intero DOM (`outerHTML`, costoso su una
+// SPA pesante come quella di VoiSpeed) UNA SOLA volta, e solo quando il
+// marcatore c'è davvero. Prima lo serializzava ad OGNI giro di polling
+// (ogni 2-3s), inutile finché la pagina non era pronta — spreco di
+// CPU/memoria nella finestra nascosta del rinnovo automatico.
 const EXTRACT_JS: &str = r#"
 (function() {
     try {
-        var html = document.documentElement.outerHTML;
-        if (html.indexOf('Controller(') !== -1) {
-            document.title = "VOISPEED_HTML_READY::" + encodeURIComponent(html);
+        var found = false;
+        var scripts = document.getElementsByTagName('script');
+        for (var i = 0; i < scripts.length; i++) {
+            if ((scripts[i].textContent || '').indexOf('Controller(') !== -1) { found = true; break; }
+        }
+        if (!found && document.body && document.body.innerHTML.indexOf('Controller(') !== -1) {
+            found = true;
+        }
+        if (found) {
+            document.title = "VOISPEED_HTML_READY::" + encodeURIComponent(document.documentElement.outerHTML);
         }
     } catch (e) {}
 })();
@@ -227,12 +250,19 @@ async fn ottieni_token_fresco(app_handle: &AppHandle, visible: bool) -> Option<(
     }
 
     let start = std::time::Instant::now();
-    let timeout = std::time::Duration::from_secs(LOGIN_POLL_TIMEOUT_SECONDS);
+    // Timeout corto per il rinnovo nascosto, lungo solo per il primo
+    // login manuale (vedi RENEW_POLL_TIMEOUT_SECONDS).
+    let timeout = std::time::Duration::from_secs(if visible {
+        LOGIN_POLL_TIMEOUT_SECONDS
+    } else {
+        RENEW_POLL_TIMEOUT_SECONDS
+    });
+    let mut risultato: Option<(String, VoiSpeedIdentity)> = None;
     while start.elapsed() < timeout {
         tokio::time::sleep(std::time::Duration::from_secs(LOGIN_POLL_INTERVAL_SECONDS)).await;
 
         if app_handle.state::<Arc<VoiSpeedState>>().login_window_closed.load(Ordering::SeqCst) {
-            return None;
+            break;
         }
 
         let app_handle_for_poll = app_handle.clone();
@@ -259,33 +289,30 @@ async fn ottieni_token_fresco(app_handle: &AppHandle, visible: bool) -> Option<(
         let Ok(html) = urlencoding_decode(encoded) else {
             continue;
         };
-        if let Some((token, identity)) = estrai_identita_da_html(&html) {
-            // CHIUDE la finestra (non solo `.hide()`) appena estratto il
-            // token — bug reale segnalato dall'utente: "quando faccio il
-            // login mi disconnette dall'app VoiSpeed desktop". VoiSpeed
-            // applica lato server una regola "una sola sessione live per
-            // account": nascondere la finestra lascia comunque la pagina
-            // vera in esecuzione in background (stessa connessione SSE
-            // aperta di un browser reale), quindi per TUTTO il tempo in
-            // cui TrackFlow resta collegato quella sessione nascosta
-            // competeva continuamente con la sessione dell'app desktop,
-            // non solo per un istante durante il rinnovo. Chiudendo la
-            // finestra invece di nasconderla, la pagina reale (e la sua
-            // connessione SSE) esiste solo per i pochi secondi necessari
-            // a leggere il token ad ogni giro di rinnovo — molto meno
-            // occasioni di conflitto, non zero (l'unica soluzione a zero
-            // conflitti richiederebbe di non eseguire mai la pagina vera,
-            // che è esattamente il meccanismo di bypass scartato per
-            // motivi di autorizzazione, vedi BLUEPRINT.md).
-            if !visible {
-                if let Some(window) = app_handle.get_webview_window("voispeed_auth") {
-                    let _ = window.close();
-                }
-            }
-            return Some((token, identity));
+        if let Some(pair) = estrai_identita_da_html(&html) {
+            risultato = Some(pair);
+            break;
         }
     }
-    None
+
+    // CHIUDE SEMPRE la finestra nascosta del rinnovo automatico (non
+    // solo quando il token è stato estratto): al timeout/errore restava
+    // aperta all'infinito a caricare la SPA di VoiSpeed (+ connessione
+    // SSE, + polling JS) — un processo WebView2 in più che sui portatili
+    // col cookie "ricordami" scaduto arrivava a divorare ~4 GB di RAM
+    // (bug reale segnalato dall'utente). Serve anche per il motivo
+    // originale: VoiSpeed applica "una sola sessione live per account",
+    // quindi la pagina vera va tenuta in esecuzione il minimo
+    // indispensabile per leggere il token. La finestra VISIBILE del
+    // primo login la chiude il chiamante (voispeed_connect) dopo aver
+    // mostrato l'eventuale errore, così l'utente può leggerlo.
+    if !visible {
+        if let Some(window) = app_handle.get_webview_window("voispeed_auth") {
+            let _ = window.close();
+        }
+    }
+
+    risultato
 }
 
 /// Piccolo decoder percent-encoding senza aggiungere una dipendenza
@@ -563,6 +590,16 @@ pub fn ferma_polling(app_handle: &AppHandle) {
     let state = app_handle.state::<Arc<VoiSpeedState>>();
     state.polling_enabled.store(false, Ordering::SeqCst);
     state.polling_wake.notify_one();
+    // Chiude anche la finestra WebView2 nascosta del rinnovo se in quel
+    // momento è aperta — bug reale segnalato dall'utente: spegnere il
+    // modulo VoiSpeed dalla tray fermava il ciclo ma NON liberava quella
+    // finestra (SPA VoiSpeed + SSE, ~2,5 GB di RAM), che restava viva
+    // finché non si riavviava l'app. Chiuderla qui fa anche uscire
+    // subito un eventuale `ottieni_token_fresco` in corso (il suo
+    // handler CloseRequested imposta `login_window_closed`).
+    if let Some(window) = app_handle.get_webview_window("voispeed_auth") {
+        let _ = window.close();
+    }
 }
 
 /// Usato dal pannello "Stato watcher" (Impostazioni → Sviluppatore) per
@@ -580,7 +617,17 @@ pub fn is_polling_running(app_handle: &AppHandle) -> bool {
 /// finestra di login VISIBILE, aspetta che l'utente completi il login
 /// nella pagina vera, poi avvia il ciclo di polling.
 #[tauri::command]
-pub async fn voispeed_connect(app_handle: AppHandle) -> Result<(), String> {
+pub async fn voispeed_connect(_app_handle: AppHandle) -> Result<(), String> {
+    // Modulo VoiSpeed disattivato in questa versione (vedi CHANGELOG
+    // 0.1.26): il pulsante "Collega VoiSpeed" è già disabilitato lato
+    // UI, questo rifiuto è la barriera vera se il comando viene invocato
+    // comunque (es. da devtools). Rimuovere quando la feature verrà
+    // riabilitata.
+    Err("Il modulo VoiSpeed è disattivato in questa versione.".to_string())
+}
+
+#[allow(dead_code)]
+async fn voispeed_connect_impl(app_handle: AppHandle) -> Result<(), String> {
     {
         let state = app_handle.state::<Arc<VoiSpeedState>>();
         let mut status = state.status.lock().unwrap();
@@ -640,7 +687,15 @@ pub async fn voispeed_connect(app_handle: AppHandle) -> Result<(), String> {
 /// ciclo periodico — nessun accesso diretto al datastore o ai comandi da
 /// duplicare qui.
 #[tauri::command]
-pub async fn voispeed_refresh_check(app_handle: AppHandle) -> Result<(), String> {
+pub async fn voispeed_refresh_check(_app_handle: AppHandle) -> Result<(), String> {
+    // Modulo VoiSpeed disattivato in questa versione (vedi CHANGELOG
+    // 0.1.26) — non aprire nessun giro di rinnovo (che ricaricherebbe la
+    // finestra WebView2 nascosta). Rimuovere quando riabilitato.
+    Err("Il modulo VoiSpeed è disattivato in questa versione.".to_string())
+}
+
+#[allow(dead_code)]
+async fn voispeed_refresh_check_impl(app_handle: AppHandle) -> Result<(), String> {
     let identity = {
         let state = app_handle.state::<Arc<VoiSpeedState>>();
         let guard = state.identity.lock().unwrap();

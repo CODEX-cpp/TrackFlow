@@ -4,34 +4,44 @@ div
     div
       div.settings-row-title {{ $t('settings.voispeed.title') }}
       div.settings-row-help {{ $t('settings.voispeed.help') }}
-    div.pill-btn(
-      v-if="!status.connected"
-      @click="!status.connecting && connect()"
-      :class="{ 'pill-btn-disabled': status.connecting }"
-    )
-      | {{ status.connecting ? $t('settings.voispeed.connecting') : $t('settings.voispeed.connect') }}
-    div.voispeed-connected-actions(v-else)
-      button.voispeed-refresh-btn(
-        type="button"
-        @click="!refreshing && forceCheck()"
-        :disabled="refreshing"
-        :title="$t('settings.voispeed.refreshTitle')"
+    //- Modulo disattivato in questa versione (vedi CHANGELOG 0.1.26):
+    //- pulsante "Collega" sempre disabilitato. Il resto della UI (stato,
+    //- azioni da connesso) è nascosto: MODULO_DISABILITATO sotto.
+    div.pill-btn.pill-btn-disabled(v-if="moduloDisabilitato")
+      | {{ $t('settings.voispeed.connect') }}
+    template(v-else)
+      div.pill-btn(
+        v-if="!status.connected"
+        @click="!status.connecting && connect()"
+        :class="{ 'pill-btn-disabled': status.connecting }"
       )
-        icon(name="sync" :class="{ 'voispeed-refresh-spin': refreshing }")
-        | {{ refreshing ? $t('settings.voispeed.refreshing') : $t('settings.voispeed.refresh') }}
-      div.pill-btn-ghost(@click="disconnect()")
-        | {{ $t('settings.voispeed.disconnect') }}
+        | {{ status.connecting ? $t('settings.voispeed.connecting') : $t('settings.voispeed.connect') }}
+      div.voispeed-connected-actions(v-else)
+        button.voispeed-refresh-btn(
+          type="button"
+          @click="!refreshing && forceCheck()"
+          :disabled="refreshing"
+          :title="$t('settings.voispeed.refreshTitle')"
+        )
+          icon(name="sync" :class="{ 'voispeed-refresh-spin': refreshing }")
+          | {{ refreshing ? $t('settings.voispeed.refreshing') : $t('settings.voispeed.refresh') }}
+        div.pill-btn-ghost(@click="disconnect()")
+          | {{ $t('settings.voispeed.disconnect') }}
 
-  div.settings-row-help.voispeed-hint(v-if="!status.connected && !status.connecting")
-    | {{ $t('settings.voispeed.loginHint') }}
+  div.settings-alert.settings-alert-warning(v-if="moduloDisabilitato")
+    | {{ $t('settings.voispeed.disabledNotice') }}
 
-  div.settings-alert.settings-alert-danger(v-if="status.last_error") {{ status.last_error }}
+  template(v-else)
+    div.settings-row-help.voispeed-hint(v-if="!status.connected && !status.connecting")
+      | {{ $t('settings.voispeed.loginHint') }}
 
-  div.voispeed-status
-    span.voispeed-status-dot(:class="{ 'voispeed-status-dot-on': status.connected }")
-    span {{ status.connected ? $t('settings.voispeed.statusConnected') : $t('settings.voispeed.statusNotConnected') }}
-    span.voispeed-status-sync(v-if="status.connected")
-      | — {{ $t('settings.voispeed.lastSync') }}: {{ lastSyncDisplay }}
+    div.settings-alert.settings-alert-danger(v-if="status.last_error") {{ status.last_error }}
+
+    div.voispeed-status
+      span.voispeed-status-dot(:class="{ 'voispeed-status-dot-on': status.connected }")
+      span {{ status.connected ? $t('settings.voispeed.statusConnected') : $t('settings.voispeed.statusNotConnected') }}
+      span.voispeed-status-sync(v-if="status.connected")
+        | — {{ $t('settings.voispeed.lastSync') }}: {{ lastSyncDisplay }}
 </template>
 
 <script lang="ts">
@@ -49,6 +59,11 @@ function emptyStatus(): VoiSpeedStatus {
   return { connected: false, connecting: false, last_error: null, last_sync: null };
 }
 
+// Modulo VoiSpeed disattivato in questa versione — vedi CHANGELOG 0.1.26
+// e i controlli lato Rust (load_modules_config / voispeed_connect in
+// src-tauri). Rimettere a false per riabilitare la UI.
+const MODULO_DISABILITATO = true;
+
 export default {
   name: 'VoiSpeedSettings',
   data() {
@@ -56,6 +71,7 @@ export default {
       status: emptyStatus() as VoiSpeedStatus,
       pollHandle: null as ReturnType<typeof setInterval> | null,
       refreshing: false,
+      moduloDisabilitato: MODULO_DISABILITATO,
     };
   },
   computed: {
@@ -68,6 +84,7 @@ export default {
     },
   },
   async mounted() {
+    if (this.moduloDisabilitato) return;
     await this.refreshStatus();
     // Il collegamento/la sincronizzazione avvengono lato Rust, fuori dal
     // controllo diretto di questo componente — un poll leggero tiene lo

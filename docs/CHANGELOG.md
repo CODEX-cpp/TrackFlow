@@ -5,6 +5,20 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.26
+
+### it
+- Il modulo VoiSpeed è stato disattivato in questa versione per un problema che ne compromette l'affidabilità. Chi lo aveva attivo se lo ritroverà disattivato e il pulsante di attivazione non è disponibile. Verrà riabilitato una volta risolto.
+- Novità: nella lista "Vedi elenco completo" dei moduli Applicazioni principali, Titoli finestra principali e File Excel principali, cliccando una voce si apre di fianco lo stesso popup di dettaglio della Timeline (foto, orari, elenco cronologico "durante questo blocco"); i due popup restano affiancati e cliccando altre voci cambia solo il contenuto del dettaglio, senza chiudere e riaprire.
+- Corretto un bug per cui, con più file Excel aperti, cliccare un singolo titolo Excel in "Titoli finestra principali" evidenziava tutta la corsia Excel nella Timeline invece del solo file di quel titolo.
+- Corretto un bug grafico per cui il popup "Vedi elenco completo" di un modulo Home poteva aprirsi fuori posto e sovrapposto agli altri moduli quando il modulo era già espanso.
+
+### en
+- The VoiSpeed module has been turned off in this version due to an issue affecting its reliability. If you had it enabled it will now be disabled, and the enable button is unavailable. It will be re-enabled once the issue is fixed.
+- New: in the "See full list" popup of the Top Applications, Top Window Titles and Top Excel Files modules, clicking a row opens the same detail popup as the Timeline right beside it (screenshots, times, the chronological "during this block" list); the two popups stay side by side, and clicking other rows just swaps the detail content instead of closing and reopening.
+- Fixed a bug where, with multiple Excel files open, clicking a single Excel window title in "Top Window Titles" highlighted the whole Excel lane in the Timeline instead of just that title's file.
+- Fixed a visual bug where a Home module's "See full list" popup could open misplaced and overlapping the other modules when the module was already expanded.
+
 ## 0.1.25
 
 ### it

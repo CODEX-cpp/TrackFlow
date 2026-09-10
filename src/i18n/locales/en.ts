@@ -165,6 +165,8 @@ export default {
       refresh: 'Refresh',
       refreshing: 'Checking…',
       refreshTitle: 'Force a connection check now',
+      disabledNotice:
+        'The VoiSpeed module is turned off in this version due to an issue affecting its reliability. It will be re-enabled once the issue is fixed.',
     },
     vpnMapping: {
       title: 'VPN → client mapping',

@@ -167,6 +167,8 @@ export default {
       refresh: 'Aggiorna',
       refreshing: 'Verifica in corso…',
       refreshTitle: 'Forza subito una verifica del collegamento',
+      disabledNotice:
+        'Il modulo VoiSpeed è disattivato in questa versione per un problema che ne compromette l\'affidabilità. Verrà riabilitato una volta risolto.',
     },
     vpnMapping: {
       title: 'Mapping VPN → cliente',

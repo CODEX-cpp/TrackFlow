@@ -32,34 +32,64 @@ div.top-summary
         div.top-summary-show-more(@click="onShowMoreClick") {{ expanded ? $t('visualizations.topSummary.fullList') : $t('visualizations.topSummary.showDetails') }}
         div.top-summary-show-more(v-if="expanded" @click="onShowLessClick") {{ $t('visualizations.topSummary.showLess') }}
 
-  div.modal-backdrop(v-if="showAllModal" @click="showAllModal = false")
-  div.edit-modal.top-summary-modal(v-if="showAllModal")
-    div.edit-modal-title {{ title || $t('visualizations.topSummary.fullListTitle') }}
-    div.top-summary-modal-list.themed-scroll
-      component(
-        v-for="(e, i) in fields"
-        :key="namefunc(e)"
-        :is="linkfunc(e) ? 'a' : 'div'"
-        :href="linkfunc(e) || undefined"
-        class="top-summary-row"
-        :title="hoverfunc ? hoverfunc(e) : namefunc(e)"
+  //- Spostato in fondo a <body> quando aperto (vedi watch showAllModal):
+  //- ogni card modulo in Home è position:absolute + transform:translate
+  //- (HomeModulesSection.vue), e un transform su un antenato rende
+  //- position:fixed relativo a QUELLA card invece che al viewport — il
+  //- popup "Vedi elenco completo" finiva ancorato al modulo, ingrandito
+  //- e scavalcato dagli altri (bug grafico segnalato dall'utente).
+  div.top-summary-fulllist-portal(ref="fullListPortal")
+    div.modal-backdrop(v-if="showAllModal" @click="showAllModal = false")
+    //- I due popup stanno in un contenitore flex centrato: da soli il
+    //- popup lista è al centro; cliccando una voce compare a destra il
+    //- popup di dettaglio e la coppia si ri-centra (la lista "scivola" a
+    //- sinistra). Restano entrambi aperti — cliccare un'altra voce
+    //- cambia solo i dati del popup di dettaglio (stesso componente,
+    //- niente apri/chiudi). Un solo backdrop dietro entrambi.
+    div.top-summary-stack(v-if="showAllModal")
+      div.edit-modal.top-summary-modal.top-summary-modal-inline
+        div.edit-modal-title {{ title || $t('visualizations.topSummary.fullListTitle') }}
+        div.top-summary-modal-list.themed-scroll
+          component(
+            v-for="(e, i) in fields"
+            :key="namefunc(e)"
+            :is="linkfunc(e) ? 'a' : 'div'"
+            :href="linkfunc(e) || undefined"
+            class="top-summary-row"
+            :class="{ 'top-summary-row-clickable': !!detailContext, 'top-summary-row-selected': detailRow && namefunc(detailRow) === namefunc(e) }"
+            :title="hoverfunc ? hoverfunc(e) : namefunc(e)"
+            @click="onFullRowClick(e)"
+          )
+            div.top-summary-row-main
+              div.top-summary-icon(v-if="iconUrlFunc || iconfunc")
+                img.top-summary-icon-img(
+                  v-if="iconUrlFunc && !failedIcons[namefunc(e)]"
+                  :src="iconUrlFunc(e)"
+                  @error="markIconFailed(namefunc(e))"
+                  alt=""
+                )
+                span(v-else) {{ iconfunc ? iconfunc(e) : '🗔' }}
+              div.top-summary-dot(v-else :style="{ backgroundColor: colorFor(e) }")
+              div.top-summary-name {{ displayfunc ? displayfunc(e) : namefunc(e) }}
+              div.top-summary-value {{ formatHoursMinutes(e.duration) }}
+            div.top-summary-track
+              div.top-summary-bar(:style="{ width: pct(e) + '%', backgroundColor: colorFor(e) }")
+        div.edit-modal-actions
+          div.pill-btn-ghost(@click="showAllModal = false") {{ $t('visualizations.topSummary.close') }}
+
+      //- Popup di dettaglio affiancato — stesso componente della Timeline
+      //- in modalità `inline` (nessun backdrop proprio, nessuna
+      //- centratura: è un figlio del flex qui sopra). Cambiare voce nella
+      //- lista aggiorna solo le sue prop, l'istanza non viene rimontata.
+      timeline-block-detail-modal(
+        v-if="detailRow && detailBlock"
+        inline
+        :block="detailBlock"
+        :lane-name="detailContext.laneName"
+        :lane-key="detailContext.laneKey"
+        :auto-occurrences="detailAutoOcc"
+        @close="detailRow = null"
       )
-        div.top-summary-row-main
-          div.top-summary-icon(v-if="iconUrlFunc || iconfunc")
-            img.top-summary-icon-img(
-              v-if="iconUrlFunc && !failedIcons[namefunc(e)]"
-              :src="iconUrlFunc(e)"
-              @error="markIconFailed(namefunc(e))"
-              alt=""
-            )
-            span(v-else) {{ iconfunc ? iconfunc(e) : '🗔' }}
-          div.top-summary-dot(v-else :style="{ backgroundColor: colorFor(e) }")
-          div.top-summary-name {{ displayfunc ? displayfunc(e) : namefunc(e) }}
-          div.top-summary-value {{ formatHoursMinutes(e.duration) }}
-        div.top-summary-track
-          div.top-summary-bar(:style="{ width: pct(e) + '%', backgroundColor: colorFor(e) }")
-    div.edit-modal-actions
-      div.pill-btn-ghost(@click="showAllModal = false") {{ $t('visualizations.topSummary.close') }}
 </template>
 
 <style lang="scss" scoped>
@@ -194,11 +224,35 @@ a.top-summary-row:hover {
   filter: brightness(1.15);
 }
 
+// Contenitore dei due popup affiancati, centrato sul viewport: da solo
+// il popup lista finisce al centro; con anche il popup di dettaglio la
+// coppia si ri-centra (la lista "scivola" a sinistra). Un solo backdrop
+// dietro entrambi (fuori da qui, .modal-backdrop nel template).
+.top-summary-stack {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 96vw;
+}
+
 .top-summary-modal {
   width: 420px;
   max-height: 75vh;
   display: flex;
   flex-direction: column;
+}
+
+// Dentro lo stack la card della lista è un figlio flex, non un modale a
+// sé: annulla il position:fixed/centratura che .edit-modal (modals.css)
+// le darebbe.
+.top-summary-modal-inline {
+  position: static;
+  transform: none;
 }
 
 .top-summary-modal-list {
@@ -232,11 +286,15 @@ a.top-summary-row:hover {
 // (double the default limit); a second click — once already
 // expanded — opens a popup listing every field instead of expanding
 // further. "Mostra meno" collapses back to the default limit.
+import moment from 'moment';
 import { formatHoursMinutes } from '~/util/projectTime';
 import { colorVarForName } from '~/util/hashColor';
 
 export default {
   name: 'TopSummary',
+  components: {
+    'timeline-block-detail-modal': () => import('~/components/TimelineBlockDetailModal.vue'),
+  },
   props: {
     fields: Array,
     namefunc: Function,
@@ -332,16 +390,57 @@ export default {
       type: Function,
       default: null,
     },
+    // Optional — quando presente, cliccando una riga della lista "Vedi
+    // elenco completo" si apre a destra il pannello di dettaglio (foto +
+    // orari + "durante questo blocco"), lo stesso popup della Timeline.
+    // { laneKey, laneName, bucket, keyField, titleField }. null = lista
+    // sola, come prima. Impostato da SelectableVisualization.vue per i
+    // tipi che hanno un legame chiaro con una corsia/bucket.
+    detailContext: {
+      type: Object,
+      default: null,
+    },
+    // [start, end] (moment) del periodo mostrato — serve a costruire il
+    // "blocco" sintetico dell'intera giornata per la voce cliccata.
+    dayRange: {
+      type: Array,
+      default: null,
+    },
   },
   data() {
     return {
       limit_: this.limit,
       expanded: false,
       showAllModal: false,
+      // Riga della lista completa attualmente aperta nel pannello di
+      // dettaglio a destra (null = pannello chiuso).
+      detailRow: null as any,
       // Keys (namefunc(e)) whose real icon <img> 404'd — switches that
       // row to the emoji fallback instead of a broken-image icon.
       failedIcons: {} as Record<string, boolean>,
     };
+  },
+  watch: {
+    // Porta il contenitore del popup "Vedi elenco completo" in fondo a
+    // <body> quando è aperto (e lo riporta via alla chiusura) — vedi il
+    // commento nel template: senza questo il position:fixed del popup si
+    // ancora alla card del modulo (transform su un antenato) invece che
+    // al viewport, e il popup esce dai bordi scavalcando gli altri
+    // moduli.
+    showAllModal(open: boolean) {
+      if (!open) this.detailRow = null;
+      const p = this.$refs.fullListPortal as HTMLElement | undefined;
+      if (!p) return;
+      if (open) {
+        document.body.appendChild(p);
+      } else if (p.parentNode === document.body) {
+        document.body.removeChild(p);
+      }
+    },
+  },
+  beforeDestroy() {
+    const p = this.$refs.fullListPortal as HTMLElement | undefined;
+    if (p && p.parentNode === document.body) document.body.removeChild(p);
   },
   computed: {
     visibleFields(): any[] {
@@ -349,6 +448,28 @@ export default {
     },
     maxDuration(): number {
       return this.visibleFields.length ? this.visibleFields[0].duration : 1;
+    },
+    // "Blocco" sintetico passato al pannello di dettaglio: copre
+    // l'intera giornata mostrata (dayRange), con chiave = identità
+    // grezza della riga (namefunc). TimelineBlockDetailModal in modalità
+    // autoOccurrences interroga poi il bucket per quell'intervallo.
+    detailBlock(): any {
+      if (!this.detailRow || !this.dayRange || this.dayRange.length < 2) return null;
+      return {
+        key: this.namefunc(this.detailRow),
+        start: moment(this.dayRange[0] as any),
+        end: moment(this.dayRange[1] as any),
+      };
+    },
+    detailAutoOcc(): any {
+      if (!this.detailRow || !this.detailContext) return null;
+      const kf = (this.detailContext as any).keyField;
+      return {
+        bucket: (this.detailContext as any).bucket,
+        keyField: kf,
+        titleField: (this.detailContext as any).titleField || kf,
+        keyValue: this.detailRow.data ? this.detailRow.data[kf] : undefined,
+      };
     },
   },
   methods: {
@@ -381,6 +502,15 @@ export default {
       } else {
         this.$emit('select', this.namefunc(e));
       }
+    },
+    // Click su una riga della lista "Vedi elenco completo": apre (o
+    // richiude, se già aperta su quella stessa voce) il pannello di
+    // dettaglio a destra. Nessun effetto se il tipo non ha un
+    // detailContext.
+    onFullRowClick(e: any) {
+      if (!this.detailContext) return;
+      const same = this.detailRow && this.namefunc(this.detailRow) === this.namefunc(e);
+      this.detailRow = same ? null : e;
     },
     markIconFailed(key: string) {
       this.$set(this.failedIcons, key, true);

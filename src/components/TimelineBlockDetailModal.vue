@@ -1,7 +1,7 @@
 <template lang="pug">
 div
-  div.modal-backdrop(@click="$emit('close')")
-  div.edit-modal.block-detail-modal.themed-scroll(:class="{ 'block-detail-modal-wide': occurrencesTimeline.length }")
+  div.modal-backdrop(v-if="!inline" @click="$emit('close')")
+  div.edit-modal.block-detail-modal.themed-scroll(:class="{ 'block-detail-modal-wide': occTimeline.length, 'block-detail-inline': inline }")
     div.edit-modal-title-row
       div.edit-modal-title {{ displayName }}
       // Raggruppati insieme (non due figli separati della riga con
@@ -35,10 +35,10 @@ div
         span.block-detail-value {{ laneName }}
       div.block-detail-row
         span.block-detail-label {{ $t('home.timelineBlockDetail.time') }}
-        span.block-detail-value {{ formatRange(block.start, block.end) }}
+        span.block-detail-value {{ formatRange(rangoVisualizzato.start, rangoVisualizzato.end) }}
       div.block-detail-row
         span.block-detail-label {{ $t('home.timelineBlockDetail.duration') }}
-        span.block-detail-value {{ formatDuration(block.end.diff(block.start, 'seconds')) }}
+        span.block-detail-value {{ formatDuration(rangoVisualizzato.end.diff(rangoVisualizzato.start, 'seconds')) }}
 
     // Riquadro ricapitolativo unico — sostituisce i vecchi pulsanti "N
     // foto" sparsi (uno per vista, e nessuno per la vista raggruppata
@@ -55,7 +55,7 @@ div
         div.block-detail-photos-subtitle {{ photosCardSubtitle }}
       icon.block-detail-photos-chevron(name="angle-right")
 
-    template(v-if="occurrencesTimeline.length")
+    template(v-if="occTimeline.length")
       // Elenco cronologico dentro il SOLO blocco cliccato (non l'intera
       // giornata) — attivo quando non c'è nessuna evidenziazione app
       // già in corso, vedi appInteroSelezionato()/
@@ -65,7 +65,7 @@ div
         span.block-detail-subhead {{ $t('home.timelineBlockDetail.duringThisBlock') }}
       table.block-detail-table.block-detail-timeline-table
         tbody
-          tr(v-for="(occ, i) in occurrencesTimeline" :key="i")
+          tr(v-for="(occ, i) in occTimeline" :key="i")
             td.block-detail-timeline-time {{ occ.start.format('HH:mm') }} – {{ occ.end.format('HH:mm') }}
             td.block-detail-timeline-title {{ occ.title }}
     template(v-else)
@@ -116,6 +116,16 @@ div
 // Excel...) che restano compatte.
 .block-detail-modal-wide {
   width: 720px;
+}
+
+// Popup di dettaglio affiancato alla lista "Vedi elenco completo"
+// (vedi prop `inline`): niente position:fixed/centratura, è un figlio
+// del contenitore flex che tiene i due popup uno accanto all'altro.
+// Tutto il resto del look da riquadro (bordo, ombra, sfondo, padding,
+// max-height con scroll) resta invariato da .edit-modal/.block-detail-modal.
+.block-detail-inline {
+  position: static;
+  transform: none;
 }
 
 .edit-modal-title-row {
@@ -391,6 +401,7 @@ import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '~/util/projectTime';
 import { displayNameForApp } from '~/util/appNames';
+import { mergeEventsByKey } from '~/util/timelineBlocks';
 import { getHomeClient } from '~/util/awclient';
 import { useAiChatContextStore } from '~/stores/aiChatContext';
 
@@ -431,6 +442,20 @@ export default {
     // sia occurrencesByTitle, vedi selectedOccurrencesTimeline() in
     // HomeTimelineSection.vue.
     occurrencesTimeline: { type: Array, default: () => [] },
+    // "in linea" — usato quando il popup di dettaglio è affiancato al
+    // popup "Vedi elenco completo" (TopSummary.vue): stesso aspetto da
+    // riquadro (bordo/ombra/sfondo/padding) ma niente backdrop proprio
+    // né posizionamento fisso/centrato: è un normale figlio del
+    // contenitore flex che affianca i due popup.
+    inline: { type: Boolean, default: false },
+    // Quando presente, il modale si costruisce da solo l'elenco
+    // cronologico "durante questo blocco" interrogando il bucket
+    // indicato per l'intervallo di block.start/end (l'intera giornata,
+    // vedi TopSummary): { bucket, keyField, titleField, keyValue }.
+    // Filtra gli eventi grezzi dove data[keyField] === keyValue e li
+    // fonde per data[titleField]. Sostituisce le prop occurrences*
+    // (che qui non arrivano, TopSummary non conosce le corsie).
+    autoOccurrences: { type: Object, default: null },
   },
   data() {
     return {
@@ -446,6 +471,9 @@ export default {
       // un buco), mai per etichettare le miniature/i gruppi di QUESTA
       // corsia: quelli restano "Sconosciuto" nei buchi, come prima.
       eventiFinestraReale: [] as { app: string; start: moment.Moment; end: moment.Moment }[],
+      // Elenco cronologico ricavato da autoOccurrences (vedi la prop) —
+      // stessa forma di occurrencesTimeline.
+      autoOcc: [] as { title: string; start: moment.Moment; end: moment.Moment }[],
       showGallery: false,
       galleryTitle: '',
       galleryScreenshots: [] as Screenshot[],
@@ -495,10 +523,32 @@ export default {
     // screenshotsFor() qui sotto (usato dalle altre viste) questo non
     // esclude gli screenshot caduti nei micro-buchi tra un'occorrenza e
     // l'altra.
+    // occurrencesTimeline "effettivo": la prop quando arriva dalla
+    // Timeline, oppure l'elenco che il modale si è costruito da solo in
+    // modalità autoOccurrences (vedi caricaAutoOccorrenze).
+    occTimeline(): { title: string; start: moment.Moment; end: moment.Moment }[] {
+      return this.autoOccurrences
+        ? this.autoOcc
+        : (this.occurrencesTimeline as { title: string; start: moment.Moment; end: moment.Moment }[]);
+    },
+    // Intervallo mostrato in "Orario"/"Durata". Normalmente è quello del
+    // blocco cliccato in Timeline. In modalità autoOccurrences il
+    // "blocco" è sintetico e largo un giorno intero (serve solo come
+    // finestra per interrogare il bucket) — lì mostra invece l'estremo
+    // reale: dall'inizio della prima occorrenza alla fine dell'ultima.
+    rangoVisualizzato(): { start: moment.Moment; end: moment.Moment } {
+      if (this.autoOccurrences && this.occTimeline.length) {
+        return {
+          start: this.occTimeline[0].start,
+          end: this.occTimeline[this.occTimeline.length - 1].end,
+        };
+      }
+      return { start: this.block.start, end: this.block.end };
+    },
     timelineScreenshots(): Screenshot[] {
-      if (!this.occurrencesTimeline.length) return [];
-      const start = (this.occurrencesTimeline[0] as any).start;
-      const end = (this.occurrencesTimeline[this.occurrencesTimeline.length - 1] as any).end;
+      if (!this.occTimeline.length) return [];
+      const start = (this.occTimeline[0] as any).start;
+      const end = (this.occTimeline[this.occTimeline.length - 1] as any).end;
       return this.screenshots.filter(
         (s: Screenshot) => !s.timestamp.isBefore(start) && s.timestamp.isBefore(end)
       );
@@ -509,7 +559,7 @@ export default {
     // uno per vista/titolo, con un unico punto d'ingresso valido per
     // tutte e tre le viste).
     screenshotsBlocco(): Screenshot[] {
-      return this.occurrencesTimeline.length
+      return this.occTimeline.length
         ? this.timelineScreenshots
         : this.screenshotsFor(this.occurrences);
     },
@@ -517,8 +567,8 @@ export default {
     // sottotitolo del riquadro — 1 quando non c'è nessun raggruppamento
     // per titolo (la vista è già su una sola "finestra" concettuale).
     finestreBlocco(): number {
-      if (this.occurrencesTimeline.length) {
-        return new Set((this.occurrencesTimeline as { title: string }[]).map(o => o.title)).size;
+      if (this.occTimeline.length) {
+        return new Set((this.occTimeline as { title: string }[]).map(o => o.title)).size;
       }
       if (this.occurrencesByTitle.length) {
         return this.occurrencesByTitle.length;
@@ -540,7 +590,11 @@ export default {
         this.showGallery = false;
         this.loadScreenshots();
         this.caricaFinestreReali();
+        this.caricaAutoOccorrenze();
       },
+    },
+    autoOccurrences() {
+      this.caricaAutoOccorrenze();
     },
   },
   methods: {
@@ -614,6 +668,41 @@ export default {
         })
         .reverse();
     },
+    // Modalità autoOccurrences (vedi la prop): interroga il bucket
+    // indicato per l'intera giornata (block.start/end), tiene solo gli
+    // eventi di questa entità (data[keyField] === keyValue) e li fonde
+    // per data[titleField] con la stessa logica della Timeline
+    // (mergeEventsByKey, buchi < 60s uniti) — così il pannello mostra
+    // "durante questo blocco" senza dipendere da HomeTimelineSection.
+    async caricaAutoOccorrenze() {
+      if (!this.autoOccurrences) {
+        this.autoOcc = [];
+        return;
+      }
+      const { bucket, keyField, titleField, keyValue } = this.autoOccurrences as {
+        bucket: string;
+        keyField: string;
+        titleField: string;
+        keyValue: string;
+      };
+      let events: any[] = [];
+      try {
+        events = await getHomeClient().getEvents(bucket, {
+          start: this.block.start.toDate(),
+          end: this.block.end.toDate(),
+          limit: -1,
+        });
+      } catch {
+        events = [];
+      }
+      const rilevanti = events.filter(
+        e => e.data && String(e.data[keyField] ?? '') === String(keyValue ?? '')
+      );
+      const tf = titleField || keyField;
+      this.autoOcc = mergeEventsByKey(rilevanti, e => String((e.data && e.data[tf]) || keyValue || ''), 60)
+        .map(r => ({ title: r.key, start: r.start, end: r.end }))
+        .sort((a, b) => a.start.valueOf() - b.start.valueOf());
+    },
     openGallery(title: string, occs: { start: moment.Moment; end: moment.Moment }[]) {
       this.galleryTitle = title;
       this.galleryScreenshots = this.screenshotsFor(occs);
@@ -628,7 +717,7 @@ export default {
     openGalleryTimeline() {
       this.galleryTitle = this.displayName;
       this.galleryScreenshots = this.timelineScreenshots;
-      this.galleryTitleSegments = this.occurrencesTimeline as { title: string; start: moment.Moment; end: moment.Moment }[];
+      this.galleryTitleSegments = this.occTimeline as { title: string; start: moment.Moment; end: moment.Moment }[];
       this.showGallery = true;
     },
     // Punto d'ingresso UNICO per il riquadro ricapitolativo — prima
@@ -638,7 +727,7 @@ export default {
     // giusta in base a quale delle tre viste è attiva, così un solo
     // riquadro copre tutti i casi.
     apriGalleriaBlocco() {
-      if (this.occurrencesTimeline.length) {
+      if (this.occTimeline.length) {
         this.openGalleryTimeline();
         return;
       }
@@ -680,11 +769,11 @@ export default {
     // AiChatWidget.vue. Qui si prepara solo quel testo più l'etichetta
     // "a cosa sto rispondendo" mostrata sopra il campo di scrittura.
     apriConversazioneAi() {
-      const intervallo = this.formatRange(this.block.start, this.block.end);
+      const intervallo = this.formatRange(this.rangoVisualizzato.start, this.rangoVisualizzato.end);
       const label = `${this.displayName} ${intervallo}`;
       let extra: string;
-      if (this.occurrencesTimeline.length) {
-        const righe = (this.occurrencesTimeline as { start: moment.Moment; end: moment.Moment; title: string }[])
+      if (this.occTimeline.length) {
+        const righe = (this.occTimeline as { start: moment.Moment; end: moment.Moment; title: string }[])
           .map(o => `- ${o.start.format('HH:mm')}–${o.end.format('HH:mm')}: ${o.title}`)
           .join('\n');
         extra = `Attività raccolte per "${this.displayName}" (corsia: ${this.laneName}) tra le ${intervallo}:\n${righe}`;
