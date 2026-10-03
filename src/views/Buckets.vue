@@ -605,6 +605,7 @@ import { useSettingsStore } from '~/stores/settings';
 import { useViewsStore } from '~/stores/views';
 import { downloadFile } from '~/util/export';
 import { refreshModulesConfig } from '~/util/modulesConfig';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 // Stesso schema di src/views/settings/DeveloperSettings.vue — solo
 // VoiSpeed scrive sotto un client diverso dal proprio nome modulo (gira
@@ -761,7 +762,9 @@ export default {
       // troppo presto perché lo script abbia già prodotto il primo dato,
       // e nient'altro richiamava più `loadBuckets()` finché l'utente non
       // ricaricava la pagina a mano (bug reale segnalato da un utente).
-      bucketsPollInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      bucketsPollInterval: null as { ferma: () => void } | null,
       // Toggle di un watcher "rischioso" (vedi CONFERME_TOGGLE_RISCHIOSO)
       // in attesa di conferma — null quando nessun popup è aperto.
       pendingToggle: null as null | {
@@ -904,7 +907,7 @@ export default {
     } catch {
       this.customWatchers = [];
     }
-    this.bucketsPollInterval = setInterval(this.refreshWatchersAndBuckets, 3000);
+    this.bucketsPollInterval = creaIntervalloPausabile(this.refreshWatchersAndBuckets, 3000);
     // API nativa di Tauri per il drag&drop di file, non i normali eventi
     // DOM (dragenter/dragover/drop) — richiesta esplicita di poter
     // trascinare il file su un punto qualsiasi della finestra, non solo
@@ -921,7 +924,7 @@ export default {
   },
   beforeDestroy: function () {
     if (this.bucketsPollInterval) {
-      clearInterval(this.bucketsPollInterval);
+      this.bucketsPollInterval.ferma();
     }
     if (this.unlistenDragDrop) this.unlistenDragDrop();
   },

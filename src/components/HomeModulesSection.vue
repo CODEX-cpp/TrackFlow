@@ -172,6 +172,7 @@ import { get_day_start_with_offset, get_today_with_offset } from '~/util/time';
 import { useClockStore } from '~/stores/clock';
 import { TimePeriod } from '~/util/timeperiod';
 import { getHomeClient } from '~/util/awclient';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 // Moduli a piena larghezza (span = tutte le colonne) — nessun tipo la
 // usa più oggi (i due che la popolavano, sunburst_clock e vis_timeline,
@@ -243,7 +244,9 @@ export default {
       activityStore: useActivityStore(),
       settingsStore: useSettingsStore(),
       bucketsStore: useBucketsStore(),
-      refreshInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      refreshInterval: null as { ferma: () => void } | null,
       lastBucketsSignature: null as string | null,
       // Debounce del cambio giorno/host — vedi il watcher `date()` sotto
       // per il perché (stesso problema e stessa soluzione di
@@ -454,7 +457,7 @@ export default {
     window.addEventListener('resize', this.measureColumns);
     this.$nextTick(() => this.observeItems());
     this.lastBucketsSignature = await this.currentBucketsSignature();
-    this.refreshInterval = setInterval(() => this.checkForUpdatesAndReload(), 30000);
+    this.refreshInterval = creaIntervalloPausabile(() => this.checkForUpdatesAndReload(), 30000);
   },
   updated() {
     this.$nextTick(() => this.observeItems());
@@ -464,7 +467,7 @@ export default {
     window.removeEventListener('mousemove', this.onDragMouseMove);
     window.removeEventListener('mouseup', this.onDragMouseUp);
     if (this.ro) this.ro.disconnect();
-    if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.refreshInterval) this.refreshInterval.ferma();
     if (this.timerDebounceCambioGiorno) clearTimeout(this.timerDebounceCambioGiorno);
     // Cancels pending requests and resets the store — same cleanup
     // Activity.vue's own beforeDestroy used to do when leaving the page.

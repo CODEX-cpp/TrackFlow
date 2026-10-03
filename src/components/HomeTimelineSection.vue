@@ -651,6 +651,7 @@ import { get_today_with_offset } from '~/util/time';
 import { useSettingsStore } from '~/stores/settings';
 import { isWatcherEnabled } from '~/util/modulesConfig';
 import { useViewsStore } from '~/stores/views';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 import {
   Block,
   mergeEventsByKey,
@@ -871,7 +872,10 @@ export default {
       // component is mounted, so new activity shows up without the user
       // having to reload the page or bounce the day picker. Cleared in
       // beforeDestroy — never runs once you've navigated away from Home.
-      refreshInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts): si ferma da sola
+      // quando la finestra è nascosta in tray, invece di continuare a
+      // rifare query + ricostruire il DOM per ore a vuoto.
+      refreshInterval: null as { ferma: () => void } | null,
       // Cheap "did anything actually change" fingerprint of the last
       // successful load — see util/timelineBlocks.ts's
       // eventListSignature(). Skips the whole rebuild (merge/layout/
@@ -1515,12 +1519,12 @@ export default {
     await this.load();
     document.addEventListener('click', this.onDocumentClick, true);
     window.addEventListener('resize', this.measureContainer);
-    this.refreshInterval = setInterval(() => this.load(), 30000);
+    this.refreshInterval = creaIntervalloPausabile(() => this.load(), 30000);
   },
   beforeDestroy() {
     document.removeEventListener('click', this.onDocumentClick, true);
     window.removeEventListener('resize', this.measureContainer);
-    if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.refreshInterval) this.refreshInterval.ferma();
     if (this.wheelZoomEndTimer) clearTimeout(this.wheelZoomEndTimer);
     if (this.timerDebounceCambioGiorno) clearTimeout(this.timerDebounceCambioGiorno);
     document.removeEventListener('mousemove', this.onTimelineDragMove);

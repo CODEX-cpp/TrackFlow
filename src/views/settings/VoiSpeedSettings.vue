@@ -46,6 +46,7 @@ div
 
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 import 'vue-awesome/icons/sync';
 
 interface VoiSpeedStatus {
@@ -69,7 +70,9 @@ export default {
   data() {
     return {
       status: emptyStatus() as VoiSpeedStatus,
-      pollHandle: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      pollHandle: null as { ferma: () => void } | null,
       refreshing: false,
       moduloDisabilitato: MODULO_DISABILITATO,
     };
@@ -90,10 +93,10 @@ export default {
     // controllo diretto di questo componente — un poll leggero tiene lo
     // stato mostrato aggiornato (es. dopo il login nella finestra VoiSpeed,
     // o quando arriva un nuovo giro di sincronizzazione in background).
-    this.pollHandle = setInterval(() => this.refreshStatus(), 5000);
+    this.pollHandle = creaIntervalloPausabile(() => this.refreshStatus(), 5000);
   },
   beforeDestroy() {
-    if (this.pollHandle) clearInterval(this.pollHandle);
+    if (this.pollHandle) this.pollHandle.ferma();
   },
   methods: {
     async refreshStatus() {

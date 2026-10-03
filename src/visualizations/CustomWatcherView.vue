@@ -17,6 +17,7 @@ div.custom-watcher-view
 // proprio (per chi vuole un rendering diverso) resta disponibile a parte
 // come tipo modulo "Modulo HTML personalizzato" (CustomVisualization.vue).
 import { getHomeClient } from '~/util/awclient';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 export default {
   name: 'aw-custom-watcher-view',
@@ -32,15 +33,17 @@ export default {
     return {
       loading: true,
       latestData: null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
       refreshInterval: null,
     };
   },
   mounted() {
     this.load();
-    this.refreshInterval = setInterval(() => this.load(), 30000);
+    this.refreshInterval = creaIntervalloPausabile(() => this.load(), 30000);
   },
   beforeDestroy() {
-    if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.refreshInterval) this.refreshInterval.ferma();
   },
   watch: {
     bucketId() {

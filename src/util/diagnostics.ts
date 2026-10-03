@@ -151,4 +151,19 @@ export function avvia(): void {
       });
     }, 5000);
   }
+
+  // Conteggio nodi DOM/canvas/immagini ogni 10s — se lo heap JS
+  // (memoria_js sopra) resta piatto ma la RAM nativa del processo
+  // webview (risorse_processo lato Rust) continua a salire, la causa è
+  // nel rendering (DOM/canvas/texture GPU), non in oggetti JS mai
+  // liberati: questo conteggio dice SE sono nodi mai ripuliti (crescita
+  // continua = leak reale) o overhead fisso che non cresce (nessun
+  // leak, solo tanti elementi legittimi a schermo).
+  setInterval(() => {
+    logEvento('conteggio_dom', {
+      nodi_totali: document.querySelectorAll('*').length,
+      canvas: document.querySelectorAll('canvas').length,
+      immagini: document.querySelectorAll('img').length,
+    });
+  }, 10000);
 }

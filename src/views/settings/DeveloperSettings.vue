@@ -186,6 +186,7 @@ import { useBucketsStore } from '~/stores/buckets';
 import { KNOWN_WATCHER_CLIENTS } from '~/util/knownWatchers';
 import { querystr_to_array } from '~/queries';
 import { getClient } from '~/util/awclient';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 const DEFAULT_AQL_QUERY = `events = query_bucket(find_bucket("aw-watcher-window"));
 events = sort_by_timestamp(events);
@@ -242,7 +243,10 @@ export default {
       showConfirm: false,
       caricandoWatcher: true,
       watchers: [] as WatcherStatusDto[],
-      refreshInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma anche
+      // mentre la finestra è nascosta in tray, indipendentemente dal
+      // pulsante di pausa manuale già esistente qui sotto.
+      refreshInterval: null as { ferma: () => void } | null,
       logLines: [] as LogRow[],
       logLevelFilter: 'all' as 'all' | 'warn' | 'error',
       logPaused: false,
@@ -357,12 +361,12 @@ export default {
     avviaAggiornamento() {
       this.caricaStato();
       if (!this.refreshInterval) {
-        this.refreshInterval = setInterval(() => this.caricaStato(), REFRESH_MS);
+        this.refreshInterval = creaIntervalloPausabile(() => this.caricaStato(), REFRESH_MS);
       }
     },
     fermaAggiornamento() {
       if (this.refreshInterval) {
-        clearInterval(this.refreshInterval);
+        this.refreshInterval.ferma();
         this.refreshInterval = null;
       }
     },

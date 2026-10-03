@@ -15,6 +15,7 @@ div.settings-page
 <script lang="ts">
 import { useSettingsStore } from '~/stores/settings';
 import { isWatcherEnabled, refreshModulesConfig } from '~/util/modulesConfig';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 import LanguageSettings from '~/views/settings/LanguageSettings.vue';
 import DaystartSettings from '~/views/settings/DaystartSettings.vue';
@@ -96,7 +97,9 @@ export default {
       // niente impostazione di mapping cliente per un watcher che
       // l'utente ha scelto di spegnere dal menu Moduli.
       vpnModuleEnabled: true,
-      moduleCheckInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      moduleCheckInterval: null as { ferma: () => void } | null,
     };
   },
   computed: {
@@ -217,14 +220,14 @@ export default {
     // l'utente accende/spegne quei moduli dal menu Moduli della tray
     // nel frattempo (il resto del gruppo Integrazioni, es. Claude, non
     // dipende da questo toggle).
-    this.moduleCheckInterval = setInterval(() => {
+    this.moduleCheckInterval = creaIntervalloPausabile(() => {
       this.refreshVoispeedModuleFlag();
       this.refreshVpnModuleFlag();
     }, 10000);
   },
   beforeDestroy() {
     if (this.observer) this.observer.disconnect();
-    if (this.moduleCheckInterval) clearInterval(this.moduleCheckInterval);
+    if (this.moduleCheckInterval) this.moduleCheckInterval.ferma();
   },
   watch: {
     // Explicit request: clicking a different group in the sidebar

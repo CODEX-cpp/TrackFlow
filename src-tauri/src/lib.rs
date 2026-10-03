@@ -623,6 +623,53 @@ fn attach_navigation_retry(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Comando invocato dal frontend (vedi `util/idleMemoria.ts`) quando
+/// l'utente resta fermo qualche secondo (o torna ad interagire) —
+/// richiesta esplicita dell'utente per abbassare sia il picco di RAM sia
+/// il consumo a riposo (2026-10-03). `SetMemoryUsageTargetLevel` è
+/// un'API ufficiale di WebView2 (richiede `ICoreWebView2_19`, quindi un
+/// runtime Edge abbastanza recente — fallisce silenziosamente, solo un
+/// log, su uno più vecchio): dice al motore "comportati come se fossi in
+/// background, libera le cache che puoi" senza nascondere o sospendere
+/// davvero nulla, quindi zero impatto visivo — tornare a `Normal` non ha
+/// un costo percepibile, è lo stesso target che il motore userebbe
+/// comunque in primo piano.
+#[tauri::command]
+fn imposta_livello_memoria(app_handle: tauri::AppHandle, basso: bool) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    };
+    let Some(window) = app_handle.get_webview_window("main") else {
+        return;
+    };
+    let livello = if basso {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+    } else {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+    };
+    let result = window.with_webview(move |webview| {
+        let core_webview = match unsafe { webview.controller().CoreWebView2() } {
+            Ok(cw) => cw,
+            Err(e) => {
+                log::error!("Impossibile ottenere CoreWebView2 per il livello memoria: {e}");
+                return;
+            }
+        };
+        match windows_core::Interface::cast::<ICoreWebView2_19>(&core_webview) {
+            Ok(cw19) => {
+                if let Err(e) = unsafe { cw19.SetMemoryUsageTargetLevel(livello) } {
+                    log::warn!("SetMemoryUsageTargetLevel fallita (runtime WebView2 troppo vecchio?): {e}");
+                }
+            }
+            Err(e) => log::warn!("ICoreWebView2_19 non disponibile su questo runtime WebView2: {e}"),
+        }
+    });
+    if let Err(e) = result {
+        log::error!("with_webview fallita per il livello memoria: {e}");
+    }
+}
+
 /// Costruisce il server `aw-server-rust` in-process: stesso identico
 /// codice del binario originale (`aw_server::endpoints::build_rocket`),
 /// solo dispatchato in memoria invece che su una vera porta TCP — vedi
@@ -917,6 +964,23 @@ fn emit_finestra_mostrata(window: &tauri::WebviewWindow) {
     let _ = window.emit("trackflow://finestra-mostrata", ());
 }
 
+/// Controparte di `emit_finestra_mostrata`: emesso esattamente nei punti
+/// in cui NOI decidiamo di nascondere la finestra (`CloseRequested` e il
+/// toggle "show_hide" del tray — i due soli `window.hide()` del
+/// programma). Il frontend (vedi `util/finestraVisibile.ts`) lo usa per
+/// fermare i timer di aggiornamento periodico (Timeline, moduli Home,
+/// widget, poll di Impostazioni) mentre la finestra è invisibile — senza
+/// questo, quei timer continuavano a rifare query di rete + ricostruzione
+/// DOM ogni pochi secondi per tutta la durata in cui l'app restava in
+/// tray (anche ore), perché `hide()` non smonta mai la webview (vedi
+/// commento in App.vue). Stesso motivo per cui non ci si appoggia a
+/// `onFocusChanged`/Page Visibility: esplicito e certo, non dipende da
+/// una semantica di focus che si è già rivelata inaffidabile in questo
+/// stesso programma per il caso opposto (mostra).
+fn emit_finestra_nascosta(window: &tauri::WebviewWindow) {
+    let _ = window.emit("trackflow://finestra-nascosta", ());
+}
+
 fn spawn_app_icons(app_handle: &AppHandle, app_data_dir: &Path, icons_stdin: &IconsHandle) {
     match app_handle.shell().sidecar("aw-watcher-app-icons") {
         Ok(cmd) => match cmd.args(["--app-data-dir", &app_data_dir.to_string_lossy()]).spawn() {
@@ -1162,6 +1226,7 @@ pub fn run() {
             claude_subscription::claude_desktop_stato,
             categorization::elenca_app_conosciute,
             devtools::apri_devtools,
+            imposta_livello_memoria,
             diagnostics::log_frontend_diagnostica,
             diagnostics::imposta_diagnostica,
             watcher_status::stato_watcher,
@@ -1430,7 +1495,18 @@ pub fn run() {
                         // CustomTitlebar.vue), con gli stessi 3 pulsanti
                         // (riduci/ingrandisci/chiudi) integrati nel tema
                         // dell'app invece che nello stile di Windows.
-                        .decorations(false);
+                        .decorations(false)
+                        // TrackFlow non riproduce mai audio nella webview
+                        // (le notifiche sono toast nativi di Windows, vedi
+                        // notifications.rs) — WebView2 avvia comunque un
+                        // processo dedicato al servizio audio per ogni
+                        // finestra, anche se non verrà mai usato. Questo
+                        // flag lo fonde nel processo principale: un
+                        // processo Chromium in meno, qualche decina di MB
+                        // fissi risparmiati, nessun impatto (non c'è
+                        // audio da rompere). Parte della riduzione RAM
+                        // richiesta dall'utente (2026-10-03).
+                        .additional_browser_args("--disable-features=AudioServiceOutOfProcess");
                         // NON disattivare drag_and_drop qui (un tentativo
                         // precedente lo aveva fatto): su Windows serve al vero
                         // WebView2/OLE per registrare la finestra come una
@@ -1579,6 +1655,7 @@ pub fn run() {
                                     tauri::WindowEvent::CloseRequested { api, .. } => {
                                         api.prevent_close();
                                         let _ = window_clone.hide();
+                                        emit_finestra_nascosta(&window_clone);
                                         // Richiesta esplicita dell'utente, dopo due
                                         // corruzioni reali del database in questa
                                         // sessione (quasi certamente causate da
@@ -1841,6 +1918,7 @@ pub fn run() {
                             if let Some(window) = app.get_webview_window("main") {
                                 if window.is_visible().unwrap_or(false) {
                                     let _ = window.hide();
+                                    emit_finestra_nascosta(&window);
                                 } else {
                                     let _ = window.show();
                                     let _ = window.set_focus();

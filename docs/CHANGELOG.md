@@ -5,6 +5,18 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.27
+
+### it
+- Corretto un consumo di memoria anomalo del processo webview durante l'uso prolungato (poteva arrivare a 2-3GB e bloccare l'interfaccia): la Timeline e i moduli della Home continuavano ad aggiornarsi in sottofondo anche a finestra nascosta nella system tray, senza mai fermarsi.
+- Corretto un bug per cui il modulo "Top clienti VPN" poteva restare in un ciclo infinito di aggiornamento quando non aveva dati, causando un accumulo di richieste e un rallentamento generale dell'app.
+- Riduzione del consumo di RAM a riposo: dopo qualche secondo di inattività l'app ora libera esplicitamente la memoria non più necessaria (nessun impatto su velocità o aspetto, torna normale al primo movimento del mouse).
+
+### en
+- Fixed an abnormal memory usage of the webview process during prolonged use (it could reach 2-3GB and freeze the interface): the Timeline and Home modules kept refreshing in the background even while the window was hidden in the system tray, and never stopped.
+- Fixed a bug where the "Top VPN clients" module could get stuck in an infinite refresh loop when it had no data, piling up requests and slowing the whole app down.
+- Reduced idle RAM usage: after a few seconds of inactivity the app now explicitly releases memory it no longer needs (no impact on speed or appearance, back to normal at the first mouse move).
+
 ## 0.1.26
 
 ### it

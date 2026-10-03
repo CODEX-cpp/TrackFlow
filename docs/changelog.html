@@ -43,6 +43,14 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.27</h2>
+      <ul>
+        <li>Fixed an abnormal memory usage of the webview process during prolonged use (it could reach 2-3GB and freeze the interface): the Timeline and Home modules kept refreshing in the background even while the window was hidden in the system tray, and never stopped.</li>
+        <li>Fixed a bug where the "Top VPN clients" module could get stuck in an infinite refresh loop when it had no data, piling up requests and slowing the whole app down.</li>
+        <li>Reduced idle RAM usage: after a few seconds of inactivity the app now explicitly releases memory it no longer needs (no impact on speed or appearance, back to normal at the first mouse move).</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.26</h2>
       <ul>
         <li>The VoiSpeed module has been turned off in this version due to an issue affecting its reliability. If you had it enabled it will now be disabled, and the enable button is unavailable. It will be re-enabled once the issue is fixed.</li>

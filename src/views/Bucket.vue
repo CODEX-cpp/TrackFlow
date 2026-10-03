@@ -203,6 +203,7 @@ import moment from 'moment';
 import { invoke } from '@tauri-apps/api/core';
 import { useBucketsStore } from '~/stores/buckets';
 import { getClient } from '~/util/awclient';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 import 'vue-awesome/icons/arrow-left';
 import 'vue-awesome/icons/folder-open';
 
@@ -224,6 +225,8 @@ export default {
       // finestra [ora - durata, ora] scorre davvero nel tempo invece di
       // restare congelata al momento dell'ultimo click, e la timeline
       // segue quasi in tempo reale.
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
       daterangeTickInterval: null,
       totalDurationSeconds: null,
       // Popolato solo se questo bucket appartiene a un watcher
@@ -241,6 +244,8 @@ export default {
       // dare l'effetto di una finestra "in tempo reale" senza dover
       // costruire un canale di eventi push dedicato.
       watcherLogContent: '',
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
       logPollInterval: null,
       // Nome del file lanciato ad ogni giro (solo modalità semplificata),
       // modificabile in tabella — sincronizzato da customWatcherInfo.args
@@ -281,17 +286,17 @@ export default {
     await this.loadTotalDuration();
     if (this.customWatcherInfo) {
       await this.fetchWatcherLog();
-      this.logPollInterval = setInterval(this.fetchWatcherLog, 1500);
+      this.logPollInterval = creaIntervalloPausabile(this.fetchWatcherLog, 1500);
     }
     this.recomputeDaterange();
-    this.daterangeTickInterval = setInterval(() => this.recomputeDaterange(), 1500);
+    this.daterangeTickInterval = creaIntervalloPausabile(() => this.recomputeDaterange(), 1500);
   },
   beforeDestroy: function () {
     if (this.logPollInterval) {
-      clearInterval(this.logPollInterval);
+      this.logPollInterval.ferma();
     }
     if (this.daterangeTickInterval) {
-      clearInterval(this.daterangeTickInterval);
+      this.daterangeTickInterval.ferma();
     }
   },
   methods: {

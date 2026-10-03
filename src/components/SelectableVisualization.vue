@@ -318,8 +318,34 @@ import { useViewsStore } from '~/stores/views';
 import { useSettingsStore } from '~/stores/settings';
 import { useTimelineHighlightStore } from '~/stores/timelineHighlight';
 import { useAppCategoriesStore } from '~/stores/appCategories';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 import moment from 'moment';
+
+// Cache a livello di modulo per i dati "Top clienti VPN" aggregati da
+// getVpnTopClients() — sopravvive alla distruzione/ricreazione del
+// componente, a differenza di `data()`. Necessaria per una ragione
+// strutturale: questo widget, quando non ha dati, si sposta dal v-for
+// "masonry" (HomeModulesSection.vue) a uno separato di "probe nascosti"
+// — due v-for con chiavi Vue DIVERSE per lo stesso elemento, quindi ogni
+// cambio di visibilità distrugge l'istanza e ne crea una nuova da zero.
+// Finché vpn_top_clients viveva solo in `data()`, un'istanza appena nata
+// ripartiva sempre da "nessun dato" anche quando i dati veri c'erano,
+// che per questo specifico tipo (l'unico tra quelli auto-nascondenti a
+// tenere i propri dati in locale invece che nello store condiviso)
+// innescava un loop infinito nascondi→mostra→nascondi: bug reale,
+// confermato da un log diagnostico reale (2026-10-03) — quasi 46.000
+// richieste di rete in 8 minuti, coda del datastore (un solo thread di
+// lavoro) sempre più lunga, interfaccia bloccata. Chiave: viewId+':'+id
+// (stabile tra le due istanze dello stesso elemento, vedi i due v-for
+// in HomeModulesSection.vue).
+const cacheVpnTopClients = new Map<
+  string,
+  { voci: { duration: number; data: { cliente: string } }[]; ultimaFirma: string | null }
+>();
+function chiaveCacheVpn(viewId: string, id: number): string {
+  return `${viewId}:${id}`;
+}
 
 export default {
   name: 'aw-selectable-vis',
@@ -372,7 +398,12 @@ export default {
       // current query period — no equivalent store field exists for
       // this since VPN tracking is TrackFlow's own addition, not part
       // of upstream ActivityWatch (see BLUEPRINT.md section 7.3).
-      vpn_top_clients: [],
+      // Inizializzato dalla cache di modulo (vedi cacheVpnTopClients
+      // sopra), non sempre vuoto — un'istanza appena ricreata dopo un
+      // cambio di visibilità vede subito l'ultimo valore noto invece di
+      // ripartire da "nessun dato" (causa del loop infinito corretto
+      // qui, 2026-10-03).
+      vpn_top_clients: cacheVpnTopClients.get(chiaveCacheVpn(this.viewId, this.id))?.voci ?? [],
       // Aggregated (summed-per-source) Claude usage for the current
       // query period — classified from the existing window/browser
       // buckets, no dedicated watcher (see getClaudeUsage below).
@@ -384,13 +415,19 @@ export default {
       // instance (this component is instantiated once per module in
       // the grid, same as its own mounted()/watch already do per-type
       // dispatch), cleared on unmount.
-      refreshInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      refreshInterval: null as { ferma: () => void } | null,
       // Cheap count+last-id fingerprints (see eventListSignature in
       // HomeTimelineSection.vue for the same pattern/reasoning) — both
       // vpn-sessions and claude-code-sessions are append-only in normal
       // use, so this safely skips re-aggregating on a poll that found
       // nothing new.
-      lastVpnSignature: null as string | null,
+      // Anche questa dalla cache di modulo, stesso motivo di
+      // vpn_top_clients sopra — altrimenti una nuova istanza, pur
+      // ereditando i dati, li avrebbe ri-processati inutilmente al primo
+      // poll (nessun loop in quel caso specifico, ma lavoro sprecato).
+      lastVpnSignature: cacheVpnTopClients.get(chiaveCacheVpn(this.viewId, this.id))?.ultimaFirma ?? null,
       lastClaudeSignature: null as string | null,
     };
   },
@@ -728,13 +765,13 @@ export default {
     if (this.type == 'top_claude_usage') {
       await this.getClaudeUsage();
     }
-    this.refreshInterval = setInterval(() => {
+    this.refreshInterval = creaIntervalloPausabile(() => {
       this.getVpnTopClients();
       this.getClaudeUsage();
     }, 30000);
   },
   beforeDestroy: function () {
-    if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.refreshInterval) this.refreshInterval.ferma();
   },
   methods: {
     appDisplayName: displayNameForApp,
@@ -803,6 +840,13 @@ export default {
       this.vpn_top_clients = [...totals.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([client, duration]) => ({ duration, data: { cliente: client } }));
+      // Specchiato nella cache di modulo (vedi sopra) così la prossima
+      // istanza, se questa venisse distrutta e ricreata per un cambio di
+      // visibilità, parte già dal valore giusto invece che da vuoto.
+      cacheVpnTopClients.set(chiaveCacheVpn(this.viewId, this.id), {
+        voci: this.vpn_top_clients,
+        ultimaFirma: this.lastVpnSignature,
+      });
     },
     // Classifies Claude usage across every surface it happens on.
     // CLI *and* Desktop both write the exact same transcript log format

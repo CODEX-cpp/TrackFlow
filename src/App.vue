@@ -44,6 +44,8 @@ import { valutaRegoleNotifica } from '~/util/notifyRulesEngine';
 // Log diagnostico avanzato, disattivato di default — vedi
 // util/diagnostics.ts e Impostazioni → Sviluppatore.
 import { setAbilitata as impostaDiagnosticaAbilitata } from '~/util/diagnostics';
+import { avviaAscoltoVisibilita } from '~/util/finestraVisibile';
+import { avviaTrimMemoriaInattiva } from '~/util/idleMemoria';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -117,6 +119,13 @@ export default {
   },
 
   mounted: async function (this: any) {
+    // Deve partire PRIMA che qualunque componente figlio (Timeline,
+    // moduli Home, widget...) possa montarsi e creare un intervallo
+    // pausabile — altrimenti quei componenti partirebbero assumendo
+    // "sempre visibile" finché questo listener non si aggancia.
+    avviaAscoltoVisibilita();
+    avviaTrimMemoriaInattiva();
+
     // Log diagnostico avanzato — disattivato di default (vedi
     // Impostazioni → Sviluppatore), quindi non aggancia nessun listener
     // di performance/memoria né spedisce eventi via IPC se l'utente non

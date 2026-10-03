@@ -49,6 +49,17 @@ static THREAD_CAMPIONAMENTO_AVVIATO: AtomicBool = AtomicBool::new(false);
 
 static LOG_FILE: Mutex<Option<File>> = Mutex::new(None);
 
+/// ⚠️ SOLO PER LA BUILD DI TEST "-ramdiag1" (consumo RAM a finestra
+/// nascosta, 2026-10-03) — da rimettere a `false` prima di qualunque
+/// commit vero. Con `true`, `scrivi()` e il campionamento RAM ignorano
+/// `IN_FOREGROUND`: è l'opposto del comportamento normale di questo
+/// modulo (filtra apposta quando non in primo piano, per non scrivere
+/// dati inutili — vedi sezione 45 del BLUEPRINT), ma qui serve esattamente
+/// il contrario: il problema da investigare esiste SOLO mentre la
+/// finestra è nascosta in tray per ore, quindi filtrarlo via
+/// renderebbe il log vuoto proprio nella finestra temporale che conta.
+const FORZA_LOG_ANCHE_NASCOSTA: bool = false;
+
 /// Cartella di default se l'utente non ne ha scelta una: il Desktop
 /// (comportamento storico di questo modulo). Niente crate "dirs" tra le
 /// dipendenze solo per questo — su Windows il Desktop è sempre
@@ -90,24 +101,96 @@ pub fn avvia(cartella: &Path) -> Result<(), String> {
             let mut sys = System::new();
             loop {
                 std::thread::sleep(Duration::from_secs(2));
-                if !ATTIVA.load(Ordering::Relaxed) || !IN_FOREGROUND.load(Ordering::Relaxed) {
+                let in_primo_piano_richiesto = !FORZA_LOG_ANCHE_NASCOSTA && !IN_FOREGROUND.load(Ordering::Relaxed);
+                if !ATTIVA.load(Ordering::Relaxed) || in_primo_piano_richiesto {
                     continue;
                 }
-                sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-                if let Some(processo) = sys.process(pid) {
-                    scrivi(
-                        "risorse_processo",
-                        serde_json::json!({
-                            "cpu_percento": processo.cpu_usage(),
-                            "memoria_mb": processo.memory() / 1024 / 1024,
-                        }),
-                    );
-                }
+                campiona_albero_processi(&mut sys, pid);
             }
         });
     }
 
     Ok(())
+}
+
+/// Campiona il processo principale di TrackFlow E TUTTI i suoi
+/// discendenti (il "WebView2 Process", visibile in Task Manager —
+/// internamente sono più processi separati: browser/GPU/renderer/
+/// utility, tutti figli/nipoti del nostro, mai del nostro stesso PID).
+/// Senza questo, `risorse_processo` mostrava solo la RAM del piccolo
+/// processo Rust (tipicamente <50MB, stabile), completamente cieco al
+/// consumo reale della webview che l'utente vede in Task Manager —
+/// nato appositamente per l'indagine sul consumo RAM anomalo segnalato
+/// dall'utente (2026-10-03, vedi BLUEPRINT.md).
+fn campiona_albero_processi(sys: &mut System, pid_radice: Pid) {
+    // `All`, non un elenco di PID noti: i processi WebView2 vengono e
+    // vanno (un rendering process può terminare e ripartire), serve
+    // scoprirli ad ogni giro, non solo seguirne un elenco fisso.
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+
+    // Indice padre→figli per risalire l'intero sottoalbero del
+    // processo radice senza assumere una profondità fissa (browser →
+    // GPU/renderer → eventuali utility, non sempre lo stesso numero di
+    // livelli tra versioni di WebView2).
+    let mut figli_di: std::collections::HashMap<Pid, Vec<Pid>> = std::collections::HashMap::new();
+    for (figlio_pid, processo) in sys.processes() {
+        if let Some(padre_pid) = processo.parent() {
+            figli_di.entry(padre_pid).or_default().push(*figlio_pid);
+        }
+    }
+
+    let mut da_visitare = vec![pid_radice];
+    let mut processi_albero: Vec<(Pid, u64, String)> = Vec::new();
+    let mut memoria_totale_kb: u64 = 0;
+    while let Some(pid_corrente) = da_visitare.pop() {
+        if let Some(processo) = sys.process(pid_corrente) {
+            memoria_totale_kb += processo.memory();
+            processi_albero.push((
+                pid_corrente,
+                processo.memory() / 1024 / 1024,
+                processo.name().to_string_lossy().into_owned(),
+            ));
+        }
+        if let Some(figli) = figli_di.get(&pid_corrente) {
+            da_visitare.extend(figli);
+        }
+    }
+
+    // Il contributo singolo più pesante — di solito uno dei processi
+    // WebView2, utile per capire SUBITO, senza dover somare a mano,
+    // se è lì che sta il grosso del consumo.
+    let (pid_max, mb_max, nome_max) = processi_albero
+        .iter()
+        .max_by_key(|(_, mb, _)| *mb)
+        .cloned()
+        .unwrap_or((pid_radice, 0, String::new()));
+
+    let processo_principale_mb = sys
+        .process(pid_radice)
+        .map(|p| p.memory() / 1024 / 1024)
+        .unwrap_or(0);
+    let cpu_principale = sys
+        .process(pid_radice)
+        .map(|p| p.cpu_usage())
+        .unwrap_or(0.0);
+
+    scrivi(
+        "risorse_processo",
+        serde_json::json!({
+            // Nome storico, invariato per restare confrontabile con i
+            // log precedenti (sezione 45) — SOLO il processo Rust.
+            "cpu_percento": cpu_principale,
+            "memoria_mb": processo_principale_mb,
+            // Nuovo: tutto l'albero (Rust + WebView2 browser/GPU/
+            // renderer/utility), quello che Task Manager mostra come
+            // somma delle righe "TrackFlow"/"WebView2".
+            "memoria_totale_albero_mb": memoria_totale_kb / 1024,
+            "numero_processi_albero": processi_albero.len(),
+            "processo_piu_pesante_mb": mb_max,
+            "processo_piu_pesante_nome": nome_max,
+            "processo_piu_pesante_pid": pid_max.as_u32(),
+        }),
+    );
 }
 
 /// Disattiva il log e chiude il file — così se l'utente cambia
@@ -123,7 +206,8 @@ pub fn ferma() {
 /// (`log_frontend_diagnostica`) lo rispettano senza doverlo ripetere ad
 /// ogni chiamante.
 pub fn scrivi(evento: &str, dettagli: Value) {
-    if !ATTIVA.load(Ordering::Relaxed) || !IN_FOREGROUND.load(Ordering::Relaxed) {
+    let in_primo_piano_richiesto = !FORZA_LOG_ANCHE_NASCOSTA && !IN_FOREGROUND.load(Ordering::Relaxed);
+    if !ATTIVA.load(Ordering::Relaxed) || in_primo_piano_richiesto {
         return;
     }
     let riga = format!(

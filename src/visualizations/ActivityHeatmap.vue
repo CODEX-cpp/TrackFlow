@@ -154,6 +154,7 @@ import { getHomeClient } from '~/util/awclient';
 import { formatHoursMinutes } from '~/util/projectTime';
 import { eventListSignature } from '~/util/timelineBlocks';
 import { useSettingsStore } from '~/stores/settings';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 import moment from 'moment';
 
 // Finestra fissa, indipendente dal periodo scelto nella Topbar (un
@@ -193,7 +194,9 @@ export default {
       // di essere colorati come zero confermato.
       primoGiornoTracciato: null as string | null,
       lastSignature: null as string | null,
-      refreshInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      refreshInterval: null as { ferma: () => void } | null,
       settingsStore: useSettingsStore(),
     };
   },
@@ -304,10 +307,10 @@ export default {
   },
   mounted: async function () {
     await this.carica();
-    this.refreshInterval = setInterval(() => this.carica(), 60000);
+    this.refreshInterval = creaIntervalloPausabile(() => this.carica(), 60000);
   },
   beforeDestroy: function () {
-    if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.refreshInterval) this.refreshInterval.ferma();
   },
   methods: {
     carica: async function () {

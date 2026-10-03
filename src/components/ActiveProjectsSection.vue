@@ -185,6 +185,7 @@ div.active-projects-section
 import { Project } from '~/stores/projects';
 import { formatHoursMinutes } from '~/util/projectTime';
 import projectTimerMixin from '~/mixins/projectTimerMixin';
+import { creaIntervalloPausabile } from '~/util/finestraVisibile';
 
 export default {
   name: 'ActiveProjectsSection',
@@ -206,14 +207,16 @@ export default {
       // append-only raw watcher events elsewhere) would wrongly call a
       // real pause/resume "unchanged" and hide it. fetchBlocks() itself
       // is a single lightweight request either way.
-      refreshInterval: null as ReturnType<typeof setInterval> | null,
+      // Pausabile (vedi util/finestraVisibile.ts) — si ferma mentre la
+      // finestra è nascosta in tray.
+      refreshInterval: null as { ferma: () => void } | null,
     };
   },
   mounted() {
-    this.refreshInterval = setInterval(() => this.fetchBlocks(), 30000);
+    this.refreshInterval = creaIntervalloPausabile(() => this.fetchBlocks(), 30000);
   },
   beforeDestroy() {
-    if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.refreshInterval) this.refreshInterval.ferma();
   },
   methods: {
     formatHoursMinutes,
