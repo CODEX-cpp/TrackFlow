@@ -112,7 +112,14 @@ export default defineConfig(({ mode }) => {
         // while dev-testing, since the remounted component starts over
         // with no selected block. Only affects `npx vite` dev mode —
         // the production build has no live file-watching at all.
-        ignored: ['**/src/util/appIconColors.json', '**/src/util/appAutoNames.json'],
+        // Le cartelle target/ di cargo (src-tauri, watcher, server) non
+        // hanno nulla a che fare col frontend: mentre cargo compila,
+        // blocca i file e il watcher di Vite va in crash con EBUSY.
+        ignored: [
+          '**/src/util/appIconColors.json',
+          '**/src/util/appAutoNames.json',
+          '**/target/**',
+        ],
       },
     },
     publicDir: './static',

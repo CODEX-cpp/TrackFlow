@@ -2068,9 +2068,19 @@ export default {
       // "not-afk" ended, instead of showing genuinely fresh activity as
       // an accurately-colored (if red) trailing stretch.
       const viewRangeEvents = [
-        ...vpnEventsRaw,
+        // La VPN è uno stato di connessione, non attività: una sessione
+        // rimasta aperta di notte (ieri: 19:56 -> 08:30, 12 ore) faceva
+        // partire il giorno da mezzanotte. Qui conta solo nei tratti
+        // not-afk (vpnEvents è già clippato sull'AFK).
+        ...vpnEvents,
         ...claudeEventsRaw,
-        ...rawWindowEventsUnclipped,
+        // Le app di sistema nascoste (schermata di blocco LockApp.exe...)
+        // non sono attività: un solo evento del genere alle 04:42, col PC
+        // bloccato, faceva partire la barra AFK dalle 04:42 e dipingeva
+        // di rosso tutta la mattina fino all'arrivo vero alle 11:18.
+        ...rawWindowEventsUnclipped.filter(
+          (e: any) => !isHiddenSystemApp((e.data && e.data.app) || '')
+        ),
         ...browserEventsRaw,
         ...rawEditorEventsUnclipped.filter(e => isKnownEditorValue(e.data.project)),
         ...rawVoispeedEventsUnclipped,
