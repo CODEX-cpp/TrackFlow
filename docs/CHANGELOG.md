@@ -5,6 +5,22 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.28
+
+### it
+- Il modulo "Uso Claude" ora raggruppa le sessioni di Claude Desktop per chat, con il nome che la chat ha nell'app (anche se rinominata): le sessioni riprese o duplicate della stessa chat finiscono sotto un'unica voce. Le chat senza cartella di progetto appaiono come "Chat senza cartella" con la data.
+- Le sessioni già registrate in passato con il vecchio nome (cartella o titolo automatico) vengono riallineate da sole al nome attuale della chat, man mano che arrivano nuovi dati. Se due chat usano la stessa cartella non si può sapere a quale appartenga un evento vecchio, quindi in quel caso resta com'è.
+- Corretto "Claude Desktop (finestra)": contava anche il tempo già attribuito a una chat, quindi cresceva senza dire per cosa. Ora resta solo il tempo con la finestra di Claude in primo piano e nessuna chat attiva.
+- Corretta la Timeline: un evento che non è attività (la schermata di blocco del PC, o una VPN rimasta connessa tutta la notte) faceva partire il giorno da ore prima del lavoro vero, con la barra AFK rossa fino all'arrivo. Ora la giornata parte dalla prima attività reale.
+- Chat con l'assistente AI (Claude, abbonamento Desktop): corretto il caso in cui TrackFlow non trovava Claude Desktop installata (le versioni recenti lo mettono in una sottocartella in più) e il caso in cui risultava "collegato" senza esserlo. Lo stato ora viene chiesto a Claude stesso e, se manca l'accesso, basta premere "Accedi" in Impostazioni → Agente AI (niente più comandi da copiare a mano).
+
+### en
+- The "Claude Usage" module now groups Claude Desktop sessions by chat, using the name the chat has in the app (even if renamed): resumed or duplicated sessions of the same chat end up under a single entry. Chats without a project folder show as "Chat senza cartella" with the date.
+- Sessions recorded in the past under the old name (folder or automatic title) are realigned automatically to the chat's current name as new data arrives. If two chats share the same folder there is no way to tell which one an old event belongs to, so it is left as it is.
+- Fixed "Claude Desktop (finestra)": it also counted time already attributed to a chat, so it kept growing without saying what for. Now only the time with the Claude window in the foreground and no active chat remains.
+- Fixed the Timeline: an event that is not activity (the PC lock screen, or a VPN left connected overnight) made the day start hours before the real work, with the AFK bar red until you arrived. Now the day starts at the first real activity.
+- AI assistant chat (Claude, Desktop subscription): fixed the case where TrackFlow could not find an installed Claude Desktop (recent versions put it one folder deeper) and the case where it showed as "signed in" without being so. The status is now asked to Claude itself and, if sign-in is missing, you just press "Sign in" in Settings → AI Agent (no more commands to copy by hand).
+
 ## 0.1.27
 
 ### it

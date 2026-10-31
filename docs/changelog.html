@@ -43,6 +43,16 @@
   -->
   <div id="changelog-root">
     <section class="changelog-entry">
+      <h2>0.1.28</h2>
+      <ul>
+        <li>The "Claude Usage" module now groups Claude Desktop sessions by chat, using the name the chat has in the app (even if renamed): resumed or duplicated sessions of the same chat end up under a single entry. Chats without a project folder show as "Chat senza cartella" with the date.</li>
+        <li>Sessions recorded in the past under the old name (folder or automatic title) are realigned automatically to the chat's current name as new data arrives. If two chats share the same folder there is no way to tell which one an old event belongs to, so it is left as it is.</li>
+        <li>Fixed "Claude Desktop (finestra)": it also counted time already attributed to a chat, so it kept growing without saying what for. Now only the time with the Claude window in the foreground and no active chat remains.</li>
+        <li>Fixed the Timeline: an event that is not activity (the PC lock screen, or a VPN left connected overnight) made the day start hours before the real work, with the AFK bar red until you arrived. Now the day starts at the first real activity.</li>
+        <li>AI assistant chat (Claude, Desktop subscription): fixed the case where TrackFlow could not find an installed Claude Desktop (recent versions put it one folder deeper) and the case where it showed as "signed in" without being so. The status is now asked to Claude itself and, if sign-in is missing, you just press "Sign in" in Settings → AI Agent (no more commands to copy by hand).</li>
+      </ul>
+    </section>
+    <section class="changelog-entry">
       <h2>0.1.27</h2>
       <ul>
         <li>Fixed an abnormal memory usage of the webview process during prolonged use (it could reach 2-3GB and freeze the interface): the Timeline and Home modules kept refreshing in the background even while the window was hidden in the system tray, and never stopped.</li>
