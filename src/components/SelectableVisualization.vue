@@ -293,7 +293,7 @@ import 'vue-awesome/icons/bars';
 
 import { domainForEvent } from '~/util/browserDomain';
 import { getHomeClient } from '~/util/awclient';
-import { eventListSignature } from '~/util/timelineBlocks';
+import { eventListSignature, subtractIntervals } from '~/util/timelineBlocks';
 import {
   displayNameForApp,
   fallbackIconForApp,
@@ -912,10 +912,21 @@ export default {
       // (explicit fix: they used to disagree whenever there was window-
       // focus time but no claude-code-sessions event, e.g. Claude
       // Desktop open without an active logged session).
-      for (const ev of windowEvents) {
-        if (isClaudeApp(String((ev.data && ev.data.app) || ''))) {
-          add('Claude Desktop (finestra)', ev.duration || 0);
-        }
+      // Il tempo di finestra già coperto da una sessione vera NON va
+      // contato di nuovo: è lo stesso tempo, già nella riga della chat
+      // (bug segnalato: "finestra" cresceva sempre, senza dire per cosa).
+      // Resta solo il tempo con Claude in primo piano ma nessuna chat
+      // attiva (lettura, app aperta), stessa regola della Timeline
+      // (HomeTimelineSection.vue, claudeWindowEvents).
+      const sessioniCoperte = claudeCodeEvents.map((e: any) => {
+        const start = moment(e.timestamp);
+        return { start, end: start.clone().add(e.duration || 0, 'seconds') };
+      });
+      const finestreClaude = windowEvents.filter((ev: any) =>
+        isClaudeApp(String((ev.data && ev.data.app) || ''))
+      );
+      for (const ev of subtractIntervals(finestreClaude, sessioniCoperte)) {
+        add('Claude Desktop (finestra)', ev.duration || 0);
       }
 
       for (const ev of browserEvents) {

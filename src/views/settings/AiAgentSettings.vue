@@ -30,23 +30,15 @@ div
       | {{ $t('settings.aiAgent.claudeDesktopNotFound') }}
     //- Installata ma non ancora autenticata (bug reale: Claude Desktop
     //- collegata non basta, il CLI bundlato ha un proprio login separato
-    //- da completare una tantum in un terminale — vedi claude_subscription.rs).
-    //- Istruzioni passo-passo invece di un errore generico: chi arriva
-    //- qui potrebbe non aver mai usato un terminale in vita sua.
+    //- da completare una tantum — vedi claude_subscription.rs). Un solo
+    //- pulsante: apre la finestra di accesso, poi lo stato si ricontrolla da solo.
     div.settings-alert.settings-alert-warning(v-if="verificatoDisponibilita && claudeDesktopTrovato && !claudeDesktopAutenticato")
       div.aiagent-auth-title {{ $t('settings.aiAgent.claudeDesktopNotAuthenticatedTitle') }}
       div {{ $t('settings.aiAgent.claudeDesktopNotAuthenticatedBody') }}
-      ol.aiagent-auth-steps
-        li {{ $t('settings.aiAgent.claudeDesktopStep1') }}
-        li
-          | {{ $t('settings.aiAgent.claudeDesktopStep2') }}
-          div.aiagent-auth-command
-            code {{ comandoAutenticazione }}
-            div.pill-btn-ghost.aiagent-copy-btn(@click="copiaComandoAutenticazione")
-              | {{ comandoCopiato ? $t('settings.aiAgent.claudeDesktopCopyCommandCopied') : $t('settings.aiAgent.claudeDesktopCopyCommand') }}
-        li {{ $t('settings.aiAgent.claudeDesktopStep3') }}
-        li {{ $t('settings.aiAgent.claudeDesktopStep4') }}
-      div.pill-btn-ghost(@click="verificaClaudeDesktop") {{ $t('settings.aiAgent.claudeDesktopRecheck') }}
+      div.aiagent-auth-actions
+        div.pill-btn(@click="accediClaudeDesktop") {{ $t('settings.aiAgent.claudeDesktopLogin') }}
+        div.pill-btn-ghost(@click="verificaClaudeDesktop") {{ $t('settings.aiAgent.claudeDesktopRecheck') }}
+      div.settings-alert.settings-alert-danger(v-if="erroreAccesso") {{ erroreAccesso }}
 
   div.settings-field-row
     label.settings-field-label {{ $t('settings.aiAgent.model') }}
@@ -115,19 +107,14 @@ export default {
       claudeDesktopAutenticato: false,
       claudeDesktopPercorsoExe: '',
       verificatoDisponibilita: false,
-      comandoCopiato: false,
+      erroreAccesso: '',
+      // Ricontrollo automatico dopo "Accedi": finché l'utente completa
+      // l'accesso nella finestra che si apre, lo stato si aggiorna da solo.
+      timerAccesso: null as any,
     };
   },
-  computed: {
-    // Comando pronto da copiare in PowerShell — usa il percorso REALE
-    // trovato su questo PC (versione del CLI inclusa), non un
-    // placeholder generico da adattare a mano: l'utente lo incolla e
-    // basta. Racchiuso tra virgolette e preceduto da "&" per gestire
-    // correttamente eventuali spazi nel percorso (es. "Program Files"),
-    // sintassi PowerShell dell'operatore di chiamata.
-    comandoAutenticazione(this: any): string {
-      return this.claudeDesktopPercorsoExe ? `& "${this.claudeDesktopPercorsoExe}"` : '';
-    },
+  beforeDestroy(this: any) {
+    if (this.timerAccesso) clearInterval(this.timerAccesso);
   },
   watch: {
     async provider(nuovo: string, precedente: string) {
@@ -182,25 +169,33 @@ export default {
         this.claudeDesktopTrovato = stato.trovato;
         this.claudeDesktopAutenticato = stato.autenticato;
         this.claudeDesktopPercorsoExe = stato.percorso_exe ?? '';
-        this.comandoCopiato = false;
       } catch (e) {
         // Fuori da Tauri — non bloccante.
       } finally {
         this.verificatoDisponibilita = true;
       }
     },
-    async copiaComandoAutenticazione(this: any) {
+    // Apre la finestra di accesso del CLI e, per 2 minuti, ricontrolla ogni
+    // 4 secondi: appena l'accesso risulta completato l'avviso sparisce.
+    async accediClaudeDesktop(this: any) {
+      this.erroreAccesso = '';
       try {
-        await navigator.clipboard.writeText(this.comandoAutenticazione);
-        this.comandoCopiato = true;
-        setTimeout(() => {
-          this.comandoCopiato = false;
-        }, 2000);
+        await invoke('claude_desktop_accedi');
       } catch (e) {
-        // Clipboard non disponibile (permesso negato, contesto non
-        // sicuro) — l'utente può comunque selezionare/copiare il testo
-        // mostrato a mano, non è bloccante.
+        this.erroreAccesso = String(e);
+        return;
       }
+      if (this.timerAccesso) clearInterval(this.timerAccesso);
+      let tentativi = 0;
+      this.timerAccesso = setInterval(async () => {
+        tentativi += 1;
+        await this.verificaClaudeDesktop();
+        if (this.claudeDesktopAutenticato || tentativi >= 30) {
+          clearInterval(this.timerAccesso);
+          this.timerAccesso = null;
+          if (this.claudeDesktopAutenticato) await this.aggiornaModelli();
+        }
+      }, 4000);
     },
     async aggiornaModelli() {
       this.errorModelli = '';
@@ -304,35 +299,10 @@ export default {
   margin-bottom: 4px;
 }
 
-.aiagent-auth-steps {
-  margin: 10px 0;
-  padding-left: 20px;
-}
-
-.aiagent-auth-steps li {
-  margin-bottom: 8px;
-}
-
-.aiagent-auth-command {
+.aiagent-auth-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
-}
-
-.aiagent-auth-command code {
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
-  background-color: var(--color-bg-inset, rgba(0, 0, 0, 0.2));
-  padding: 6px 10px;
-  border-radius: var(--radius-sm, 4px);
-  font-size: var(--font-size-sm);
-}
-
-.aiagent-copy-btn {
-  flex: none;
-  white-space: nowrap;
+  margin-top: 10px;
 }
 </style>

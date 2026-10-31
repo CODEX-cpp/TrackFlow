@@ -340,6 +340,40 @@ impl AppServer {
             .await;
     }
 
+    /// Riscrive `data[campo]` da `da` ad `a` in tutti gli eventi del bucket
+    /// che hanno `da`. Il server sostituisce un evento quando ne riceve uno
+    /// con lo stesso `id` (INSERT OR REPLACE in aw-datastore), quindi basta
+    /// rimandare gli eventi modificati. Idempotente: senza eventi con `da`
+    /// non scrive nulla.
+    async fn relabel_events(&self, bucket_id: &str, campo: &str, da: &str, a: &str) {
+        let resp = self
+            .client
+            .get(format!("/api/0/buckets/{bucket_id}/events"))
+            .header(Self::host_header())
+            .dispatch()
+            .await;
+        if resp.status().code != 200 {
+            return;
+        }
+        let bytes = resp.into_bytes().await.unwrap_or_default();
+        let Ok(eventi) = serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) else {
+            return;
+        };
+        let modificati = eventi_con_etichetta_cambiata(eventi, campo, da, a);
+        if modificati.is_empty() {
+            return;
+        }
+        log::info!("{bucket_id}: {} eventi rietichettati '{da}' -> '{a}'", modificati.len());
+        let _ = self
+            .client
+            .post(format!("/api/0/buckets/{bucket_id}/events"))
+            .header(rocket::http::ContentType::JSON)
+            .header(Self::host_header())
+            .body(serde_json::Value::Array(modificati).to_string())
+            .dispatch()
+            .await;
+    }
+
     async fn insert_event(&self, bucket_id: &str, event: &serde_json::Value) {
         let body = serde_json::json!([event]).to_string();
         let _ = self
@@ -794,6 +828,44 @@ pub(crate) struct WatcherEnvelope {
     pub(crate) event: serde_json::Value,
 }
 
+/// Dagli eventi di un bucket, solo quelli con `data[campo] == da`, già
+/// riscritti con `a` (e col loro `id`, così il server li sostituisce).
+fn eventi_con_etichetta_cambiata(
+    eventi: Vec<serde_json::Value>,
+    campo: &str,
+    da: &str,
+    a: &str,
+) -> Vec<serde_json::Value> {
+    eventi
+        .into_iter()
+        .filter(|e| e.get("id").is_some() && e["data"][campo].as_str() == Some(da))
+        .map(|mut e| {
+            e["data"][campo] = serde_json::Value::String(a.to_string());
+            e
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod test_relabel {
+    use super::eventi_con_etichetta_cambiata;
+    use serde_json::json;
+
+    #[test]
+    fn cambia_solo_gli_eventi_con_la_vecchia_etichetta() {
+        let eventi = vec![
+            json!({"id": 1, "timestamp": "t1", "duration": 5.0, "data": {"cliente": "Claude Desktop: coucou"}}),
+            json!({"id": 2, "timestamp": "t2", "duration": 7.0, "data": {"cliente": "Claude Desktop: CouCou app"}}),
+            json!({"id": 3, "timestamp": "t3", "duration": 9.0, "data": {"cliente": "Claude Desktop: coucou"}}),
+        ];
+        let r = eventi_con_etichetta_cambiata(eventi, "cliente", "Claude Desktop: coucou", "Claude Desktop: CouCou app");
+        assert_eq!(r.len(), 2);
+        assert!(r.iter().all(|e| e["data"]["cliente"] == "Claude Desktop: CouCou app"));
+        assert_eq!(r[0]["id"], 1);
+        assert_eq!(r[1]["duration"], 9.0);
+    }
+}
+
 /// Inoltra un envelope già interpretato al server in-process — crea il
 /// bucket se serve (idempotente) poi dispatcha heartbeat/event. Punto di
 /// ingresso condiviso tra il drenaggio stdout dei sidecar integrati
@@ -817,6 +889,14 @@ pub(crate) async fn elabora_envelope_watcher(
         }
         "event" => {
             server.insert_event(&envelope.bucket_id, &envelope.event).await;
+        }
+        // Il watcher chiede di correggere l'etichetta di eventi GIÀ salvati
+        // (es. chat di Claude rinominata o riconosciuta dopo): { campo, da, a }.
+        "relabel" => {
+            let testo = |k: &str| envelope.event.get(k).and_then(|v| v.as_str());
+            if let (Some(campo), Some(da), Some(a)) = (testo("campo"), testo("da"), testo("a")) {
+                server.relabel_events(&envelope.bucket_id, campo, da, a).await;
+            }
         }
         other => {
             log::warn!("{}: op sconosciuta '{other}' ignorata", envelope.client);
@@ -1224,6 +1304,7 @@ pub fn run() {
             agent::ai_agent_list_models,
             claude_subscription::claude_desktop_disponibile,
             claude_subscription::claude_desktop_stato,
+            claude_subscription::claude_desktop_accedi,
             categorization::elenca_app_conosciute,
             devtools::apri_devtools,
             imposta_livello_memoria,

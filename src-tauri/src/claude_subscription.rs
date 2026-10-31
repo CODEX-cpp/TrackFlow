@@ -96,9 +96,18 @@ pub fn modelli_disponibili() -> Vec<ModelloDisponibile> {
 /// più recente presente al momento invece di un percorso fisso.
 pub fn trova_claude_exe() -> Option<PathBuf> {
     let appdata = std::env::var_os("APPDATA")?;
-    let base = PathBuf::from(appdata).join("Claude").join("claude-code");
+    trova_in_cartella_desktop(&PathBuf::from(appdata).join("Claude").join("claude-code"))
+        .or_else(trova_installazione_a_parte)
+}
+
+/// Cartella di Claude Desktop: `claude-code\<versione>\claude.exe` nelle
+/// versioni vecchie, `claude-code\<versione>\<codice>\claude.exe` in quelle
+/// recenti (bug reale: con la sottocartella in più TrackFlow non trovava
+/// più il CLI e diceva "Claude Desktop non trovata"). Cerca in entrambi i
+/// punti e prende la versione più alta.
+fn trova_in_cartella_desktop(base: &Path) -> Option<PathBuf> {
     let mut migliore: Option<(Vec<u64>, PathBuf)> = None;
-    for voce in std::fs::read_dir(&base).ok()?.flatten() {
+    for voce in std::fs::read_dir(base).ok()?.flatten() {
         let percorso = voce.path();
         if !percorso.is_dir() {
             continue;
@@ -108,15 +117,46 @@ pub fn trova_claude_exe() -> Option<PathBuf> {
         if versione.is_empty() {
             continue;
         }
-        let ese = percorso.join("claude.exe");
-        if !ese.is_file() {
-            continue;
-        }
+        let diretto = percorso.join("claude.exe");
+        let ese = if diretto.is_file() {
+            Some(diretto)
+        } else {
+            // Più sottocartelle per la stessa versione: la più recente per nome.
+            let mut sotto: Vec<PathBuf> = std::fs::read_dir(&percorso)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|s| s.path().join("claude.exe"))
+                .filter(|p| p.is_file())
+                .collect();
+            sotto.sort();
+            sotto.pop()
+        };
+        let Some(ese) = ese else { continue };
         if migliore.as_ref().map(|(v, _)| versione > *v).unwrap_or(true) {
             migliore = Some((versione, ese));
         }
     }
     migliore.map(|(_, ese)| ese)
+}
+
+/// Ripiego: un Claude Code installato a parte (non quello di Claude
+/// Desktop) — su PATH o nelle cartelle dei programmi di installazione
+/// nativi. Stessi posti cercati da CouCou.
+fn trova_installazione_a_parte() -> Option<PathBuf> {
+    let da_path = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).map(|d| d.join("claude.exe")).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let var = |k: &str| std::env::var_os(k).map(PathBuf::from).filter(|p| p.is_absolute());
+    let mut noti = Vec::new();
+    if let Some(home) = var("USERPROFILE") {
+        noti.push(home.join(".local").join("bin").join("claude.exe"));
+        noti.push(home.join(".bun").join("bin").join("claude.exe"));
+    }
+    if let Some(local) = var("LOCALAPPDATA") {
+        noti.push(local.join("Volta").join("bin").join("claude.exe"));
+    }
+    da_path.into_iter().chain(noti).find(|p| p.is_file())
 }
 
 /// Comando invocato dalle Impostazioni per mostrare subito (senza dover
@@ -131,19 +171,59 @@ pub fn claude_desktop_disponibile() -> bool {
 /// reale segnalato da un utente (portatile di lavoro, issue interna
 /// 2026-09-03): avere Claude Desktop (l'app grafica) collegata al
 /// proprio abbonamento NON significa che il CLI bundlato (un processo
-/// separato, con una propria autenticazione OAuth) l'abbia già fatto —
-/// il CLI richiede un primo avvio interattivo una tantum (scelta tema,
-/// conferma di fiducia della cartella, login) prima di poter essere
-/// usato in modalità automatica (`-p`) come fa questo modulo. Verifica
-/// solo la presenza del file di credenziali che quel primo avvio scrive
-/// — non garantisce che siano ancora valide (potrebbero essere scadute),
-/// ma è lo stesso controllo che l'utente può fare da sé aprendo quella
-/// cartella, e costa zero (nessun processo da avviare).
-fn credenziali_presenti() -> bool {
-    std::env::var_os("USERPROFILE")
-        .map(|h| PathBuf::from(h).join(".claude").join(".credentials.json"))
-        .map(|p| p.is_file())
+/// separato, con una propria autenticazione OAuth) l'abbia già fatto.
+/// Chiede la risposta al CLI stesso (`claude auth status --json`, nessuna
+/// chiamata di rete né consumo): il solo file `.credentials.json` non
+/// basta (su questo PC esisteva ma il CLI risultava non collegato).
+async fn cli_collegato(claude_exe: &Path) -> bool {
+    let mut comando = tokio::process::Command::new(claude_exe);
+    comando
+        .args(["auth", "status", "--json"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        comando.creation_flags(CREATE_NO_WINDOW);
+    }
+    match tokio::time::timeout(std::time::Duration::from_secs(20), comando.output()).await {
+        Ok(Ok(out)) => logged_in_da_json(&out.stdout),
+        _ => false,
+    }
+}
+
+fn logged_in_da_json(stdout: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(stdout)
+        .ok()
+        .and_then(|v| v.get("loggedIn").and_then(Value::as_bool))
         .unwrap_or(false)
+}
+
+/// Apre una finestra di terminale con `claude auth login`: l'utente
+/// accede una volta sola con lo stesso account di Claude Desktop, senza
+/// dover copiare comandi a mano.
+#[tauri::command]
+pub fn claude_desktop_accedi() -> Result<(), String> {
+    let exe = trova_claude_exe().ok_or_else(|| "Claude non trovato su questo PC.".to_string())?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW solo per il `cmd` che lancia: la finestra di
+        // login la apre `start`, in una console sua.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("cmd")
+            .raw_arg(format!("/C start \"Claude\" \"{}\" auth login", exe.display()))
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Impossibile aprire il login: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = exe;
+        Err("Esegui `claude auth login` in un terminale.".to_string())
+    }
 }
 
 /// Stato completo per le Impostazioni — sostituisce `claude_desktop_disponibile`
@@ -158,11 +238,15 @@ pub struct StatoClaudeDesktop {
 }
 
 #[tauri::command]
-pub fn claude_desktop_stato() -> StatoClaudeDesktop {
+pub async fn claude_desktop_stato() -> StatoClaudeDesktop {
     let percorso = trova_claude_exe();
+    let autenticato = match &percorso {
+        Some(p) => cli_collegato(p).await,
+        None => false,
+    };
     StatoClaudeDesktop {
         trovato: percorso.is_some(),
-        autenticato: credenziali_presenti(),
+        autenticato,
         percorso_exe: percorso.map(|p| p.display().to_string()),
     }
 }
@@ -866,7 +950,7 @@ async fn manda_turno(sessione: &mut SessioneAttiva, testo: &str) -> Result<Rispo
 /// autenticato" — bug reale segnalato da un utente (portatile di
 /// lavoro): Claude Desktop era collegata regolarmente, ma il CLI
 /// bundlato non aveva mai completato il proprio primo avvio (vedi
-/// `credenziali_presenti`), e il messaggio grezzo che restituisce ("Not
+/// `cli_collegato`), e il messaggio grezzo che restituisce ("Not
 /// logged in · Please run /login") non significa nulla per chi non sa
 /// cos'è un CLI o un comando "/login". Un CODICE invece di una frase
 /// già in italiano: il testo vero e proprio (con azione cliccabile verso
@@ -1087,26 +1171,72 @@ pub async fn prewarm_se_configurato(app_handle: &AppHandle, app_data_dir: PathBu
 
 #[cfg(test)]
 mod test_stato {
-    //! A differenza di `test_manuale` sotto, questo NON spawna alcun
-    //! processo né consuma l'abbonamento — solo controlli sul filesystem
-    //! locale (percorso claude.exe, file di credenziali). Non `#[ignore]`
-    //! apposta: economico, gira in ogni `cargo test` normale. I valori
-    //! esatti dipendono dalla macchina (qui solo stampati per verifica
-    //! visiva con --nocapture), l'unica cosa asserita è che la funzione
-    //! non va in panico e la forma del risultato è quella attesa.
+    //! Non consumano l'abbonamento. Ricerca del CLI su cartelle finte (nessun
+    //! processo avviato), più un controllo sul vero PC (`claude auth status`,
+    //! nessuna chiamata di rete) che verifica solo la coerenza del risultato.
     use super::*;
 
+    fn cartella_prova(nome: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!("tf-claude-{nome}-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        std::fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    fn crea_exe(percorso: &Path) {
+        std::fs::create_dir_all(percorso.parent().unwrap()).unwrap();
+        std::fs::write(percorso, b"").unwrap();
+    }
+
+    // Il caso reale di questo PC: claude.exe una cartella più in basso, dentro
+    // una sottocartella con un codice. Tra due versioni vince la più alta.
     #[test]
-    fn claude_desktop_stato_non_va_in_panico() {
-        let stato = claude_desktop_stato();
+    fn trova_claude_anche_nella_sottocartella_con_il_codice() {
+        let base = cartella_prova("nidificata");
+        crea_exe(&base.join("2.1.308").join("c17a819afb40").join("claude.exe"));
+        crea_exe(&base.join("2.1.309").join("9078b9c1d466").join("claude.exe"));
+        let trovato = trova_in_cartella_desktop(&base).expect("deve trovare il CLI");
+        assert!(trovato.ends_with(Path::new("2.1.309").join("9078b9c1d466").join("claude.exe")), "{trovato:?}");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    // Layout vecchio: claude.exe subito sotto la versione. Resta supportato.
+    #[test]
+    fn trova_claude_nel_layout_vecchio() {
+        let base = cartella_prova("piatta");
+        crea_exe(&base.join("2.0.5").join("claude.exe"));
+        crea_exe(&base.join("2.0.10").join("claude.exe"));
+        let trovato = trova_in_cartella_desktop(&base).unwrap();
+        assert!(trovato.ends_with(Path::new("2.0.10").join("claude.exe")), "{trovato:?}");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn senza_claude_non_trova_nulla() {
+        let base = cartella_prova("vuota");
+        std::fs::create_dir_all(base.join("2.1.309").join("abc")).unwrap();
+        assert!(trova_in_cartella_desktop(&base).is_none());
+        assert!(trova_in_cartella_desktop(&base.join("non-esiste")).is_none());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn legge_logged_in_dalla_risposta_del_cli() {
+        assert!(logged_in_da_json(br#"{"loggedIn": true, "authMethod": "oauth"}"#));
+        assert!(!logged_in_da_json(br#"{"loggedIn": false, "authMethod": "none"}"#));
+        assert!(!logged_in_da_json(b"non e json"));
+        assert!(!logged_in_da_json(b""));
+    }
+
+    #[tokio::test]
+    async fn claude_desktop_stato_e_coerente() {
+        let stato = claude_desktop_stato().await;
         println!(
             "trovato={} autenticato={} percorso_exe={:?}",
             stato.trovato, stato.autenticato, stato.percorso_exe
         );
-        // Coerenza minima: se non è stato trovato nessun claude.exe, il
-        // percorso deve essere None (mai un trovato=false con un percorso
-        // valorizzato, o viceversa).
         assert_eq!(stato.trovato, stato.percorso_exe.is_some());
+        assert!(stato.trovato || !stato.autenticato, "autenticato senza CLI trovato");
     }
 }
 

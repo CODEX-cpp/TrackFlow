@@ -132,14 +132,8 @@ export default {
         'Claude Desktop non risulta installata (o non aggiornata) su questo PC — installala e assicurati di aver effettuato l\'accesso prima di usare questa opzione.',
       claudeDesktopNotAuthenticatedTitle: 'Manca un ultimo passaggio (una volta sola)',
       claudeDesktopNotAuthenticatedBody:
-        'Claude Desktop è installata, ma il componente che TrackFlow usa per parlarci non ha ancora completato il proprio accesso — è un passaggio separato da quello dell\'app Claude Desktop stessa, e va fatto una sola volta su questo PC:',
-      claudeDesktopStep1: 'Apri PowerShell (cerca "PowerShell" nel menu Start).',
-      claudeDesktopStep2: 'Incolla il comando qui sotto e premi Invio (usa il pulsante per copiarlo):',
-      claudeDesktopStep3:
-        'Segui le schermate che compaiono: scegli un tema, conferma con Invio, poi scegli "Claude account with subscription" per accedere con lo stesso account di Claude Desktop.',
-      claudeDesktopStep4: 'Fatto? Chiudi PowerShell e premi "Verifica di nuovo" qui sotto.',
-      claudeDesktopCopyCommand: 'Copia comando',
-      claudeDesktopCopyCommandCopied: 'Copiato ✓',
+        'Claude Desktop è installata, ma il componente che TrackFlow usa per parlarci non ha ancora fatto il proprio accesso — è un passaggio separato da quello dell\'app Claude Desktop stessa, e va fatto una sola volta su questo PC. Premi "Accedi": si apre una finestra, scegli "Claude account with subscription" e accedi con lo stesso account di Claude Desktop. Questo avviso sparisce da solo appena hai finito.',
+      claudeDesktopLogin: 'Accedi',
       claudeDesktopRecheck: 'Verifica di nuovo',
       apiKey: 'Chiave API',
       apiKeyPlaceholder: 'sk-ant-…',

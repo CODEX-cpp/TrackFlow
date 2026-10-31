@@ -130,14 +130,8 @@ export default {
         'Claude Desktop does not appear to be installed (or up to date) on this PC — install it and make sure you\'re signed in before using this option.',
       claudeDesktopNotAuthenticatedTitle: 'One last step (just once)',
       claudeDesktopNotAuthenticatedBody:
-        'Claude Desktop is installed, but the component TrackFlow uses to talk to it hasn\'t signed in yet — this is separate from signing into the Claude Desktop app itself, and only needs doing once on this PC:',
-      claudeDesktopStep1: 'Open PowerShell (search "PowerShell" in the Start menu).',
-      claudeDesktopStep2: 'Paste the command below and press Enter (use the button to copy it):',
-      claudeDesktopStep3:
-        'Follow the screens that appear: pick a theme, confirm with Enter, then choose "Claude account with subscription" to sign in with the same account as Claude Desktop.',
-      claudeDesktopStep4: 'Done? Close PowerShell and press "Check again" below.',
-      claudeDesktopCopyCommand: 'Copy command',
-      claudeDesktopCopyCommandCopied: 'Copied ✓',
+        'Claude Desktop is installed, but the component TrackFlow uses to talk to it hasn\'t signed in yet — this is separate from signing into the Claude Desktop app itself, and only needs doing once on this PC. Press "Sign in": a window opens, choose "Claude account with subscription" and sign in with the same account as Claude Desktop. This notice disappears by itself once you\'re done.',
+      claudeDesktopLogin: 'Sign in',
       claudeDesktopRecheck: 'Check again',
       apiKey: 'API key',
       apiKeyPlaceholder: 'sk-ant-…',
