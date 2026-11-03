@@ -5,6 +5,16 @@ quella della lingua attiva, per la versione in esecuzione (vedi
 `src-tauri/src/about.rs`, che scarica questo file da GitHub Pages).
 Non toccare questo formato senza aggiornare anche quel parser.
 
+## 0.1.29
+
+### it
+- Nuovo programma VPN supportato: Enodia. Le sessioni VPN di Enodia (anche più connessioni insieme) compaiono in "Top clienti VPN" e nella Timeline con il nome del cliente, come già per OpenVPN Connect e ZyWALL. Se la connessione è già attiva all'avvio di TrackFlow viene presa in carico da subito, e se Enodia si chiude senza disconnettersi la sessione si chiude da sola.
+- Le app non riconosciute non mostrano più l'estensione ".exe" nel nome (per esempio "Lemora" invece di "Lemora.exe"), anche negli elenchi delle Impostazioni.
+
+### en
+- New VPN program supported: Enodia. Enodia VPN sessions (including several connections at once) now appear in "Top VPN clients" and in the Timeline with the client's name, as already happens for OpenVPN Connect and ZyWALL. If a connection is already active when TrackFlow starts it is picked up right away, and if Enodia is closed without disconnecting the session closes by itself.
+- Unrecognized apps no longer show the ".exe" extension in their name (for example "Lemora" instead of "Lemora.exe"), including in the Settings lists.
+
 ## 0.1.28
 
 ### it
