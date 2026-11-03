@@ -26,14 +26,14 @@ div
       )
       span.ap-app-icon-fallback(v-else) {{ fallbackIconForApp(a.app) }}
       div.ap-app-names
-        div.ap-app-name {{ a.nome_leggibile || a.app }}
+        div.ap-app-name {{ a.nome_leggibile || displayNameForApp(a.app) }}
         div.ap-app-raw-name(v-if="a.nome_leggibile") {{ a.app }}
 </template>
 
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '~/stores/settings';
-import { iconUrlForApp, fallbackIconForApp } from '~/util/appNames';
+import { iconUrlForApp, fallbackIconForApp, displayNameForApp } from '~/util/appNames';
 
 interface AppConosciuta {
   app: string;
@@ -77,6 +77,7 @@ export default {
   methods: {
     iconUrlForApp,
     fallbackIconForApp,
+    displayNameForApp,
     isAlwaysActive(app: string): boolean {
       return this.settingsStore.always_active_apps.includes(app);
     },

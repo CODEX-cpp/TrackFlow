@@ -58,7 +58,7 @@ div
         )
         span.cat-app-icon-fallback(v-else) {{ fallbackIconForApp(a.app) }}
         div.cat-app-names
-          div.cat-app-name {{ a.nome_leggibile || a.app }}
+          div.cat-app-name {{ a.nome_leggibile || displayNameForApp(a.app) }}
           div.cat-app-raw-name(v-if="a.nome_leggibile") {{ a.app }}
         select.settings-field.cat-app-select(
           :value="categorieStore.categoryForApp(a.app) || ''"
@@ -100,7 +100,7 @@ div
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
 import { useAppCategoriesStore } from '~/stores/appCategories';
-import { iconUrlForApp, fallbackIconForApp } from '~/util/appNames';
+import { iconUrlForApp, fallbackIconForApp, displayNameForApp } from '~/util/appNames';
 import { CATEGORY_COLOR_PALETTE } from '~/util/hashColor';
 import 'vue-awesome/icons/pencil-alt';
 
@@ -177,6 +177,7 @@ export default {
   methods: {
     iconUrlForApp,
     fallbackIconForApp,
+    displayNameForApp,
     async creaCategoria() {
       const nome = this.nuovaCategoria.trim();
       if (!nome) return;

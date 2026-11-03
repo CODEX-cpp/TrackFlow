@@ -267,7 +267,9 @@ export function displayNameForApp(rawName: string): string {
   // from the exe's own metadata (see appAutoNames.json) — better than
   // the raw exe filename, but not a substitute for adding a proper
   // entry to APP_INFO above when you notice one.
-  return APP_INFO[key]?.name || appAutoNames[key] || rawName;
+  // Ultimo ripiego: il nome del file senza ".exe" (un'app non censita,
+  // come "Lemora.exe", non deve mostrare l'estensione).
+  return APP_INFO[key]?.name || appAutoNames[key] || rawName.replace(/\.exe$/i, '');
 }
 
 // Emoji shown while the real icon hasn't loaded yet / doesn't exist —
