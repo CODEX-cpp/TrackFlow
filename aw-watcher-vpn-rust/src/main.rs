@@ -1,5 +1,5 @@
-//! Legge i log di due programmi VPN diversi (OpenVPN Connect e ZyWALL
-//! SecuExtender) e manda ad ActivityWatch un evento per ogni sessione, con
+//! Legge i log di tre programmi VPN diversi (OpenVPN Connect, ZyWALL
+//! SecuExtender ed Enodia) e manda ad ActivityWatch un evento per ogni sessione, con
 //! inizio/fine precisi e nome del cliente — nello stesso bucket, con la
 //! stessa tabella di corrispondenza indirizzo->cliente, così il pannello
 //! "Top Clienti VPN" non deve sapere quale dei due programmi ha generato
@@ -83,6 +83,15 @@ struct OpenSession {
 struct SourceState {
     byte_letti: u64,
     sessione_aperta: Option<OpenSession>,
+    /// Per i programmi che possono tenere più VPN collegate insieme
+    /// (Enodia/Pritunl): una sessione aperta per ogni profilo, chiave =
+    /// id del profilo. Vuoto per le fonti con una sola sessione alla volta.
+    #[serde(default)]
+    sessioni_per_profilo: HashMap<String, OpenSession>,
+    /// File letto l'ultima volta (solo per le fonti con un file preferito):
+    /// se cambia, `byte_letti` non vale più per il nuovo file.
+    #[serde(default)]
+    file_in_uso: Option<String>,
 }
 
 type State = HashMap<String, SourceState>;
@@ -105,6 +114,8 @@ fn stato_iniziale_fonte(percorso_log: &Path) -> SourceState {
     SourceState {
         byte_letti: posizione_iniziale,
         sessione_aperta: None,
+        sessioni_per_profilo: HashMap::new(),
+        file_in_uso: Some(percorso_log.to_string_lossy().to_string()),
     }
 }
 
@@ -260,8 +271,10 @@ fn nome_cliente_da_indirizzo(indirizzo: &str, mapping: &HashMap<String, String>)
 
 #[derive(Debug)]
 enum ParsedEvent {
-    Connected { quando: DateTime<Utc>, indirizzo: String },
-    Disconnected { quando: DateTime<Utc> },
+    /// `profilo`: id della connessione quando il programma ne gestisce più
+    /// di una insieme (solo Enodia); `None` per OpenVPN Connect e ZyWALL.
+    Connected { quando: DateTime<Utc>, indirizzo: String, profilo: Option<String> },
+    Disconnected { quando: DateTime<Utc>, profilo: Option<String> },
 }
 
 /// Interpreta un NaiveDateTime come ora locale del PC (i log scrivono
@@ -299,9 +312,10 @@ fn estrai_eventi_openvpn(testo: &str) -> Vec<ParsedEvent> {
             eventi.push(ParsedEvent::Connected {
                 quando,
                 indirizzo: cap[3].to_string(),
+                profilo: None,
             });
         } else {
-            eventi.push(ParsedEvent::Disconnected { quando });
+            eventi.push(ParsedEvent::Disconnected { quando, profilo: None });
         }
     }
     eventi
@@ -333,18 +347,132 @@ fn estrai_eventi_zywall(testo: &str) -> Vec<ParsedEvent> {
             eventi.push(ParsedEvent::Connected {
                 quando,
                 indirizzo: cap[3].to_string(),
+                profilo: None,
             });
         } else {
-            eventi.push(ParsedEvent::Disconnected { quando });
+            eventi.push(ParsedEvent::Disconnected { quando, profilo: None });
         }
     }
     eventi
 }
 
+// Enodia (fork di Pritunl Client): il servizio scrive nel suo log, sempre
+// anche a log spento, una riga di "cronologia" per ogni connessione:
+//   [2026-11-03 15:08:25][INFO] ▶ Cronologia: Connesso a OMG ◆ profile_id="ef58..."
+//   [2026-11-03 15:08:40][INFO] ▶ Cronologia: Disconnesso da OMG (stop_wait) ◆ profile_id="ef58..."
+//   [..][INFO] ▶ Cronologia: Collegamento a X non riuscito (motivo) ◆ ...   (ignorata: mai collegato)
+// Il nome è già quello del cliente (non un indirizzo da tradurre) e il
+// profile_id distingue più VPN collegate insieme. Il resto del log (a
+// livello TRACE ogni pacchetto) viene scartato subito, senza interpretarlo.
+fn estrai_eventi_enodia(testo: &str) -> Vec<ParsedEvent> {
+    let pattern_ora = Regex::new(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]").unwrap();
+    let mut eventi = Vec::new();
+
+    for riga in testo.lines() {
+        let Some(pos) = riga.find("Cronologia: ") else {
+            continue;
+        };
+        let Some(cap) = pattern_ora.captures(riga) else {
+            continue;
+        };
+        let Ok(naive) = NaiveDateTime::parse_from_str(&cap[1], "%Y-%m-%d %H:%M:%S") else {
+            continue;
+        };
+        let Some(quando) = local_naive_to_utc(naive) else {
+            continue;
+        };
+
+        // Dopo "Cronologia: ": il testo fino ai campi extra (" ◆ chiave=valore").
+        let dopo = &riga[pos + "Cronologia: ".len()..];
+        let (messaggio, campi) = match dopo.split_once(" ◆ ") {
+            Some((m, c)) => (m, c),
+            None => (dopo, ""),
+        };
+        let profilo_id = campi
+            .split("profile_id=\"")
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .map(str::to_string);
+
+        if let Some(nome) = messaggio.strip_prefix("Connesso a ") {
+            let nome = nome.trim().to_string();
+            eventi.push(ParsedEvent::Connected {
+                quando,
+                profilo: Some(profilo_id.unwrap_or_else(|| nome.clone())),
+                indirizzo: nome,
+            });
+        } else if let Some(resto) = messaggio.strip_prefix("Disconnesso da ") {
+            // "<nome> (<motivo>)": il nome può contenere parentesi, il
+            // motivo è l'ultimo gruppo.
+            let nome = resto.rfind(" (").map(|i| &resto[..i]).unwrap_or(resto).trim().to_string();
+            eventi.push(ParsedEvent::Disconnected {
+                quando,
+                profilo: Some(profilo_id.unwrap_or(nome)),
+            });
+        }
+    }
+    eventi
+}
+
+/// Sessioni Enodia ancora aperte alla fine del log (l'ultimo evento di
+/// ogni profilo è un "Connesso"), come (id profilo, nome, inizio). Serve
+/// al primo avvio del watcher per non perdere una VPN già collegata.
+fn sessioni_enodia_aperte(testo: &str) -> Vec<(String, String, DateTime<Utc>)> {
+    let mut aperte: HashMap<String, (String, DateTime<Utc>)> = HashMap::new();
+    for evento in estrai_eventi_enodia(testo) {
+        match evento {
+            ParsedEvent::Connected { quando, indirizzo, profilo } => {
+                aperte.insert(profilo.unwrap_or_else(|| indirizzo.clone()), (indirizzo, quando));
+            }
+            ParsedEvent::Disconnected { profilo, .. } => {
+                if let Some(p) = profilo {
+                    aperte.remove(&p);
+                }
+            }
+        }
+    }
+    let mut v: Vec<_> = aperte.into_iter().map(|(p, (n, q))| (p, n, q)).collect();
+    v.sort_by_key(|(_, _, q)| *q);
+    v
+}
+
+/// Ultimi byte del log letti per cercare le sessioni già aperte: il log di
+/// Enodia a livello TRACE cresce in fretta, non serve rileggerlo tutto.
+const ENODIA_ULTIMI_BYTE: u64 = 64 * 1024 * 1024;
+
+fn leggi_coda_log(percorso: &Path, max_byte: u64) -> String {
+    use std::io::{Seek, SeekFrom};
+    let Ok(mut file) = fs::File::open(percorso) else {
+        return String::new();
+    };
+    let lunghezza = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if file.seek(SeekFrom::Start(lunghezza.saturating_sub(max_byte))).is_err() {
+        return String::new();
+    }
+    let mut buf = Vec::new();
+    let _ = file.read_to_end(&mut buf);
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
 struct Fonte {
     chiave: &'static str,
     percorso_log: PathBuf,
+    /// File da preferire quando esiste (stesso formato di `percorso_log`).
+    /// Enodia: `cronologia.log`, che contiene solo le righe di connessione e
+    /// ruota a 5 MB; il log generale ruota a 200 KB e a livello TRACE le
+    /// perde in pochi secondi. Finché la versione nuova non è installata il
+    /// file non esiste e si legge il log generale.
+    preferito: Option<PathBuf>,
     estrattore: fn(&str) -> Vec<ParsedEvent>,
+}
+
+impl Fonte {
+    fn percorso_effettivo(&self) -> &Path {
+        match &self.preferito {
+            Some(p) if p.exists() => p,
+            _ => &self.percorso_log,
+        }
+    }
 }
 
 /// Controlla se un processo con questo nome (case-insensitive) è
@@ -401,6 +529,9 @@ fn processo_in_esecuzione(_nome_processo_lower: &str) -> bool {
     true
 }
 
+/// Il servizio di Enodia (fork di Pritunl Client): quello che scrive il log.
+const PROCESSO_ENODIA: &str = "pritunl-service.exe";
+
 struct VpnWatcher {
     heartbeat_pulsetime: f64,
     fonti: Vec<Fonte>,
@@ -424,9 +555,24 @@ impl VpnWatcher {
     ) -> Self {
         let mut stato = load_state(&state_file);
         for fonte in &fonti {
+            let nuova = !stato.contains_key(fonte.chiave);
             stato
                 .entry(fonte.chiave.to_string())
-                .or_insert_with(|| stato_iniziale_fonte(&fonte.percorso_log));
+                .or_insert_with(|| stato_iniziale_fonte(fonte.percorso_effettivo()));
+            // Prima volta che si vede Enodia: se una VPN è già collegata
+            // (e il servizio è in esecuzione) la si prende in carico da
+            // subito, senza reimportare la storia passata del log.
+            if nuova && fonte.chiave == "enodia" && processo_in_esecuzione(PROCESSO_ENODIA) {
+                let testo = leggi_coda_log(fonte.percorso_effettivo(), ENODIA_ULTIMI_BYTE);
+                if let Some(s) = stato.get_mut(fonte.chiave) {
+                    for (profilo, nome, inizio) in sessioni_enodia_aperte(&testo) {
+                        s.sessioni_per_profilo.insert(
+                            profilo,
+                            OpenSession { inizio, cliente: nome_cliente_da_indirizzo(&nome, &mapping) },
+                        );
+                    }
+                }
+            }
         }
 
         VpnWatcher {
@@ -478,11 +624,28 @@ impl VpnWatcher {
 
     fn controlla_fonte(&mut self, idx: usize) {
         let chiave = self.fonti[idx].chiave.to_string();
-        let percorso_log = self.fonti[idx].percorso_log.clone();
+        let percorso_log = self.fonti[idx].percorso_effettivo().to_path_buf();
         let estrattore = self.fonti[idx].estrattore;
 
         if !percorso_log.exists() {
             return;
+        }
+
+        // Il file da leggere è cambiato (compare o sparisce quello
+        // preferito): la posizione letta apparteneva all'altro file. Il
+        // preferito è nuovo e contiene solo righe da leggere (da 0); se si
+        // torna al log generale si riparte dalla fine, per non rileggere
+        // storia già elaborata.
+        if self.fonti[idx].preferito.is_some() {
+            let in_uso = percorso_log.to_string_lossy().to_string();
+            let e_il_preferito = self.fonti[idx].preferito.as_deref() == Some(percorso_log.as_path());
+            let dimensione = fs::metadata(&percorso_log).map(|m| m.len()).unwrap_or(0);
+            if let Some(s) = self.stato.get_mut(&chiave) {
+                if s.file_in_uso.as_deref() != Some(in_uso.as_str()) {
+                    s.byte_letti = if e_il_preferito { 0 } else { dimensione };
+                    s.file_in_uso = Some(in_uso);
+                }
+            }
         }
 
         let dimensione_attuale = fs::metadata(&percorso_log).map(|m| m.len()).unwrap_or(0);
@@ -518,11 +681,11 @@ impl VpnWatcher {
 
         for evento in estrattore(&testo_nuovo) {
             match evento {
-                ParsedEvent::Connected { quando, indirizzo } => {
-                    self.gestisci_connected(&chiave, quando, &indirizzo);
+                ParsedEvent::Connected { quando, indirizzo, profilo } => {
+                    self.gestisci_connected(&chiave, quando, &indirizzo, profilo.as_deref());
                 }
-                ParsedEvent::Disconnected { quando } => {
-                    self.gestisci_disconnected(&chiave, quando);
+                ParsedEvent::Disconnected { quando, profilo } => {
+                    self.gestisci_disconnected(&chiave, quando, profilo.as_deref());
                 }
             }
         }
@@ -533,19 +696,28 @@ impl VpnWatcher {
         save_state(&self.state_file, &self.stato);
     }
 
-    fn gestisci_connected(&mut self, chiave: &str, quando: DateTime<Utc>, indirizzo: &str) {
+    fn gestisci_connected(&mut self, chiave: &str, quando: DateTime<Utc>, indirizzo: &str, profilo: Option<&str>) {
         let nome_cliente = nome_cliente_da_indirizzo(indirizzo, &self.mapping);
         if let Some(s) = self.stato.get_mut(chiave) {
-            s.sessione_aperta = Some(OpenSession {
+            let sessione = OpenSession {
                 inizio: quando,
                 cliente: nome_cliente.clone(),
-            });
+            };
+            match profilo {
+                Some(p) => {
+                    s.sessioni_per_profilo.insert(p.to_string(), sessione);
+                }
+                None => s.sessione_aperta = Some(sessione),
+            }
         }
         self.manda_heartbeat(quando, &nome_cliente);
     }
 
-    fn gestisci_disconnected(&mut self, chiave: &str, quando: DateTime<Utc>) {
-        let sessione = match self.stato.get(chiave).and_then(|s| s.sessione_aperta.clone()) {
+    fn gestisci_disconnected(&mut self, chiave: &str, quando: DateTime<Utc>, profilo: Option<&str>) {
+        let sessione = match self.stato.get(chiave).and_then(|s| match profilo {
+            Some(p) => s.sessioni_per_profilo.get(p).cloned(),
+            None => s.sessione_aperta.clone(),
+        }) {
             Some(s) => s,
             None => return,
         };
@@ -559,7 +731,12 @@ impl VpnWatcher {
         }
 
         if let Some(s) = self.stato.get_mut(chiave) {
-            s.sessione_aperta = None;
+            match profilo {
+                Some(p) => {
+                    s.sessioni_per_profilo.remove(p);
+                }
+                None => s.sessione_aperta = None,
+            }
         }
     }
 
@@ -582,7 +759,25 @@ impl VpnWatcher {
         if processo_in_esecuzione("openvpnconnect.exe") {
             return;
         }
-        self.gestisci_disconnected("openvpn", Utc::now());
+        self.gestisci_disconnected("openvpn", Utc::now(), None);
+        save_state(&self.state_file, &self.stato);
+    }
+
+    /// Stessa cosa per Enodia: se il suo servizio si ferma (crash, chiusura
+    /// brutale) non scrive le righe "Disconnesso": le sessioni ancora aperte
+    /// si chiudono qui, tutte, appena il processo non c'è più.
+    fn chiudi_enodia_se_servizio_terminato(&mut self) {
+        let profili: Vec<String> = match self.stato.get("enodia") {
+            Some(s) => s.sessioni_per_profilo.keys().cloned().collect(),
+            None => return,
+        };
+        if profili.is_empty() || processo_in_esecuzione(PROCESSO_ENODIA) {
+            return;
+        }
+        let adesso = Utc::now();
+        for p in profili {
+            self.gestisci_disconnected("enodia", adesso, Some(&p));
+        }
         save_state(&self.state_file, &self.stato);
     }
 
@@ -606,11 +801,25 @@ impl VpnWatcher {
                 self.manda_heartbeat(adesso, &sessione.cliente);
             }
         }
+
+        // Più VPN Enodia collegate insieme: un heartbeat alterna con
+        // dati diversi non si unirebbe mai all'evento precedente e
+        // spezzerebbe tutto in eventi da zero secondi. Il battito
+        // continuo va solo alla connessione iniziata per ultima; ognuna
+        // viene comunque registrata per intero, con inizio e fine veri,
+        // alla sua disconnessione.
+        if let Some(sessione) = self
+            .stato
+            .get("enodia")
+            .and_then(|s| s.sessioni_per_profilo.values().max_by_key(|x| x.inizio))
+        {
+            self.manda_heartbeat(adesso, &sessione.cliente);
+        }
     }
 }
 
 #[derive(Parser)]
-#[command(about = "Watcher per le sessioni VPN (OpenVPN Connect e ZyWALL SecuExtender)")]
+#[command(about = "Watcher per le sessioni VPN (OpenVPN Connect, ZyWALL SecuExtender ed Enodia)")]
 struct Args {
     /// Gira in modalità test: porta 5666, dati separati da quelli reali
     #[arg(long)]
@@ -662,24 +871,52 @@ fn main() {
                 .join("config.json")
         });
 
+    // Enodia (fork di Pritunl Client): log del suo servizio, sotto ProgramData.
+    let enodia_log_path = std::env::var("AW_WATCHER_VPN_ENODIA_LOG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()))
+                .join("Pritunl")
+                .join("pritunl-client.log")
+        });
+
+    // File di cronologia dedicato di Enodia (stessa cartella del log generale):
+    // solo le righe di connessione, ruota a 5 MB invece di 200 KB.
+    let enodia_cronologia_path = std::env::var("AW_WATCHER_VPN_ENODIA_HISTORY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            enodia_log_path
+                .parent()
+                .map(|d| d.join("cronologia.log"))
+                .unwrap_or_else(|| PathBuf::from("cronologia.log"))
+        });
+
     let fonti = vec![
         Fonte {
             chiave: "openvpn",
             percorso_log: openvpn_log_path,
+            preferito: None,
             estrattore: estrai_eventi_openvpn,
         },
         Fonte {
             chiave: "zywall",
             percorso_log: zywall_log_path,
+            preferito: None,
             estrattore: estrai_eventi_zywall,
+        },
+        Fonte {
+            chiave: "enodia",
+            percorso_log: enodia_log_path,
+            preferito: Some(enodia_cronologia_path),
+            estrattore: estrai_eventi_enodia,
         },
     ];
 
-    let fonti_trovate: Vec<&Fonte> = fonti.iter().filter(|f| f.percorso_log.exists()).collect();
+    let fonti_trovate: Vec<&Fonte> = fonti.iter().filter(|f| f.percorso_effettivo().exists()).collect();
     if fonti_trovate.is_empty() {
-        println!("ATTENZIONE: non trovo nessuno dei due log VPN attesi:");
+        println!("ATTENZIONE: non trovo nessuno dei log VPN attesi:");
         for f in &fonti {
-            println!("  - {}: {}", f.chiave, f.percorso_log.display());
+            println!("  - {}: {}", f.chiave, f.percorso_effettivo().display());
         }
         return;
     }
@@ -704,8 +941,8 @@ fn main() {
         mapping.len()
     );
     for f in &fonti {
-        let stato_str = if f.percorso_log.exists() { "trovato" } else { "NON trovato, ignorato" };
-        println!("Fonte '{}': {} ({})", f.chiave, f.percorso_log.display(), stato_str);
+        let stato_str = if f.percorso_effettivo().exists() { "trovato" } else { "NON trovato, ignorato" };
+        println!("Fonte '{}': {} ({})", f.chiave, f.percorso_effettivo().display(), stato_str);
     }
 
     let mut watcher = VpnWatcher::new(
@@ -722,6 +959,7 @@ fn main() {
         thread::sleep(StdDuration::from_secs(args.poll_interval as u64));
         watcher.controlla_tutte_le_fonti();
         watcher.chiudi_se_processo_terminato();
+        watcher.chiudi_enodia_se_servizio_terminato();
         watcher.tieni_vive_le_sessioni_aperte();
         watcher.sincronizza_mapping_se_serve();
     }
@@ -923,7 +1161,7 @@ mod tests {
         assert_eq!(eventi.len(), 2);
 
         match &eventi[0] {
-            ParsedEvent::Connected { quando, indirizzo } => {
+            ParsedEvent::Connected { quando, indirizzo, .. } => {
                 assert_eq!(indirizzo, "203.0.113.5");
                 // Ora locale 10:36:09 -> confrontiamo riconvertendo in
                 // locale e verificando che torni identica (indipendente
@@ -936,7 +1174,7 @@ mod tests {
         }
 
         match &eventi[1] {
-            ParsedEvent::Disconnected { quando } => {
+            ParsedEvent::Disconnected { quando, .. } => {
                 let back = quando.with_timezone(&Local);
                 assert_eq!(back.format("%H:%M:%S").to_string(), "11:15:42");
             }
@@ -945,7 +1183,7 @@ mod tests {
 
         // Durata attesa: 11:15:42 - 10:36:09 = 39 minuti 33 secondi.
         let durata = match (&eventi[0], &eventi[1]) {
-            (ParsedEvent::Connected { quando: c, .. }, ParsedEvent::Disconnected { quando: d }) => {
+            (ParsedEvent::Connected { quando: c, .. }, ParsedEvent::Disconnected { quando: d, .. }) => {
                 *d - *c
             }
             _ => unreachable!(),
@@ -1001,6 +1239,177 @@ mod tests {
         assert_eq!(eventi.len(), 0, "non deve produrre eventi: {eventi:?}");
     }
 
+    // Righe nella forma esatta del log reale di Enodia (nome e id del
+    // profilo di prova), con in mezzo il rumore del livello TRACE.
+    const LOG_ENODIA: &str = "[2026-11-03 15:08:16][TRCE] ▶ connection: OpenVPN output ◆ ovpn_line=\"TUN WRITE [168]\" ◆ profile_id=\"ef5814f42c382321\"\n\
+[2026-11-03 15:08:25][INFO] ▶ Cronologia: Connesso a OMG ◆ profile_id=\"ef5814f42c382321\"\n\
+[2026-11-03 15:08:30][TRCE] ▶ connection: OpenVPN output ◆ ovpn_line=\"TUN READ [40]\" ◆ profile_id=\"ef5814f42c382321\"\n\
+[2026-11-03 15:08:40][INFO] ▶ Cronologia: Disconnesso da OMG (stop_wait) ◆ profile_id=\"ef5814f42c382321\"\n";
+
+    #[test]
+    fn enodia_parses_connect_and_disconnect_ignoring_trace_noise() {
+        let eventi = estrai_eventi_enodia(LOG_ENODIA);
+        assert_eq!(eventi.len(), 2, "{eventi:?}");
+        match &eventi[0] {
+            ParsedEvent::Connected { quando, indirizzo, profilo } => {
+                assert_eq!(indirizzo, "OMG");
+                assert_eq!(profilo.as_deref(), Some("ef5814f42c382321"));
+                let locale = quando.with_timezone(&Local);
+                assert_eq!(locale.format("%Y-%m-%d %H:%M:%S").to_string(), "2026-11-03 15:08:25");
+            }
+            other => panic!("expected Connected, got {other:?}"),
+        }
+        match &eventi[1] {
+            ParsedEvent::Disconnected { quando, profilo } => {
+                assert_eq!(profilo.as_deref(), Some("ef5814f42c382321"));
+                let locale = quando.with_timezone(&Local);
+                assert_eq!(locale.format("%H:%M:%S").to_string(), "15:08:40");
+            }
+            other => panic!("expected Disconnected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn enodia_name_with_parentheses_and_spaces_and_failed_connection() {
+        let log = "[2026-11-03 09:00:00][INFO] ▶ Cronologia: Connesso a Cliente Roma (sede) ◆ profile_id=\"aa11\"\n\
+[2026-11-03 09:30:00][INFO] ▶ Cronologia: Disconnesso da Cliente Roma (sede) (connessione caduta) ◆ profile_id=\"aa11\"\n\
+[2026-11-03 10:00:00][INFO] ▶ Cronologia: Collegamento a Liana non riuscito (credenziali non accettate) ◆ profile_id=\"bb22\"\n";
+        let eventi = estrai_eventi_enodia(log);
+        // Il collegamento non riuscito non è mai stato una sessione: ignorato.
+        assert_eq!(eventi.len(), 2, "{eventi:?}");
+        match &eventi[0] {
+            ParsedEvent::Connected { indirizzo, .. } => assert_eq!(indirizzo, "Cliente Roma (sede)"),
+            other => panic!("expected Connected, got {other:?}"),
+        }
+        match &eventi[1] {
+            ParsedEvent::Disconnected { profilo, .. } => assert_eq!(profilo.as_deref(), Some("aa11")),
+            other => panic!("expected Disconnected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn enodia_without_profile_id_falls_back_to_name() {
+        let log = "[2026-11-03 09:00:00][INFO] ▶ Cronologia: Connesso a OMG\n\
+[2026-11-03 09:10:00][INFO] ▶ Cronologia: Disconnesso da OMG (stop)\n";
+        let eventi = estrai_eventi_enodia(log);
+        assert_eq!(eventi.len(), 2);
+        let ids: Vec<_> = eventi
+            .iter()
+            .map(|e| match e {
+                ParsedEvent::Connected { profilo, .. } | ParsedEvent::Disconnected { profilo, .. } => profilo.clone(),
+            })
+            .collect();
+        assert_eq!(ids, vec![Some("OMG".to_string()), Some("OMG".to_string())]);
+    }
+
+    #[test]
+    fn enodia_open_sessions_are_those_without_a_later_disconnect() {
+        let log = "[2026-11-03 09:00:00][INFO] ▶ Cronologia: Connesso a OMG ◆ profile_id=\"aa\"\n\
+[2026-11-03 09:05:00][INFO] ▶ Cronologia: Connesso a Cenedese ◆ profile_id=\"bb\"\n\
+[2026-11-03 09:30:00][INFO] ▶ Cronologia: Disconnesso da OMG (stop) ◆ profile_id=\"aa\"\n\
+[2026-11-03 10:00:00][INFO] ▶ Cronologia: Connesso a OMG ◆ profile_id=\"aa\"\n";
+        let aperte = sessioni_enodia_aperte(log);
+        let nomi: Vec<_> = aperte.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
+        // Ordinate per inizio: prima Cenedese (09:05), poi OMG (10:00).
+        assert_eq!(nomi, vec![("bb", "Cenedese"), ("aa", "OMG")]);
+    }
+
+    // Due VPN Enodia insieme: chiudere una non deve toccare l'altra.
+    #[test]
+    fn enodia_two_profiles_are_tracked_independently() {
+        let dir = std::env::temp_dir().join(format!("aw-vpn-test-enodia-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fonti = vec![Fonte {
+            chiave: "enodia",
+            percorso_log: dir.join("non-esiste.log"),
+            preferito: None,
+            estrattore: estrai_eventi_enodia,
+        }];
+        let mut w = VpnWatcher::new(
+            15,
+            fonti,
+            HashMap::new(),
+            dir.join("stato.json"),
+            dir.join("mapping.txt"),
+            dir.join("config.json"),
+            HashMap::new(),
+        );
+        let t0 = Utc::now() - chrono::Duration::minutes(30);
+        w.gestisci_connected("enodia", t0, "OMG", Some("aa"));
+        w.gestisci_connected("enodia", t0 + chrono::Duration::minutes(5), "Cenedese", Some("bb"));
+        assert_eq!(w.stato["enodia"].sessioni_per_profilo.len(), 2);
+
+        w.gestisci_disconnected("enodia", t0 + chrono::Duration::minutes(20), Some("aa"));
+        let rimaste = &w.stato["enodia"].sessioni_per_profilo;
+        assert_eq!(rimaste.len(), 1);
+        assert_eq!(rimaste["bb"].cliente, "Cenedese");
+
+        // Disconnessione di un profilo mai aperto: nessun effetto, nessun panico.
+        w.gestisci_disconnected("enodia", t0 + chrono::Duration::minutes(21), Some("zz"));
+        assert_eq!(w.stato["enodia"].sessioni_per_profilo.len(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // Dopo l'installazione di Enodia con la cronologia dedicata: finché il file
+    // non esiste si legge il log generale; alla prima connessione nasce
+    // cronologia.log e il watcher passa a quello, leggendolo da capo.
+    #[test]
+    fn enodia_switches_to_the_dedicated_history_file_when_it_appears() {
+        let dir = std::env::temp_dir().join(format!("aw-vpn-test-cron-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        let generale = dir.join("pritunl-client.log");
+        let dedicato = dir.join("cronologia.log");
+        std::fs::write(&generale, "[2026-11-03 08:00:00][TRCE] ▶ rumore\n").unwrap();
+
+        let fonti = vec![Fonte {
+            chiave: "enodia",
+            percorso_log: generale.clone(),
+            preferito: Some(dedicato.clone()),
+            estrattore: estrai_eventi_enodia,
+        }];
+        let mut w = VpnWatcher::new(
+            15,
+            fonti,
+            HashMap::new(),
+            dir.join("stato.json"),
+            dir.join("mapping.txt"),
+            dir.join("config.json"),
+            HashMap::new(),
+        );
+        assert_eq!(w.fonti[0].percorso_effettivo(), generale.as_path());
+
+        // Compare il file dedicato con una connessione.
+        std::fs::write(
+            &dedicato,
+            "[2026-11-03 09:00:00][INFO] ▶ Cronologia: Connesso a OMG ◆ profile_id=\"aa\"\n",
+        )
+        .unwrap();
+        w.controlla_tutte_le_fonti();
+        assert_eq!(w.fonti[0].percorso_effettivo(), dedicato.as_path());
+        assert_eq!(w.stato["enodia"].sessioni_per_profilo.len(), 1, "letto da capo");
+
+        // La disconnessione arriva nello stesso file.
+        let mut testo = std::fs::read_to_string(&dedicato).unwrap();
+        testo.push_str("[2026-11-03 09:30:00][INFO] ▶ Cronologia: Disconnesso da OMG (stop) ◆ profile_id=\"aa\"\n");
+        std::fs::write(&dedicato, testo).unwrap();
+        w.controlla_tutte_le_fonti();
+        assert!(w.stato["enodia"].sessioni_per_profilo.is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // Il nome del cliente di Enodia passa dal client_mapping.txt come gli indirizzi:
+    // un override manuale (nome -> nome) vince, senza override resta il nome.
+    #[test]
+    fn enodia_name_goes_through_manual_mapping() {
+        let mut mapping = HashMap::new();
+        mapping.insert("OMG".to_string(), "OMG Macchinari".to_string());
+        assert_eq!(nome_cliente_da_indirizzo("OMG", &mapping), "OMG Macchinari");
+        assert_eq!(nome_cliente_da_indirizzo("Cenedese", &mapping), "Cenedese");
+    }
+
     #[test]
     fn client_mapping_parses_and_falls_back_to_address() {
         let dir = std::env::temp_dir().join(format!("aw-vpn-test-{}", std::process::id()));
@@ -1037,6 +1446,8 @@ mod tests {
                     inizio: Utc::now(),
                     cliente: "Cliente Test".to_string(),
                 }),
+                sessioni_per_profilo: HashMap::new(),
+                file_in_uso: None,
             },
         );
         save_state(&path, &state);
